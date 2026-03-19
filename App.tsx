@@ -1078,7 +1078,7 @@ create policy "Authenticated users can do everything on warranties" on public.wa
               />
             )}
             {currentView === 'dashboard' && (
-              <Dashboard sales={sales} role={userProfile?.role} />
+              <Dashboard sales={sales} closings={closings} role={userProfile?.role} />
             )}
             {currentView === 'closings' && (
               <DailyClosings

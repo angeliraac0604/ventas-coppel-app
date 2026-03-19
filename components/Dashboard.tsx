@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid, ComposedChart, Line } from 'recharts';
-import { Target, Edit2, Check, TrendingUp, Trophy, PartyPopper, DollarSign, Smartphone, Trash2 } from 'lucide-react';
+import { Target, Edit2, Check, TrendingUp, Trophy, PartyPopper, DollarSign, Smartphone, Trash2, AlertTriangle } from 'lucide-react';
 import { Sale, Brand, DailyClose } from '../types';
 import { BRAND_CONFIGS } from '../constants';
 import { supabase } from '../services/supabaseClient';
@@ -8,10 +8,11 @@ import { supabase } from '../services/supabaseClient';
 
 interface DashboardProps {
   sales: Sale[];
+  closings: DailyClose[];
   role?: string;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ sales, role }) => {
+const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role }) => {
 
 
   const handleFactoryReset = async () => {
@@ -213,6 +214,30 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, role }) => {
           </div>
         </div>
       )}
+
+      {/* DAILY CLOSE PENDING ALERT */}
+      {(() => {
+        const h = new Date().getHours();
+        const needsClose = h >= 19; // Después de las 7 PM empezamos a avisar
+        const isClosed = (closings || []).some(c => c.date === todayStr);
+        if (needsClose && !isClosed && todayCount > 0) {
+          return (
+            <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-xl flex items-center justify-between shadow-sm animate-pulse border border-red-200">
+              <div className="flex items-center gap-3">
+                <div className="bg-red-100 p-2 rounded-full">
+                  <AlertTriangle className="w-5 h-5 text-red-600" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-red-800">Corte del Día Pendiente</h4>
+                  <p className="text-xs text-red-600">Ya es tarde y aún no has realizado el corte de ventas de hoy.</p>
+                </div>
+              </div>
+              <p className="text-[10px] font-bold text-red-400 uppercase hidden md:block">Acción Requerida</p>
+            </div>
+          );
+        }
+        return null;
+      })()}
 
       {/* GOALS GRID */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -583,7 +608,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, role }) => {
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-bold text-slate-900">{item.value}</span>
                       <span className="text-xs text-slate-400 w-9 text-right">
-                        {Math.round((item.value / sales.length) * 100)}%
+                        {currentMonthCount > 0 ? Math.round((item.value / currentMonthCount) * 100) : 0}%
                       </span>
                     </div>
                   </div>
@@ -649,7 +674,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, role }) => {
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-bold text-slate-900">${(item.revenue / 1000).toFixed(1)}k</span>
                       <span className="text-xs text-slate-400 w-9 text-right">
-                        {Math.round((item.revenue / totalRevenue) * 100)}%
+                        {currentMonthRevenue > 0 ? Math.round((item.revenue / currentMonthRevenue) * 100) : 0}%
                       </span>
                     </div>
                   </div>
