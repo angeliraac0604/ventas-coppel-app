@@ -342,6 +342,8 @@ create policy "Authenticated users can do everything on warranties" on public.wa
   }, [session]);
 
   // --- AUTOMATIC RECOVERY & CLOSE LOGIC ---
+  const processingDatesRef = React.useRef<Set<string>>(new Set());
+
   useEffect(() => {
     if (!session || sales.length === 0) return;
 
@@ -354,7 +356,10 @@ create policy "Authenticated users can do everything on warranties" on public.wa
       const uniqueSaleDates = Array.from(new Set(sales.map(s => s.date))).sort();
       
       const missingDates = uniqueSaleDates.filter(date => {
-        // No tiene corte registrado
+        // Ya se está procesando en esta ejecución
+        if (processingDatesRef.current.has(date)) return false;
+
+        // No tiene corte registrado en el estado local
         const hasClosing = closings.some(c => c.date === date);
         if (hasClosing) return false;
 
@@ -370,9 +375,15 @@ create policy "Authenticated users can do everything on warranties" on public.wa
       console.log(`🔍 Se detectaron ${missingDates.length} días sin corte. Iniciando cierre automático...`);
 
       for (const date of missingDates) {
+        if (processingDatesRef.current.has(date)) continue;
+        processingDatesRef.current.add(date);
+
         try {
           const daySales = sales.filter(s => s.date === date);
-          if (daySales.length === 0) continue;
+          if (daySales.length === 0) {
+            processingDatesRef.current.delete(date);
+            continue;
+          }
 
           const revenue = daySales.reduce((sum, s) => sum + s.price, 0);
           
@@ -394,11 +405,14 @@ create policy "Authenticated users can do everything on warranties" on public.wa
             .from('daily_closings')
             .upsert(newClose, { onConflict: 'id' });
 
-          if (error) throw error;
+          if (error) {
+            processingDatesRef.current.delete(date);
+            throw error;
+          }
 
           console.log(`✅ Corte automático realizado para: ${date}`);
           
-          // Actualización local silenciosa
+          // Actualización local segura (Evita duplicados)
           const formattedClose: DailyClose = {
             id: (newClose as any).id,
             date: (newClose as any).date,
@@ -407,10 +421,16 @@ create policy "Authenticated users can do everything on warranties" on public.wa
             closedAt: (newClose as any).closed_at,
             topBrand: (newClose as any).top_brand
           };
-          setClosings(prev => [formattedClose, ...prev]);
+
+          setClosings(prev => {
+            const exists = prev.some(c => c.date === formattedClose.date);
+            if (exists) return prev;
+            return [formattedClose, ...prev].sort((a, b) => b.date.localeCompare(a.date));
+          });
 
         } catch (err) {
           console.error(`Error en corte automático para ${date}:`, err);
+          processingDatesRef.current.delete(date);
         }
       }
     };
