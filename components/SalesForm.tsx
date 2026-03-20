@@ -316,10 +316,24 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
       return;
     }
 
-    // MANDATORY PHOTO CHECK (Except for Admin)
+    // Photo check...
     if (!ticketImage && role !== 'admin') {
       alert("⚠️ La foto del ticket es obligatoria para concluir la venta.");
       return;
+    }
+
+    // DATE CHECK (Alert if not today)
+    const now = new Date();
+    const todayStr = now.getFullYear() + '-' +
+      String(now.getMonth() + 1).padStart(2, '0') + '-' +
+      String(now.getDate()).padStart(2, '0');
+
+    if (commonData.date !== todayStr) {
+      const confirmDate = window.confirm(
+        `⚠️ ATENCIÓN: La fecha de la venta (${commonData.date}) NO es hoy (${todayStr}).\n\n` +
+        `¿Estás seguro de que la fecha es correcta?`
+      );
+      if (!confirmDate) return;
     }
 
     setIsSubmitting(true);

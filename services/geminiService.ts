@@ -62,14 +62,17 @@ export const analyzeTicketImage = async (base64Image: string): Promise<TicketAna
 
   const base64Data = base64Image.split(',')[1] || base64Image;
 
-  // PROMPT SIN SCHEMA STRICT (Permite más flexibilidad para encontrar textos difíciles)
+  const now = new Date();
+  const currentDateContext = `Hoy es ${now.toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })}.`;
+
   const prompt = `Analiza esta imagen de ticket. Tu misión es extraer datos para un registro de ventas de celulares.
+  ${currentDateContext}
   Responde ÚNICAMENTE con un objeto JSON válido. No uses Markdown (\`\`\`json).
 
   Estructura deseada:
   {
     "invoiceNumber": "Folio o Ticket",
-    "date": "Fecha encontrada (ej: 12-Dic-2024)",
+    "date": "Fecha encontrada (ej: 12-Dic-${now.getFullYear()})",
     "customerName": "Nombre del cliente detectado",
     "items": [{ "brand": "Marca", "price": 0 }]
   }
