@@ -766,6 +766,32 @@ create policy "Authenticated users can do everything on warranties" on public.wa
     }
   };
 
+  const handleDeleteClosing = async (id: string) => {
+    if (!session || userProfile?.role !== 'admin') {
+      alert("Solo el administrador puede eliminar cierres.");
+      return;
+    }
+    if (!window.confirm("¿Estás seguro de que deseas eliminar este cierre? Esta acción no se puede deshacer.")) return;
+    
+    setIsLoading(true);
+    try {
+      const { error } = await supabase
+        .from('daily_closings')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      setClosings(prev => prev.filter(c => c.id !== id));
+      alert("Cierre eliminado correctamente.");
+    } catch (error: any) {
+      console.error('Error deleting closing:', error);
+      alert(`Error al eliminar el cierre: ${formatError(error)}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleAddWarranty = async (newWarranty: Omit<Warranty, 'id'>) => {
     if (!session) return;
     setIsLoading(true);
@@ -1120,6 +1146,7 @@ create policy "Authenticated users can do everything on warranties" on public.wa
                 sales={sales}
                 closings={closings}
                 onCloseDay={handleCloseDay}
+                onDeleteClosing={handleDeleteClosing}
                 role={userProfile?.role}
               />
             )}

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { CalendarCheck, DollarSign, ShoppingBag, Clock, ChevronDown, ChevronUp, Lock, Receipt, X, User, Tag, Calendar, Image as ImageIcon, CalendarRange, Layers, Filter, XCircle, ArrowRight, Share2 } from 'lucide-react';
+import { CalendarCheck, DollarSign, ShoppingBag, Clock, ChevronDown, ChevronUp, Lock, Receipt, X, User, Tag, Calendar, Image as ImageIcon, CalendarRange, Layers, Filter, XCircle, ArrowRight, Share2, Trash2 } from 'lucide-react';
 import { Sale, DailyClose, Brand } from '../types';
 import { BRAND_CONFIGS } from '../constants';
 
@@ -7,10 +7,11 @@ interface DailyClosingsProps {
   sales: Sale[];
   closings: DailyClose[];
   onCloseDay: (close: DailyClose) => void;
+  onDeleteClosing?: (id: string) => void;
   role?: string;
 }
 
-const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseDay, role }) => {
+const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseDay, onDeleteClosing, role }) => {
   const [activeTab, setActiveTab] = useState<'daily' | 'monthly'>('daily');
   const dateInputRef = useRef<HTMLInputElement>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -417,9 +418,23 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
                         </div>
                       </div>
 
-                      {/* Chevron */}
-                      <div className={`transition-transform duration-200 text-slate-300 md:ml-2 ${isExpanded ? 'rotate-180 text-blue-500' : 'rotate-0 group-hover:text-slate-400'}`}>
-                        <ChevronDown className="w-5 h-5" />
+                      {/* Actions */}
+                      <div className="flex items-center gap-1 md:ml-2">
+                        {role === 'admin' && onDeleteClosing && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteClosing(close.id);
+                            }}
+                            className="p-1.5 hover:bg-red-50 text-slate-300 hover:text-red-500 rounded-lg transition-colors"
+                            title="Eliminar Cierre"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                        <div className={`transition-transform duration-200 text-slate-300 ${isExpanded ? 'rotate-180 text-blue-500' : 'rotate-0 group-hover:text-slate-400'}`}>
+                          <ChevronDown className="w-5 h-5" />
+                        </div>
                       </div>
                     </div>
 
