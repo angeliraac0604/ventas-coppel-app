@@ -21,6 +21,9 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
 
   // Date Filter State
   const [dateFilter, setDateFilter] = useState({ start: '', end: '' });
+  const [monthFilter, setMonthFilter] = useState('');
+  const currentMonthPrefix = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+  const hasActiveFilter = !!(dateFilter.start || dateFilter.end || monthFilter);
 
   // MANUAL DATE SELECTION FOR RETROACTIVE CLOSING
   const [manualDate, setManualDate] = useState('');
@@ -52,7 +55,10 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
     return closings.filter(close => {
       const closeDate = close.date;
 
-      // 1. If active filter, strict filtering
+      // 1. Month Filter (Strict)
+      if (monthFilter && !closeDate.startsWith(monthFilter)) return false;
+
+      // 2. Range Filter
       if (dateFilter.start || dateFilter.end) {
         if (dateFilter.start && closeDate < dateFilter.start) return false;
         if (dateFilter.end && closeDate > dateFilter.end) return false;
@@ -62,7 +68,7 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
       // NO default filter - Show everything (Request: todos los meses)
       return true;
     }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [closings, dateFilter]);
+  }, [closings, dateFilter, monthFilter]);
 
   // --- MONTHLY DATA CALCULATION (Based on Filtered Data) ---
   const monthlyData = useMemo(() => {
@@ -181,9 +187,8 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
 
   const clearFilters = () => {
     setDateFilter({ start: '', end: '' });
+    setMonthFilter('');
   };
-
-  const hasActiveFilter = dateFilter.start || dateFilter.end;
 
   return (
     <div className="space-y-8 pb-12">
@@ -319,9 +324,25 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
         </div>
 
         {/* Filters */}
-        <div className="flex flex-col md:flex-row items-center gap-3 w-full md:w-auto p-2 md:p-0">
-          <div className="flex items-center gap-2 text-sm w-full md:w-auto">
-            <Filter className="w-4 h-4 text-slate-400" />
+        <div className="flex flex-col md:flex-row items-center gap-4 w-full md:w-auto p-2 md:p-0">
+          <div className="flex flex-col md:flex-row items-center gap-3 w-full md:w-auto">
+            {/* Month Picker */}
+            <div className="flex items-center gap-2 w-full md:w-auto px-3 py-1 bg-blue-50/50 border border-blue-100 rounded-xl">
+              <span className="text-[10px] font-bold text-blue-500 uppercase">Mes:</span>
+              <input
+                type="month"
+                value={monthFilter}
+                onChange={(e) => {
+                  setMonthFilter(e.target.value);
+                  // Optional: clear day range when selecting month? usually helpful
+                  if (e.target.value) setDateFilter({ start: '', end: '' });
+                }}
+                className="bg-transparent text-xs font-bold text-slate-700 outline-none cursor-pointer"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 text-sm w-full md:w-auto">
+              <Filter className="w-4 h-4 text-slate-400" />
             <input
               type="date"
               value={dateFilter.start}
@@ -343,19 +364,22 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
           )}
         </div>
       </div>
+    </div>
 
       {/* MAIN LIST CONTENT */}
       <div className="space-y-4">
         {activeTab === 'daily' ? (
           /* --- DAILY VIEW --- */
           <>
-            {filteredClosings.length === 0 ? (
+            {filteredClosings.filter(c => hasActiveFilter || c.date.startsWith(currentMonthPrefix)).length === 0 ? (
               <div className="text-center py-16 bg-white rounded-3xl border border-dashed border-slate-200">
                 <Layers className="w-12 h-12 text-slate-200 mx-auto mb-3" />
                 <p className="text-slate-500 font-medium">No se encontraron cierres registrados.</p>
               </div>
             ) : (
-              filteredClosings.map((close) => {
+              filteredClosings
+                .filter(c => hasActiveFilter || c.date.startsWith(currentMonthPrefix))
+                .map((close) => {
                 const isExpanded = expandedId === close.id;
                 // Fix timezone issue by parsing parts manually
                 const [cYear, cMonth, cDay] = close.date.split('-').map(Number);

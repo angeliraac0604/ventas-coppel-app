@@ -93,12 +93,12 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role }) => {
   // Goals are implicitly applicable if fetched
 
   // Revenue Progress (Monthly)
-  const revenueProgress = Math.min((currentMonthNet / monthlyGoal) * 100, 100);
+  const revenueProgress = (currentMonthNet / monthlyGoal) * 100;
   const revenueRemaining = Math.max(monthlyGoal - currentMonthNet, 0);
   const isRevenueGoalMet = currentMonthNet >= monthlyGoal;
 
   // Devices Progress (Monthly)
-  const devicesProgress = Math.min((currentMonthCount / devicesGoal) * 100, 100);
+  const devicesProgress = (currentMonthCount / devicesGoal) * 100;
   const devicesRemaining = Math.max(devicesGoal - currentMonthCount, 0);
   const isDevicesGoalMet = currentMonthCount >= devicesGoal;
 
@@ -107,8 +107,8 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role }) => {
   // Radius 40 leaves 10 units of padding on each side for the stroke width.
   const radius = 40;
   const circumference = 2 * Math.PI * radius;
-  const strokeDashoffsetRevenue = circumference - (revenueProgress / 100) * circumference;
-  const strokeDashoffsetDevices = circumference - (devicesProgress / 100) * circumference;
+  const strokeDashoffsetRevenue = circumference - (Math.min(revenueProgress, 100) / 100) * circumference;
+  const strokeDashoffsetDevices = circumference - (Math.min(devicesProgress, 100) / 100) * circumference;
 
   // --- HANDLERS ---
   // --- HANDLERS ---
@@ -254,7 +254,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role }) => {
               )}
 
               <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden mt-3">
-                <div className={`h-full rounded-full transition-all duration-1000 ${isRevenueGoalMet ? 'bg-gradient-to-r from-green-400 to-emerald-500' : 'bg-gradient-to-r from-blue-500 to-indigo-500'}`} style={{ width: `${revenueProgress}%` }}></div>
+                <div className={`h-full rounded-full transition-all duration-1000 ${isRevenueGoalMet ? 'bg-gradient-to-r from-green-400 to-emerald-500' : 'bg-gradient-to-r from-blue-500 to-indigo-500'}`} style={{ width: `${Math.min(revenueProgress, 100)}%` }}></div>
               </div>
               <p className="text-xs text-slate-400 pt-1">{revenueRemaining > 0 ? `Faltan $${revenueRemaining.toLocaleString('es-MX', { maximumFractionDigits: 0 })}` : '¡Meta Superada!'}</p>
             </div>
@@ -307,7 +307,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role }) => {
               )}
 
               <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden mt-3">
-                <div className={`h-full rounded-full transition-all duration-1000 ${isDevicesGoalMet ? 'bg-gradient-to-r from-green-400 to-emerald-500' : 'bg-gradient-to-r from-emerald-500 to-cyan-500'}`} style={{ width: `${devicesProgress}%` }}></div>
+                <div className={`h-full rounded-full transition-all duration-1000 ${isDevicesGoalMet ? 'bg-gradient-to-r from-green-400 to-emerald-500' : 'bg-gradient-to-r from-emerald-500 to-cyan-500'}`} style={{ width: `${Math.min(devicesProgress, 100)}%` }}></div>
               </div>
               <p className="text-xs text-slate-400 pt-1">{devicesRemaining > 0 ? `Faltan ${devicesRemaining} equipos` : '¡Meta Superada!'}</p>
             </div>
