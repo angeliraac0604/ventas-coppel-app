@@ -1,3 +1,4 @@
+// Deployment Test Version: 2026-04-11 - New GitHub Migration OK
 import React, { useState, useEffect } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid, ComposedChart, Line } from 'recharts';
 import { Target, Edit2, Check, TrendingUp, Trophy, PartyPopper, DollarSign, Smartphone, Trash2, AlertTriangle, FileDown, Calendar, Calculator } from 'lucide-react';
