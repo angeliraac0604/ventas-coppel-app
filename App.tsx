@@ -1005,6 +1005,7 @@ create policy "Authenticated users can do everything on warranties" on public.wa
         <div className="flex items-center gap-3 font-bold text-lg">
           <img src="/pwa-icon.png" alt="Logo" className="w-8 h-8 object-contain drop-shadow-sm rounded-full" />
           <span>Ventas Telcel</span>
+          <span className="bg-red-600 text-[10px] px-1.5 py-0.5 rounded-md font-black uppercase text-white animate-pulse">Beta</span>
         </div>
         <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="text-slate-300 hover:text-white">
           {isMobileMenuOpen ? <X /> : <Menu />}
@@ -1023,6 +1024,7 @@ create policy "Authenticated users can do everything on warranties" on public.wa
             <div className="flex items-center gap-3 px-2">
               <img src="/pwa-icon.png" alt="Logo" className="w-12 h-12 object-contain drop-shadow-lg rounded-full" />
               <span className="text-xl font-bold text-white tracking-tight">Ventas Telcel</span>
+              <span className="bg-red-600 text-[10px] px-1.5 py-0.5 rounded-md font-black uppercase text-white animate-pulse">Beta</span>
             </div>
             <p className="text-slate-500 text-[10px] font-bold tracking-widest text-center mt-4">PANEL DE CONTROL</p>
           </div>
