@@ -1,5 +1,5 @@
 {
-  "name": "Copy 2 of Registro de Ventas Coppel",
+  "name": "Registro de Ventas Coppel",
   "description": "Aplicación para el registro, seguimiento y análisis de ventas de dispositivos móviles con soporte para lectura de tickets mediante IA.",
   "requestFramePermissions": [
     "camera",
