@@ -9,9 +9,10 @@ interface DailyClosingsProps {
   onCloseDay: (close: DailyClose) => void;
   onDeleteClosing?: (id: string) => void;
   role?: string;
+  storeName?: string;
 }
 
-const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseDay, onDeleteClosing, role }) => {
+const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseDay, onDeleteClosing, role, storeName }) => {
   const [activeTab, setActiveTab] = useState<'daily' | 'monthly'>('daily');
   const dateInputRef = useRef<HTMLInputElement>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -203,6 +204,11 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
               <h2 className="text-2xl font-bold flex items-center gap-2">
                 <CalendarCheck className="w-6 h-6 text-blue-400" />
                 Cierre del Día
+                {storeName && (
+                  <span className="text-xs bg-white/10 px-3 py-1 rounded-full border border-white/10 text-blue-300 ml-2 font-black uppercase tracking-tighter shadow-inner">
+                    {storeName}
+                  </span>
+                )}
               </h2>
               {/* Admin Date Selector Hidden Control */}
               {role === 'admin' && manualDate && manualDate !== todayStr && (
@@ -822,6 +828,11 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
                 <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
                   <Calendar className="w-5 h-5 text-blue-600" />
                   Resumen del Día
+                  {storeName && (
+                    <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-black uppercase tracking-tighter">
+                      {storeName}
+                    </span>
+                  )}
                 </h3>
                 <p className="text-sm text-slate-500 font-medium">
                   {new Date(selectedDaySummary.date).toLocaleDateString('es-MX', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}

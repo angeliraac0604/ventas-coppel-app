@@ -13,9 +13,11 @@ interface DashboardProps {
   sales: Sale[];
   closings: DailyClose[];
   role?: string;
+  storeId?: string;
+  storeName?: string;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role }) => {
+const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, storeName }) => {
 
 
   const handleFactoryReset = async () => {
@@ -57,82 +59,207 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role }) => {
 
   const now = new Date();
   const [selectedMonth, setSelectedMonth] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
+  const [monthlySales, setMonthlySales] = useState<Sale[]>([]);
+  const [isDataLoading, setIsDataLoading] = useState(false);
 
   useEffect(() => {
-    const fetchGoals = async () => {
+    const fetchDashboardData = async () => {
+      setIsDataLoading(true);
       try {
-        const { data, error } = await supabase
-          .from('monthly_goals')
-          .select('*')
-          .eq('month', selectedMonth)
-          .single();
+        const isGlobal = !storeId || storeId === 'all';
+        
+        // 1. Fetch Goals
+        let goalQuery = supabase.from('monthly_goals').select('*').eq('month', selectedMonth);
+        if (!isGlobal) goalQuery = goalQuery.eq('store_id', storeId);
+        const { data: goalData } = await goalQuery;
 
-        if (data) {
-          setMonthlyGoal(data.revenue_goal);
-          setDevicesGoal(data.devices_goal);
+        if (goalData && goalData.length > 0) {
+          if (isGlobal) {
+            setMonthlyGoal(goalData.reduce((sum, g) => sum + Number(g.revenue_goal || 0), 0));
+            setDevicesGoal(goalData.reduce((sum, g) => sum + Number(g.devices_goal || 0), 0));
+          } else {
+            setMonthlyGoal(Number(goalData[0].revenue_goal) || 100000);
+            setDevicesGoal(Number(goalData[0].devices_goal) || 50);
+          }
         } else {
-          // Defaults if no goal is set for this month yet
           setMonthlyGoal(100000);
           setDevicesGoal(50);
-          if (error && error.code !== 'PGRST116') {
-            console.error("Error fetching goals", error);
-          }
         }
+
+        // 2. Fetch Sales for specifically this month to bypass row limits
+        let salesQuery = supabase.from('sales').select('*')
+          .gte('date', `${selectedMonth}-01`)
+          .lte('date', `${selectedMonth}-31`)
+          .order('date', { ascending: false });
+        
+        if (!isGlobal) salesQuery = salesQuery.eq('store_id', storeId);
+        
+        const { data: salesData } = await salesQuery.range(0, 1999);
+        
+        if (salesData) {
+          const formatted = salesData.map((s: any) => ({
+            id: s.id,
+            invoiceNumber: s.invoice_number,
+            customerName: s.customer_name,
+            price: s.price,
+            brand: s.brand as Brand,
+            date: s.date,
+            storeId: s.store_id
+          }));
+          setMonthlySales(formatted);
+        } else {
+          setMonthlySales([]);
+        }
+
       } catch (err) {
-        console.error("Fetch goals error", err);
+        console.error("Dashboard fetch error", err);
+      } finally {
+        setIsDataLoading(false);
       }
     };
-    fetchGoals();
-  }, [selectedMonth]);
+    fetchDashboardData();
+  }, [selectedMonth, storeId]);
 
 
-  // --- CALCULATIONS ---
-  // 1. Historical Totals (Keep existing for bottom cards)
-  const totalRevenue = sales.reduce((sum, sale) => sum + sale.price, 0);
-  const totalSalesCount = sales.length; // Renamed to avoid confusion
+  const {
+    totalRevenue,
+    currentMonthSales,
+    currentMonthRevenue,
+    currentMonthCount,
+    currentMonthNet,
+    revenueProgress,
+    revenueRemaining,
+    isRevenueGoalMet,
+    devicesProgress,
+    devicesRemaining,
+    isDevicesGoalMet,
+    brandData,
+    brandDataToday,
+    timelineData,
+    todayCount,
+    todayStr
+  } = React.useMemo(() => {
+    // 🟠 REAL-TIME MERGE: Combine state from DB fetch with the realtime 'sales' prop
+    const combinedSales = Array.isArray(monthlySales) ? [...monthlySales] : [];
+    
+    if (sales && Array.isArray(sales)) {
+        sales.forEach(s => {
+            // Add if not already present in the monthly fetch
+            if (!combinedSales.find(ms => ms.id === s.id)) {
+                // Verify it belongs to currently selected month/store before adding to stats
+                const matchesMonth = s.date.startsWith(selectedMonth);
+                const matchesStore = !storeId || storeId === 'all' || s.storeId === storeId;
+                if (matchesMonth && matchesStore) {
+                    combinedSales.push(s);
+                }
+            }
+        });
+    }
 
-  // 2. Current Month Totals (For Goals)
-  const todayDate = new Date();
+    const safeSales = combinedSales;
+    const totalRev = safeSales.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
+    
+    const today = new Date();
+    const tStr = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+    
+    const monthSales = safeSales; // monthlySales is already month-filtered, and we added realtime ones above
+    const monthRev = monthSales.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
+    const monthNet = monthRev / 1.16;
+    const monthCount = monthSales.length;
 
-  const currentMonthSales = sales.filter(s => s.date.startsWith(selectedMonth));
-  const currentMonthRevenue = currentMonthSales.reduce((sum, sale) => sum + sale.price, 0);
-  const currentMonthCount = currentMonthSales.length;
-  const currentMonthNet = currentMonthRevenue / 1.16;
+    // Goals Safety
+    const safeGoal = (monthlyGoal && monthlyGoal > 0) ? monthlyGoal : 1;
+    const safeDevGoal = (devicesGoal && devicesGoal > 0) ? devicesGoal : 1;
 
-  // Goals are implicitly applicable if fetched
+    const revProgress = isNaN(monthNet) ? 0 : (monthNet / safeGoal) * 100;
+    const devProgress = (monthCount / safeDevGoal) * 100;
 
-  // Revenue Progress (Monthly)
-  const revenueProgress = (currentMonthNet / monthlyGoal) * 100;
-  const revenueRemaining = Math.max(monthlyGoal - currentMonthNet, 0);
-  const isRevenueGoalMet = currentMonthNet >= monthlyGoal;
+    // Brand Mapping Monthly
+    const bData = Object.values(Brand).map(brand => {
+      const bSales = monthSales.filter(s => s.brand === brand);
+      const rev = bSales.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
+      const conf = BRAND_CONFIGS[brand] || { label: 'Desconocido', hex: '#ccc' };
+      return {
+        name: conf.label,
+        value: bSales.length,
+        revenue: rev,
+        color: conf.hex,
+        logoUrl: (conf as any).logoUrl
+      };
+    }).filter(item => item.value > 0);
 
-  // Devices Progress (Monthly)
-  const devicesProgress = (currentMonthCount / devicesGoal) * 100;
-  const devicesRemaining = Math.max(devicesGoal - currentMonthCount, 0);
-  const isDevicesGoalMet = currentMonthCount >= devicesGoal;
+    // Brand Mapping Today
+    const todaySales = safeSales.filter(s => s.date === tStr);
+    const bDataToday = Object.values(Brand).map(brand => {
+      const bSales = todaySales.filter(s => s.brand === brand);
+      const conf = BRAND_CONFIGS[brand] || { label: 'Desconocido', hex: '#ccc' };
+      return {
+        name: conf.label,
+        value: bSales.length,
+        color: conf.hex,
+        logoUrl: (conf as any).logoUrl
+      };
+    }).filter(item => item.value > 0);
 
-  // Circular Chart Helpers
-  // We use a viewBox of 0 0 100 100. Center is 50,50.
-  // Radius 40 leaves 10 units of padding on each side for the stroke width.
+    // Timeline 7 days
+    const tLineData = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(today);
+      d.setDate(d.getDate() - (6 - i));
+      const dateStr = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      const dailySales = safeSales.filter(s => s.date === dateStr);
+      const dRev = dailySales.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
+      return {
+        date: dateStr,
+        amount: dRev,
+        netAmount: dRev / 1.16,
+        count: dailySales.length
+      };
+    });
+
+    return {
+      totalRevenue: totalRev,
+      currentMonthSales: monthSales,
+      currentMonthRevenue: monthRev,
+      currentMonthCount: monthCount,
+      currentMonthNet: monthNet,
+      revenueProgress: revProgress,
+      revenueRemaining: Math.max(monthlyGoal - (isNaN(monthNet) ? 0 : monthNet), 0),
+      isRevenueGoalMet: monthNet >= monthlyGoal && monthlyGoal > 0,
+      devicesProgress: devProgress,
+      devicesRemaining: Math.max(devicesGoal - monthCount, 0),
+      isDevicesGoalMet: monthCount >= devicesGoal && devicesGoal > 0,
+      brandData: bData,
+      brandDataToday: bDataToday,
+      timelineData: tLineData,
+      todayCount: todaySales.length,
+      todayStr: tStr
+    };
+  }, [monthlySales, monthlyGoal, devicesGoal, sales, selectedMonth, storeId]);
+
   const radius = 40;
-  const circumference = 2 * Math.PI * radius;
-  const strokeDashoffsetRevenue = circumference - (Math.min(revenueProgress, 100) / 100) * circumference;
-  const strokeDashoffsetDevices = circumference - (Math.min(devicesProgress, 100) / 100) * circumference;
+  const circumference = 2 * Math.PI * radius; 
+  const safeRevProgress = isFinite(revenueProgress) ? Math.min(revenueProgress, 100) : 0;
+  const safeDevProgress = isFinite(devicesProgress) ? Math.min(devicesProgress, 100) : 0;
+  const strokeDashoffsetRevenue = circumference - (safeRevProgress / 100) * circumference;
+  const strokeDashoffsetDevices = circumference - (safeDevProgress / 100) * circumference;
 
-  // --- HANDLERS ---
   // --- HANDLERS ---
   const handleSaveGoal = async () => {
     const val = parseFloat(tempGoal);
     if (!isNaN(val) && val > 0) {
+      if (!storeId || storeId === 'all') {
+        alert("Selecciona una tienda específica para editar sus metas.");
+        return;
+      }
       setMonthlyGoal(val);
       setIsEditingGoal(false);
 
-      // Save to Supabase
       const { error } = await supabase.from('monthly_goals').upsert({
         month: selectedMonth,
         revenue_goal: val,
-        devices_goal: devicesGoal // Keep existing device goal
-      }, { onConflict: 'month' });
+        devices_goal: devicesGoal,
+        store_id: storeId
+      }, { onConflict: 'month,store_id' });
 
       if (error) alert("Error al guardar meta: " + error.message);
     }
@@ -141,58 +268,23 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role }) => {
   const handleSaveDevicesGoal = async () => {
     const val = parseInt(tempDevicesGoal);
     if (!isNaN(val) && val > 0) {
+      if (!storeId || storeId === 'all') {
+        alert("Selecciona una tienda específica para editar sus metas.");
+        return;
+      }
       setDevicesGoal(val);
       setIsEditingDevices(false);
 
-      // Save to Supabase
       const { error } = await supabase.from('monthly_goals').upsert({
         month: selectedMonth,
-        revenue_goal: monthlyGoal, // Keep existing revenue goal
-        devices_goal: val
-      }, { onConflict: 'month' });
+        revenue_goal: monthlyGoal,
+        devices_goal: val,
+        store_id: storeId
+      }, { onConflict: 'month,store_id' });
 
       if (error) alert("Error al guardar meta: " + error.message);
     }
   };
-
-  // --- CHARTS DATA ---
-  const brandData = Object.values(Brand).map(brand => {
-    const brandSales = sales.filter(s => s.brand === brand && s.date.startsWith(selectedMonth));
-    const revenue = brandSales.reduce((sum, s) => sum + s.price, 0);
-    return {
-      name: BRAND_CONFIGS[brand].label,
-      value: brandSales.length,
-      revenue: revenue,
-      color: BRAND_CONFIGS[brand].hex,
-      logoUrl: BRAND_CONFIGS[brand].logoUrl
-    };
-  }).filter(item => item.value > 0);
-
-  const todayStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
-  const todayCount = sales.filter(s => s.date === todayStr).length;
-
-  const brandDataToday = Object.values(Brand).map(brand => {
-    const bSales = sales.filter(s => s.brand === brand && s.date === todayStr);
-    return {
-      name: BRAND_CONFIGS[brand].label,
-      value: bSales.length,
-      color: BRAND_CONFIGS[brand].hex,
-      logoUrl: BRAND_CONFIGS[brand].logoUrl
-    };
-  }).filter(item => item.value > 0);
-
-  const timelineData = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(now);
-    d.setDate(d.getDate() - (6 - i));
-    const dateStr = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-    const dailySales = sales.filter(s => s.date === dateStr);
-    return {
-      date: dateStr,
-      amount: dailySales.reduce((sum, s) => sum + s.price, 0),
-      netAmount: dailySales.reduce((sum, s) => sum + s.price, 0) / 1.16,
-      count: dailySales.length
-    };
-  });
 
   const handleDownloadReport = async () => {
     const reportBtn = document.getElementById('report-download-btn');
@@ -355,6 +447,20 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role }) => {
 
   return (
     <div className="space-y-6">
+      {/* PERSONALIZED WELCOME BANNER */}
+      <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col md:flex-row items-center justify-between gap-4 overflow-hidden relative group transition-all hover:bg-slate-50">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-150 duration-700"></div>
+        <div className="relative z-10 flex items-center gap-5">
+           <div className="p-4 bg-gradient-to-br from-blue-600 to-blue-700 rounded-2xl shadow-lg shadow-blue-200">
+             <Smartphone className="w-8 h-8 text-white" />
+           </div>
+           <div>
+             <h2 className="text-2xl font-black text-slate-800 tracking-tight">Bienvenido a {storeName || 'Tu Tienda'}</h2>
+             <p className="text-slate-500 font-medium text-sm">Gestiona ventas, metas y revisa el rendimiento operativo.</p>
+           </div>
+        </div>
+      </div>
+
       {role === 'admin' && (
         <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
           <div className="flex items-center gap-3">
@@ -453,9 +559,9 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role }) => {
             <div className="relative w-20 h-20 shrink-0">
               <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
                 <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" className="text-slate-800" />
-                <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" strokeDasharray={circumference} strokeDashoffset={strokeDashoffsetRevenue} strokeLinecap="round" className={`transition-all duration-1000 ${isRevenueGoalMet ? 'text-green-500' : 'text-blue-500'}`} />
+                <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" strokeDasharray={circumference} strokeDashoffset={isNaN(strokeDashoffsetRevenue) ? circumference : strokeDashoffsetRevenue} strokeLinecap="round" className={`transition-all duration-1000 ${isRevenueGoalMet ? 'text-green-500' : 'text-blue-500'}`} />
               </svg>
-              <div className="absolute inset-0 flex items-center justify-center text-xs font-bold">{revenueProgress.toFixed(0)}%</div>
+              <div className="absolute inset-0 flex items-center justify-center text-xs font-bold">{isFinite(revenueProgress) ? revenueProgress.toFixed(0) : 0}%</div>
             </div>
           </div>
         </div>
@@ -506,9 +612,9 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role }) => {
             <div className="relative w-20 h-20 shrink-0">
               <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
                 <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" className="text-slate-800" />
-                <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" strokeDasharray={circumference} strokeDashoffset={strokeDashoffsetDevices} strokeLinecap="round" className={`transition-all duration-1000 ${isDevicesGoalMet ? 'text-green-500' : 'text-emerald-500'}`} />
+                <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" strokeDasharray={circumference} strokeDashoffset={isNaN(strokeDashoffsetDevices) ? circumference : strokeDashoffsetDevices} strokeLinecap="round" className={`transition-all duration-1000 ${isDevicesGoalMet ? 'text-green-500' : 'text-emerald-500'}`} />
               </svg>
-              <div className="absolute inset-0 flex items-center justify-center text-xs font-bold">{devicesProgress.toFixed(0)}%</div>
+              <div className="absolute inset-0 flex items-center justify-center text-xs font-bold">{isFinite(devicesProgress) ? devicesProgress.toFixed(0) : 0}%</div>
             </div>
           </div>
         </div>
@@ -664,7 +770,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role }) => {
             {todayCount > 0 ? (
               <div className="flex flex-col sm:flex-row flex-1 gap-8 items-center relative z-10 bg-white">
                 <div className="w-full sm:w-1/3 h-[200px] shrink-0">
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" key={`today-chart-${storeId}-${selectedMonth}`}>
                     <PieChart>
                       <Pie
                         data={brandDataToday}
@@ -683,7 +789,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role }) => {
                           const y = cy + radius * Math.sin(-midAngle * RADIAN);
                           return (
                             <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight="bold">
-                              {brandDataToday[index].value}
+                              {brandDataToday[index]?.value || 0}
                             </text>
                           );
                         }}
@@ -742,7 +848,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role }) => {
 
             <div className="flex flex-col sm:flex-row flex-1 gap-6 items-center">
               <div className="w-full sm:w-1/2 h-[200px] shrink-0">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" key={`monthly-dist-${storeId}-${selectedMonth}`}>
                   <PieChart>
                     <Pie
                       data={brandData}
@@ -761,7 +867,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role }) => {
                         const y = cy + radius * Math.sin(-midAngle * RADIAN);
                         return (
                           <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight="bold">
-                            {brandData[index].value}
+                            {brandData[index]?.value || 0}
                           </text>
                         );
                       }}
@@ -808,7 +914,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role }) => {
 
             <div className="flex flex-col sm:flex-row flex-1 gap-6 items-center">
               <div className="w-full sm:w-1/2 h-[200px] shrink-0">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" key={`monthly-revenue-${storeId}-${selectedMonth}`}>
                   <PieChart>
                     <Pie
                       data={brandData}
@@ -827,7 +933,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role }) => {
                         const y = cy + radius * Math.sin(-midAngle * RADIAN);
                         return (
                           <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" fontSize={10} fontWeight="bold">
-                            {brandData[index].value}
+                            {brandData[index]?.value || 0}
                           </text>
                         );
                       }}
@@ -869,7 +975,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role }) => {
         {/* 4. Timeline Bar Chart (Restored) */}
         <div id="revenue-chart-card" className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 min-h-[400px] xl:col-span-2">
           <h3 className="text-base sm:text-lg font-bold text-slate-800 mb-6">Ingresos (Últimos 7 días)</h3>
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer width="100%" height={300} key={`timeline-chart-${storeId}-${selectedMonth}`}>
             <ComposedChart data={timelineData}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
               <XAxis

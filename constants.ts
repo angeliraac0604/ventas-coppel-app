@@ -6,7 +6,7 @@ export const BRAND_CONFIGS: Record<Brand, BrandConfig> = {
   [Brand.OPPO]: { label: 'Oppo', colorClass: 'bg-[#009B77]', hex: '#009B77', logoUrl: 'https://cdn.simpleicons.org/oppo/009B77' },
   [Brand.ZTE]: { label: 'ZTE', colorClass: 'bg-[#2C8CDB]', hex: '#2C8CDB', logoUrl: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgNTAiPjx0ZXh0IHk9IjQwIiBmb250LWZhbWlseT0iQXJpYWwsIHNhbnMtc2VyaWYiIGZvbnQtd2VpZ2h0PSI5MDAiIGZvbnQtc2l6ZT0iNDAiIGZpbGw9IiMyQzhDREIiPlpURTwvdGV4dD48L3N2Zz4=' },
   [Brand.MOTOROLA]: { label: 'Motorola', colorClass: 'bg-[#5C6BC0]', hex: '#5C6BC0', logoUrl: 'https://cdn.simpleicons.org/motorola/5C6BC0' },
-  [Brand.REALME]: { label: 'Realme', colorClass: 'bg-[#FFC700] text-black', hex: '#FFC700', logoUrl: 'https://cdn.simpleicons.org/realme/FFC700' },
+  [Brand.REALME]: { label: 'Realme', colorClass: 'bg-[#FFC700] text-black', hex: '#FFC700', logoUrl: 'https://cdn.simpleicons.org/realme/000000' },
   [Brand.VIVO]: { label: 'Vivo', colorClass: 'bg-[#415FFF]', hex: '#415FFF', logoUrl: 'https://cdn.simpleicons.org/vivo/415FFF' },
   [Brand.XIAOMI]: { label: 'Xiaomi', colorClass: 'bg-[#FF6900]', hex: '#FF6900', logoUrl: 'https://cdn.simpleicons.org/xiaomi/FF6900' },
   [Brand.HONOR]: { label: 'Honor', colorClass: 'bg-[#00E3E3] text-black', hex: '#00E3E3', logoUrl: 'https://cdn.simpleicons.org/honor/00E3E3' },

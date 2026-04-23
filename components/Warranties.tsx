@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { Warranty, Brand, BrandConfig } from '../types';
 import { uploadImageToDriveScript } from '../services/googleAppsScriptService';
+import { smartImageUpload } from '../services/storageService';
 
 interface WarrantiesProps {
     warranties: Warranty[];
@@ -135,24 +136,26 @@ const Warranties: React.FC<WarrantiesProps> = ({
         try {
             let finalImageUrl = formData.ticketImage;
 
-            // Upload to Drive if it looks like base64
+            // 📸 NEW ROBUST UPLOAD LOGIC (Supabase + Background Drive Sync)
             if (formData.ticketImage && formData.ticketImage.startsWith('data:')) {
-                const filename = `Garantia_${formData.model}_${formData.receptionDate}`;
                 try {
-                    // We reuse the service. assuming date parameter is meant for folder structure if needed
-                    const url = await uploadImageToDriveScript(formData.ticketImage, filename, formData.receptionDate, 'warranties');
-                    finalImageUrl = url;
+                    const storeName = stores?.find((s: any) => s.id === (userProfile?.storeId))?.name || 'Sucursal Desconocida';
+                    const filename = `Garantia_${formData.model}_${formData.receptionDate}`;
+                    
+                    // Month Formatting: Only Name (e.g. "Abril")
+                    const [y, m, d] = formData.receptionDate.split('-');
+                    const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+                    const monthIndex = parseInt(m) - 1;
+                    const formattedMonth = monthNames[monthIndex];
+                    
+                    // Set global hints for background sync
+                    (window as any)._activeStoreName = storeName;
+                    (window as any)._customMonthName = formattedMonth;
+
+                    finalImageUrl = await smartImageUpload(formData.ticketImage, filename, formData.receptionDate, storeName, 'warranties');
                 } catch (error) {
                     console.error("Upload failed", error);
-                    alert("Error al subir imagen a Drive. Se guardará sin imagen remota.");
-                    // Proceed even if upload fails now? Or keep restricting?
-                    // User requested making it optional, so if upload fails, we can either stop or proceed without image.
-                    // Given previous strictness, let's keep the error behavior for *attempted* upload, but allow *no upload* if empty.
-                    // If we are here, image was provided. If it fails, maybe we should still fail or ask user.
-                    // Let's stick to fail safely:
-                    alert("No se pudo subir la imagen. Intenta de nuevo.");
-                    setIsSubmitting(false);
-                    return;
+                    alert("Error al guardar la imagen. La garantía se guardará sin ella.");
                 }
             }
 
