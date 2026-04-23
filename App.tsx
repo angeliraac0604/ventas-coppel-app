@@ -1,15 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { Smartphone, LayoutList, BarChart3, Menu, X, CalendarCheck, Plus, LogOut, User as UserIcon, ChevronRight, Loader2, RefreshCcw, Database, AlertTriangle, Copy, Check, Shield, ShieldAlert, Wand2 } from 'lucide-react';
+import { Smartphone, LayoutList, BarChart3, Menu, X, CalendarCheck, Plus, LogOut, User as UserIcon, ChevronRight, Loader2, RefreshCcw, Database, AlertTriangle, Copy, Check, Shield, ShieldAlert, Wand2, Clock, Building, TrendingUp } from 'lucide-react';
 import SalesForm from './components/SalesForm';
 import SalesList from './components/SalesList';
 import Dashboard from './components/Dashboard';
 import DailyClosings from './components/DailyClosings';
 import Warranties from './components/Warranties';
+import AttendanceManager from './components/AttendanceManager';
+import AdminPanel from './components/AdminPanel';
+import SupervisionPanel from './components/SupervisionPanel';
+import AttendanceReport from './components/AttendanceReport';
 import AuthForm from './components/AuthForm';
-import { Sale, DailyClose, Brand, UserProfile, Warranty } from './types';
+import CompleteProfile from './components/CompleteProfile';
+import { Sale, DailyClose, Brand, UserProfile, Warranty, Store } from './types';
 import { BRAND_CONFIGS } from './constants';
 import { supabase } from './services/supabaseClient';
 import { deleteImageFromDriveScript } from './services/googleAppsScriptService';
+import { smartImageUpload } from './services/storageService';
 
 const App: React.FC = () => {
   // Auth State
@@ -18,19 +24,39 @@ const App: React.FC = () => {
   const [authLoading, setAuthLoading] = useState(true);
 
   // App State
-  // App State
-  const [currentView, setCurrentView] = useState<'form' | 'list' | 'dashboard' | 'closings' | 'warranties'>('list');
+  const [currentView, setCurrentView] = useState<'form' | 'list' | 'dashboard' | 'closings' | 'warranties' | 'attendance' | 'attendance-report' | 'admin' | 'supervision'>('list');
+  const [stores, setStores] = useState<Store[]>([]);
+  const [selectedStoreId, setSelectedStoreId] = useState<string>(() => {
+    try {
+      return localStorage.getItem('app_selected_store_id') || 'all';
+    } catch {
+      return 'all';
+    }
+  });
 
   useEffect(() => {
-    localStorage.setItem('app_current_view', currentView);
+    // Persistence of view
+    try {
+      localStorage.setItem('app_current_view', currentView);
+    } catch (e) {
+      console.warn("Storage access denied:", e);
+    }
 
     // --- HISTORY API INTEGRATION (Back Gesture) ---
-    // Update history when view changes programmatically
     const currentState = window.history.state;
     if (currentState?.view !== currentView) {
       window.history.pushState({ view: currentView }, '');
     }
   }, [currentView]);
+
+  // Persistent Store Selection
+  useEffect(() => {
+    try {
+      localStorage.setItem('app_selected_store_id', selectedStoreId);
+    } catch (e) {
+      console.warn("Storage access denied:", e);
+    }
+  }, [selectedStoreId]);
 
   // Listen for PopState (Back Button)
   useEffect(() => {
@@ -68,6 +94,13 @@ const App: React.FC = () => {
   // SQL Script Update: Adds Profiles table and stricter policies
   const REQUIRED_SQL = `
 -- 1. ESTRUCTURA BÁSICA
+create table if not exists public.stores (
+  id uuid default gen_random_uuid() primary key,
+  name text not null unique,
+  location text,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
 create table if not exists public.sales (
   id uuid default gen_random_uuid() primary key,
   invoice_number text not null,
@@ -77,39 +110,62 @@ create table if not exists public.sales (
   date text not null,
   ticket_image text,
   created_by uuid references auth.users(id),
+  store_id uuid references public.stores(id),
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
 create table if not exists public.daily_closings (
-  id text primary key,
-  date text not null unique,
+  id uuid default gen_random_uuid() primary key,
+  date text not null,
   total_sales numeric not null,
   total_revenue numeric not null,
   closed_at text not null,
   top_brand text not null,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+  store_id uuid references public.stores(id),
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  unique(date, store_id)
 );
 
--- 2. SISTEMA DE USUARIOS Y ROLES
 create table if not exists public.profiles (
   id uuid references auth.users on delete cascade not null primary key,
   email text,
-  role text default 'seller', -- 'admin' or 'seller'
+  role text default 'seller', -- 'admin', 'supervisor', 'seller', 'viewer'
   full_name text,
+  store_id uuid references public.stores(id),
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- Trigger para crear perfil automáticamente al registrarse
+create table if not exists public.attendance (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references auth.users(id) not null,
+  store_id uuid references public.stores(id),
+  type text check (type in ('entry', 'lunch_start', 'lunch_end', 'exit')),
+  timestamp timestamp with time zone default timezone('utc'::text, now()) not null,
+  date text not null
+);
+
+-- 2. SISTEMA DE USUARIOS Y ROLES (TRIGGER)
 create or replace function public.handle_new_user()
 returns trigger as $$
+declare
+  assigned_store_id uuid;
+  assigned_role text;
 begin
-  insert into public.profiles (id, email, role, full_name)
-  values (new.id, new.email, 'seller', new.raw_user_meta_data->>'full_name');
+  assigned_store_id := (new.raw_user_meta_data->>'store_id')::uuid;
+  assigned_role := coalesce(new.raw_user_meta_data->>'role', 'seller');
+
+  insert into public.profiles (id, email, role, full_name, store_id)
+  values (
+    new.id, 
+    new.email, 
+    assigned_role, 
+    coalesce(new.raw_user_meta_data->>'full_name', new.raw_user_meta_data->>'name'),
+    assigned_store_id
+  );
   return new;
 end;
 $$ language plpgsql security definer;
 
--- Eliminar trigger si existe para recrearlo (evita duplicados en re-runs)
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
@@ -119,68 +175,38 @@ create trigger on_auth_user_created
 alter table public.sales enable row level security;
 alter table public.daily_closings enable row level security;
 alter table public.profiles enable row level security;
+alter table public.attendance enable row level security;
+alter table public.stores enable row level security;
 
--- Limpiar políticas viejas (para evitar conflictos)
-drop policy if exists "Public read sales" on public.sales;
-drop policy if exists "Public insert sales" on public.sales;
-drop policy if exists "Public delete sales" on public.sales;
-drop policy if exists "Admins can delete sales" on public.sales;
-drop policy if exists "Public read closings" on public.daily_closings;
-
-drop policy if exists "Authenticated users can view sales" on public.sales;
-drop policy if exists "Authenticated users can insert sales" on public.sales;
-drop policy if exists "Users can delete own sales" on public.sales;
-
-drop policy if exists "Authenticated users can view closings" on public.daily_closings;
-drop policy if exists "Authenticated users can insert closings" on public.daily_closings;
-drop policy if exists "Authenticated users can update closings" on public.daily_closings;
-
--- Nuevas Políticas de Ventas
-create policy "Authenticated users can view sales" on public.sales for select to authenticated using (true);
-create policy "Authenticated users can insert sales" on public.sales for insert to authenticated with check (auth.uid() = created_by);
-
--- Permitir borrar si eres el creador O si eres admin
-create policy "Users can delete own sales" on public.sales for delete to authenticated using (
-  auth.uid() = created_by OR 
-  public.is_admin()
-);
-
--- UPDATE FOR VIEWER ROLE (Run this if you have Viewers)
--- 1. Create Policy to restrict Insert/Update for Viewers if needed (Optional, UI hides it)
--- To be strict: You would update the "insert" policies to exclude role = 'viewer'.
-
--- Permitir editar si eres el creador O si eres admin (NECESARIO PARA NORMALIZAR FACTURAS)
-drop policy if exists "Authenticated users can update sales" on public.sales;
-create policy "Authenticated users can update sales" on public.sales for update to authenticated using (
-  auth.uid() = created_by OR
-  public.is_admin()
-);
-
--- Nuevas Políticas de Cierres
-create policy "Authenticated users can view closings" on public.daily_closings for select to authenticated using (true);
-create policy "Authenticated users can insert closings" on public.daily_closings for insert to authenticated with check (true);
-create policy "Authenticated users can update closings" on public.daily_closings for update to authenticated using (true);
-create policy "Authenticated users can delete closings" on public.daily_closings for delete to authenticated using (true);
-
--- Políticas de Perfiles
-drop policy if exists "Users can view own profile" on public.profiles;
-drop policy if exists "Admins can view all profiles" on public.profiles;
-
-create policy "Users can view own profile" on public.profiles for select to authenticated using (auth.uid() = id);
--- Helper para evitar recursión infinita en políticas
+-- Bloque de Funciones de Ayuda para Políticas
 create or replace function public.is_admin()
 returns boolean as $$
-begin
-  return exists (
-    select 1 from public.profiles
-    where id = auth.uid() and role = 'admin'
-  );
-end;
-$$ language plpgsql security definer;
+  select exists (select 1 from public.profiles where id = auth.uid() and role = 'admin');
+$$ language sql security definer;
 
-create policy "Admins can view all profiles" on public.profiles for select to authenticated using (
-  public.is_admin()
+create or replace function public.get_user_store_id()
+returns uuid as $$
+  select store_id from public.profiles where id = auth.uid();
+$$ language sql security definer;
+
+-- Políticas de Ventas
+create policy "Admins see all sales" on public.sales for select to authenticated using (public.is_admin());
+create policy "Sellers see their store sales" on public.sales for select to authenticated using (store_id = public.get_user_store_id());
+create policy "Sellers insert their store sales" on public.sales for insert to authenticated with check (
+  public.is_admin() or (store_id = public.get_user_store_id() and auth.uid() = created_by)
 );
+
+-- Políticas de Asistencia
+create policy "Admins see all attendance" on public.attendance for select to authenticated using (public.is_admin());
+create policy "Users see own attendance" on public.attendance for select to authenticated using (user_id = auth.uid());
+create policy "Users insert own attendance" on public.attendance for insert to authenticated with check (user_id = auth.uid());
+
+-- Políticas de Perfiles
+create policy "Users see own profile" on public.profiles for select to authenticated using (id = auth.uid());
+create policy "Admins see all profiles" on public.profiles for select to authenticated using (public.is_admin());
+
+-- Políticas de Tiendas
+create policy "All authenticated users see stores" on public.stores for select to authenticated using (true);
 
 -- 4. ALMACENAMIENTO (STORAGE)
 -- Insertar bucket si no existe
@@ -188,63 +214,51 @@ insert into storage.buckets (id, name, public)
 values ('receipts', 'receipts', true)
 on conflict (id) do nothing;
 
--- Políticas de Storage (Eliminar anteriores para evitar errores)
+-- Políticas de Storage
 drop policy if exists "Public Access Receipts" on storage.objects;
 drop policy if exists "Auth Upload Receipts" on storage.objects;
 
--- Permitir ver imágenes a cualquiera (para que se vean en la app)
-create policy "Public Access Receipts" on storage.objects for select
-using ( bucket_id = 'receipts' );
-
--- Permitir subir imágenes solo a usuarios autenticados
-create policy "Auth Upload Receipts" on storage.objects for insert
-with check ( bucket_id = 'receipts' and auth.role() = 'authenticated' );
+create policy "Public Access Receipts" on storage.objects for select using ( bucket_id = 'receipts' );
+create policy "Auth Upload Receipts" on storage.objects for insert with check ( bucket_id = 'receipts' and auth.role() = 'authenticated' );
 
 -- 5. METAS MENSUALES
 create table if not exists public.monthly_goals (
-  month text primary key,
+  month text not null,
   revenue_goal numeric not null,
   devices_goal numeric not null,
-  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+  store_id uuid references public.stores(id),
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  primary key (month, store_id)
 );
 
 alter table public.monthly_goals enable row level security;
-
--- Todos pueden ver las metas
-drop policy if exists "Authenticated users can view goals" on public.monthly_goals;
-create policy "Authenticated users can view goals" on public.monthly_goals for select to authenticated using (true);
-
--- Solo admins pueden modificar (aunque por simplicidad técnica permitimos auth update, idealmente restringido)
--- Usamos is_admin() si está ya definido, si no, fallback a authenticated para permitir upsert si la función falla o no existe aun.
-drop policy if exists "Authenticated users can upsert goals" on public.monthly_goals;
-create policy "Authenticated users can upsert goals" on public.monthly_goals for all to authenticated using (true) with check (true);
-create policy "Authenticated users can upsert goals" on public.monthly_goals for all to authenticated using (true) with check (true);
+create policy "Admins see all goals" on public.monthly_goals for select to authenticated using (public.is_admin());
+create policy "Sellers see store goals" on public.monthly_goals for select to authenticated using (store_id = public.get_user_store_id());
+create policy "Admins upsert goals" on public.monthly_goals for all to authenticated using (public.is_admin()) with check (public.is_admin());
 
 -- 6. GARANTÍAS
 create table if not exists public.warranties (
   id uuid default gen_random_uuid() primary key,
   reception_date text not null,
-  invoice_number text not null, -- Nuevo
+  invoice_number text not null,
   brand text not null,
   model text not null,
   imei text,
   issue_description text not null,
-  accessories text, -- Nuevo
+  accessories text,
   physical_condition text not null,
   contact_number text not null,
   ticket_image text,
-  possible_entry_date text, -- Nuevo
-  status text not null default 'received', -- received, sent_to_provider, in_store, delivered
+  possible_entry_date text,
+  status text not null default 'received',
+  store_id uuid references public.stores(id),
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
 alter table public.warranties enable row level security;
-
--- Policies for Warranties
-drop policy if exists "Admins can do everything on warranties" on public.warranties;
--- Allow admins full access, and perhaps sellers read/write access too if needed later. 
--- For now, to be safe and functional:
-create policy "Authenticated users can do everything on warranties" on public.warranties for all to authenticated using (true) with check (true);
+create policy "Admins see all warranties" on public.warranties for select to authenticated using (public.is_admin());
+create policy "Sellers see store warranties" on public.warranties for select to authenticated using (store_id = public.get_user_store_id());
+create policy "Users insert store warranties" on public.warranties for insert to authenticated with check (store_id = public.get_user_store_id());
 `;
 
   // --- AUTH CHECK ---
@@ -291,12 +305,53 @@ create policy "Authenticated users can do everything on warranties" on public.wa
         .from('profiles')
         .select('*')
         .eq('id', userId)
-        .single();
+        .maybeSingle();
 
       if (data) {
-        setUserProfile(data as UserProfile);
-      } else if (error && error.code === 'PGRST116') {
-        console.warn("Profile not found, waiting for trigger or manual creation");
+        setUserProfile({
+          id: data.id,
+          email: data.email,
+          role: data.role as UserRole,
+          fullName: data.full_name,
+          storeId: data.store_id
+        });
+        return;
+      }
+
+      // SI NO EXISTE EL PERFIL: Intentamos obtenerlo de Invitaciones Pendientes
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        // Buscamos si hay una invitación pendiente para este correo
+        const { data: invite } = await supabase
+          .from('pending_invitations')
+          .select('*')
+          .eq('email', user.email)
+          .maybeSingle();
+
+        const metadata = user.user_metadata || {};
+        const newProfile = {
+          id: user.id,
+          email: user.email,
+          role: invite?.role || metadata.role || 'seller',
+          store_id: invite?.store_id || metadata.store_id || null
+        };
+
+        const { error: insertError } = await supabase.from('profiles').insert([newProfile]);
+        
+        if (!insertError) {
+          // Si pudimos crear el perfil, borramos la invitación pendiente
+          if (invite) {
+            await supabase.from('pending_invitations').delete().eq('email', user.email);
+          }
+
+          setUserProfile({
+            id: newProfile.id,
+            email: newProfile.email || '',
+            role: newProfile.role as UserRole,
+            fullName: null,
+            storeId: newProfile.store_id
+          });
+        }
       }
     } catch (error) {
       console.error("Error fetching profile:", error);
@@ -305,7 +360,9 @@ create policy "Authenticated users can do everything on warranties" on public.wa
 
   const handleLogout = async () => {
     // Limpiamos el rastreador de fecha al salir manualmente
-    localStorage.removeItem('sales_app_session_date');
+    try {
+      localStorage.removeItem('sales_app_session_date');
+    } catch (e) {}
     await supabase.auth.signOut();
   };
 
@@ -319,11 +376,16 @@ create policy "Authenticated users can do everything on warranties" on public.wa
       const now = new Date();
       // Obtenemos la fecha actual como string único (ej: "Mon Oct 25 2023")
       const currentDateStr = now.toDateString();
-      const storedDate = localStorage.getItem(SESSION_DATE_KEY);
+      let storedDate = null;
+      try {
+        storedDate = localStorage.getItem(SESSION_DATE_KEY);
+      } catch (e) {}
 
       if (!storedDate) {
         // Si no hay fecha guardada (primer login del día o recarga), guardamos la actual
-        localStorage.setItem(SESSION_DATE_KEY, currentDateStr);
+        try {
+          localStorage.setItem(SESSION_DATE_KEY, currentDateStr);
+        } catch (e) {}
       } else if (storedDate !== currentDateStr) {
         // Si la fecha guardada es diferente a la actual, significa que cambió el día (medianoche)
         // Forzamos el cierre de sesión
@@ -372,14 +434,14 @@ create policy "Authenticated users can do everything on warranties" on public.wa
 
       if (missingDates.length === 0) return;
 
-      console.log(`🔍 Se detectaron ${missingDates.length} días sin corte. Iniciando cierre automático...`);
+      console.log(`[Cierre Automático] Se detectaron ${missingDates.length} días sin corte. Iniciando...`);
 
       for (const date of missingDates) {
         if (processingDatesRef.current.has(date)) continue;
         processingDatesRef.current.add(date);
 
         try {
-          const daySales = sales.filter(s => s.date === date);
+          const daySales = sales.filter(s => s.date === date && s.storeId === userProfile?.storeId);
           if (daySales.length === 0) {
             processingDatesRef.current.delete(date);
             continue;
@@ -393,17 +455,17 @@ create policy "Authenticated users can do everything on warranties" on public.wa
           const topBrand = top ? (top[0] as Brand) : Brand.OTRO;
 
           const newClose = {
-            id: `close-${date}`,
             date: date,
             total_sales: daySales.length,
             total_revenue: revenue,
             closed_at: now.toISOString(),
-            top_brand: topBrand as Brand
+            top_brand: topBrand as Brand,
+            store_id: userProfile?.storeId
           };
 
           const { error } = await supabase
             .from('daily_closings')
-            .upsert(newClose, { onConflict: 'id' });
+            .upsert(newClose, { onConflict: 'date,store_id' });
 
           if (error) {
             processingDatesRef.current.delete(date);
@@ -468,7 +530,8 @@ create policy "Authenticated users can do everything on warranties" on public.wa
             full_name
           )
         `)
-        .order('date', { ascending: false });
+        .order('date', { ascending: false })
+        .range(0, 4999); // Increased range to fetch more than 1000 records
 
       if (salesError) {
         if (salesError.code === '42P01') {
@@ -488,7 +551,9 @@ create policy "Authenticated users can do everything on warranties" on public.wa
         ticketImage: row.ticket_image,
         createdBy: row.created_by,
         createdAt: row.created_at,
-        createdByEmail: row.profiles?.full_name || row.profiles?.email || 'Sistema'
+        createdByEmail: row.profiles?.email,
+        createdByName: row.profiles?.full_name,
+        storeId: row.store_id
       }));
 
       setSales(formattedSales);
@@ -513,7 +578,8 @@ create policy "Authenticated users can do everything on warranties" on public.wa
         totalSales: row.total_sales,
         totalRevenue: row.total_revenue,
         closedAt: row.closed_at,
-        topBrand: row.top_brand
+        topBrand: row.top_brand,
+        storeId: row.store_id
       }));
 
       setClosings(formattedClosings);
@@ -547,14 +613,26 @@ create policy "Authenticated users can do everything on warranties" on public.wa
           physicalCondition: row.physical_condition,
           contactNumber: row.contact_number,
           ticketImage: row.ticket_image,
-          possibleEntryDate: row.possible_entry_date, // Nuevo
-          status: row.status
+          possibleEntryDate: row.possible_entry_date, 
+          status: row.status,
+          storeId: row.store_id
         }));
         setWarranties(formattedWarranties);
       } else {
         setWarranties([]);
       }
 
+
+      // 4. Fetch Stores
+      const { data: storesData } = await supabase.from('stores').select('*').order('name');
+      if (storesData) {
+        setStores(storesData.map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          location: s.location,
+          createdAt: s.created_at
+        })));
+      }
 
     } catch (error: any) {
       console.error('Error fetching data from Supabase:', error);
@@ -565,6 +643,19 @@ create policy "Authenticated users can do everything on warranties" on public.wa
       setIsLoading(false);
     }
   };
+
+  // --- FILTERED DATA logic ---
+  const getFilteredData = <T extends { storeId?: string }>(data: T[]) => {
+    if (userProfile?.role === 'admin') {
+      return selectedStoreId === 'all' ? data : data.filter(item => item.storeId === selectedStoreId);
+    }
+    // For normal users, only show their store
+    return data.filter(item => item.storeId === userProfile?.storeId);
+  };
+
+  const filteredSales = getFilteredData(sales);
+  const filteredClosings = getFilteredData(closings as any[]) as DailyClose[];
+  const filteredWarranties = getFilteredData(warranties);
 
   useEffect(() => {
     if (session) {
@@ -587,7 +678,8 @@ create policy "Authenticated users can do everything on warranties" on public.wa
                 date: payload.new.date,
                 ticketImage: payload.new.ticket_image,
                 createdBy: payload.new.created_by,
-                createdAt: payload.new.created_at
+                createdAt: payload.new.created_at,
+                storeId: payload.new.store_id
               };
               setSales(prev => [newSale, ...prev]);
             } else if (payload.eventType === 'DELETE') {
@@ -623,6 +715,16 @@ create policy "Authenticated users can do everything on warranties" on public.wa
     if (!session) return;
     setIsLoading(true);
     try {
+      const finalStoreId = userProfile?.role === 'admin' && selectedStoreId !== 'all' 
+        ? selectedStoreId 
+        : userProfile?.storeId;
+
+      if (!finalStoreId) {
+        alert("Por favor, selecciona una tienda específica antes de agregar una venta.");
+        setIsLoading(false);
+        return;
+      }
+
       const dbPayload = {
         invoice_number: newSaleData.invoiceNumber,
         customer_name: newSaleData.customerName,
@@ -630,7 +732,8 @@ create policy "Authenticated users can do everything on warranties" on public.wa
         brand: newSaleData.brand,
         date: newSaleData.date,
         ticket_image: newSaleData.ticketImage || null,
-        created_by: session.user.id // Link to user
+        created_by: session.user.id,
+        store_id: finalStoreId
       };
 
       const { data, error } = await supabase
@@ -650,9 +753,14 @@ create policy "Authenticated users can do everything on warranties" on public.wa
           brand: row.brand as Brand,
           date: row.date,
           ticketImage: row.ticket_image,
-          createdBy: row.created_by
+          createdBy: row.created_by,
+          storeId: row.store_id // FIXED: Added storeId
         };
-        setSales(prev => [newSale, ...prev]);
+        // Update local state ONLY if not already added by realtime subscription
+        setSales(prev => {
+           if (prev.some(s => s.id === newSale.id)) return prev;
+           return [newSale, ...prev];
+        });
         setCurrentView('list');
       }
     } catch (error: any) {
@@ -674,7 +782,8 @@ create policy "Authenticated users can do everything on warranties" on public.wa
         price: updatedSale.price,
         brand: updatedSale.brand,
         date: updatedSale.date,
-        ticket_image: updatedSale.ticketImage // Can be null or URL
+        ticket_image: updatedSale.ticketImage, // Can be null or URL
+        store_id: updatedSale.storeId || userProfile?.storeId
       };
 
       const { error } = await supabase
@@ -684,7 +793,7 @@ create policy "Authenticated users can do everything on warranties" on public.wa
 
       if (error) throw error;
 
-      setSales(prev => prev.map(s => s.id === updatedSale.id ? updatedSale : s));
+      setSales(prev => prev.map(s => s.id === updatedSale.id ? { ...updatedSale, storeId: dbPayload.store_id } : s));
       alert("Venta actualizada correctamente.");
       setSaleToEdit(null);
       setCurrentView('list');
@@ -737,13 +846,18 @@ create policy "Authenticated users can do everything on warranties" on public.wa
         }
       }
 
+      const finalStoreId = userProfile?.role === 'admin' && selectedStoreId !== 'all' 
+        ? selectedStoreId 
+        : userProfile?.storeId;
+
       const dbPayload = {
-        id: `close-${newClose.date}`,
+        id: `close-${newClose.date}-${finalStoreId}`, // Added store ID to ID to avoid collision
         date: newClose.date,
         total_sales: newClose.totalSales,
         total_revenue: newClose.totalRevenue,
         closed_at: newClose.closedAt,
-        top_brand: newClose.topBrand
+        top_brand: newClose.topBrand,
+        store_id: finalStoreId
       };
 
       const { error } = await supabase
@@ -796,19 +910,30 @@ create policy "Authenticated users can do everything on warranties" on public.wa
     if (!session) return;
     setIsLoading(true);
     try {
+      const finalStoreId = userProfile?.role === 'admin' && selectedStoreId !== 'all' 
+        ? selectedStoreId 
+        : userProfile?.storeId;
+      
+      if (!finalStoreId) {
+        alert("Por favor, selecciona una tienda específica antes de registrar una garantía.");
+        setIsLoading(false);
+        return;
+      }
+
       const dbPayload = {
         reception_date: newWarranty.receptionDate,
-        invoice_number: newWarranty.invoiceNumber, // Nuevo
+        invoice_number: newWarranty.invoiceNumber,
         brand: newWarranty.brand,
         model: newWarranty.model,
         imei: newWarranty.imei,
         issue_description: newWarranty.issueDescription,
-        accessories: newWarranty.accessories, // Nuevo
+        accessories: newWarranty.accessories,
         physical_condition: newWarranty.physicalCondition,
         contact_number: newWarranty.contactNumber,
         ticket_image: newWarranty.ticketImage,
-        possible_entry_date: newWarranty.possibleEntryDate, // Nuevo
-        status: newWarranty.status
+        possible_entry_date: newWarranty.possibleEntryDate,
+        status: newWarranty.status,
+        store_id: finalStoreId
       };
 
       const { data, error } = await supabase
@@ -833,7 +958,8 @@ create policy "Authenticated users can do everything on warranties" on public.wa
           contactNumber: row.contact_number,
           ticketImage: row.ticket_image,
           possibleEntryDate: row.possible_entry_date,
-          status: row.status
+          status: row.status,
+          storeId: row.store_id
         };
         setWarranties(prev => [addedWarranty, ...prev]);
         alert("Garantía registrada correctamente.");
@@ -891,7 +1017,7 @@ create policy "Authenticated users can do everything on warranties" on public.wa
     }
   };
 
-  const NavButton = ({ view, icon: Icon, label }: { view: 'form' | 'list' | 'dashboard' | 'closings' | 'warranties', icon: any, label: string }) => {
+  const NavButton = ({ view, icon: Icon, label }: { view: 'form' | 'list' | 'dashboard' | 'closings' | 'warranties' | 'admin' | 'attendance' | 'supervision', icon: any, label: string }) => {
     const isActive = currentView === view;
     return (
       <button
@@ -926,6 +1052,31 @@ create policy "Authenticated users can do everything on warranties" on public.wa
   // --- RENDER: AUTH FORM ---
   if (!session) {
     return <AuthForm />;
+  }
+
+  // --- RENDER: PROFILE LOADING GUARD ---
+  // Si tenemos sesión pero el perfil aún no carga, mostramos pantalla de carga 
+  // para evitar que vean el Dashboard "vacio" por un segundo.
+  if (!userProfile && !connectionError && !isSetupNeeded) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
+          <p className="text-slate-500 font-bold animate-pulse uppercase tracking-widest text-xs">Validando Credenciales...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // --- RENDER: COMPLETE PROFILE (For new users from invite) ---
+  // BLOQUEO TOTAL: Si no hay nombre completo, NO se pasa de aquí.
+  if (userProfile && (!userProfile.fullName || userProfile.fullName.trim() === "")) {
+    const userStoreName = stores.find(s => s.id === userProfile.storeId)?.name;
+    return <CompleteProfile 
+      profile={userProfile} 
+      storeName={userStoreName}
+      onComplete={(updated) => setUserProfile(updated)} 
+    />;
   }
 
   // --- RENDER: SETUP / ERROR SCREEN ---
@@ -1005,6 +1156,7 @@ create policy "Authenticated users can do everything on warranties" on public.wa
         <div className="flex items-center gap-3 font-bold text-lg">
           <img src="/pwa-icon.png" alt="Logo" className="w-8 h-8 object-contain drop-shadow-sm rounded-full" />
           <span>Ventas Telcel</span>
+          <span className="bg-red-600 text-[10px] px-1.5 py-0.5 rounded-md font-black uppercase text-white animate-pulse">Beta</span>
         </div>
         <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="text-slate-300 hover:text-white">
           {isMobileMenuOpen ? <X /> : <Menu />}
@@ -1023,6 +1175,7 @@ create policy "Authenticated users can do everything on warranties" on public.wa
             <div className="flex items-center gap-3 px-2">
               <img src="/pwa-icon.png" alt="Logo" className="w-12 h-12 object-contain drop-shadow-lg rounded-full" />
               <span className="text-xl font-bold text-white tracking-tight">Ventas Telcel</span>
+              <span className="bg-red-600 text-[10px] px-1.5 py-0.5 rounded-md font-black uppercase text-white animate-pulse">Beta</span>
             </div>
             <p className="text-slate-500 text-[10px] font-bold tracking-widest text-center mt-4">PANEL DE CONTROL</p>
           </div>
@@ -1030,13 +1183,20 @@ create policy "Authenticated users can do everything on warranties" on public.wa
         </div>
 
         {/* Navigation Items */}
-        <div className="flex-1 px-4 space-y-2 overflow-y-auto">
+        <div className="flex-1 px-4 space-y-2 overflow-y-auto custom-scrollbar">
           <div className="text-[10px] font-bold text-slate-500 px-4 py-2 uppercase tracking-wider">Menú Principal</div>
           <NavButton view="list" icon={LayoutList} label="Registro de Ventas" />
+          <NavButton view="attendance" icon={Clock} label="Asistencia" />
           <NavButton view="dashboard" icon={BarChart3} label="Estadísticas" />
           <NavButton view="closings" icon={CalendarCheck} label="Cierre de Venta" />
-          {(userProfile?.role === 'admin' || userProfile?.email === 'jeissonjessy@gmail.com' || userProfile?.id === 'b4ba233c-afa9-42fc-9bed-afa0e9be3f8c') && (
-            <NavButton view="warranties" icon={ShieldAlert} label="Garantías" />
+          {(userProfile?.role === 'admin' || userProfile?.role === 'supervisor' || userProfile?.email === 'jeissonjessy@gmail.com' || userProfile?.id === 'b4ba233c-afa9-42fc-9bed-afa0e9be3f8c') && (
+            <>
+              <div className="text-[10px] font-bold text-slate-500 px-4 py-2 mt-4 uppercase tracking-wider">Administración</div>
+              <NavButton view="warranties" icon={ShieldAlert} label="Garantías" />
+              <NavButton view="attendance-report" icon={CalendarCheck} label="Reporte Asistencias" />
+              <NavButton view="admin" icon={Shield} label="Administración" />
+              <NavButton view="supervision" icon={TrendingUp} label="Rendimiento" />
+            </>
           )}
         </div>
 
@@ -1047,8 +1207,8 @@ create policy "Authenticated users can do everything on warranties" on public.wa
               <UserIcon className="w-5 h-5" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-white text-sm font-medium truncate">
-                {userProfile?.email?.split('@')[0] || 'Usuario'}
+              <p className="text-white text-sm font-bold truncate">
+                {userProfile?.fullName || userProfile?.email?.split('@')[0] || 'Usuario'}
               </p>
               <div className="flex items-center gap-1.5 mt-0.5">
                 <Shield className={`w-3 h-3 ${userProfile?.role === 'admin' ? 'text-yellow-400' : 'text-slate-500'}`} />
@@ -1084,6 +1244,9 @@ create policy "Authenticated users can do everything on warranties" on public.wa
                 {currentView === 'dashboard' && 'Panel de Rendimiento'}
                 {currentView === 'closings' && 'Cierre Diario'}
                 {currentView === 'warranties' && 'Gestión de Garantías'}
+                {currentView === 'attendance' && 'Control de Asistencia'}
+                {currentView === 'attendance-report' && 'Vigilancia de Asistencias'}
+                {currentView === 'admin' && 'Administración Maestra'}
                 {isLoading && <Loader2 className="w-6 h-6 animate-spin text-blue-600" />}
               </h1>
               <p className="text-slate-500 mt-1 font-medium">
@@ -1092,11 +1255,27 @@ create policy "Authenticated users can do everything on warranties" on public.wa
                 {currentView === 'dashboard' && 'Visualiza métricas clave y cumplimiento de metas.'}
                 {currentView === 'closings' && 'Realiza cortes y revisa ingresos acumulados.'}
                 {currentView === 'warranties' && 'Administra equipos enviados a taller y su estado.'}
+                {currentView === 'attendance' && 'Registra tus entradas, salidas y horarios de comida.'}
+                {currentView === 'attendance-report' && 'Historial detallado y estatus actual de todo el personal.'}
+                {currentView === 'admin' && 'Configura sucursales, gestiona permisos y expande el sistema.'}
               </p>
             </div>
 
             <div className="flex items-center gap-3">
-              {/* Refresh button removed per user request */}
+              {userProfile?.role === 'admin' && (
+                 <div className="flex items-center gap-2 bg-white px-4 py-2.5 rounded-2xl border border-slate-200 shadow-sm transition-all hover:bg-slate-50">
+                    <Building className="w-4 h-4 text-blue-600" />
+                    <select 
+                      value={selectedStoreId}
+                      onChange={(e) => setSelectedStoreId(e.target.value)}
+                      className="bg-transparent text-xs font-black text-slate-800 outline-none cursor-pointer"
+                    >
+                      <option value="all" disabled={selectedStoreId !== 'all'}>Seleccionar Tienda...</option>
+                      <option value="all">Ver Todas (Global)</option>
+                      {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                 </div>
+              )}
 
               {currentView === 'list' && userProfile?.role !== 'viewer' && (
                 <button
@@ -1113,7 +1292,7 @@ create policy "Authenticated users can do everything on warranties" on public.wa
           <div className="fade-in">
             {currentView === 'list' && (
               <SalesList
-                sales={sales}
+                sales={filteredSales}
                 onDelete={handleDeleteSale}
                 onEdit={(sale) => {
                   setSaleToEdit(sale);
@@ -1124,14 +1303,20 @@ create policy "Authenticated users can do everything on warranties" on public.wa
                   setCurrentView('form');
                 }}
                 role={userProfile?.role}
+                storeName={userProfile?.role === 'admin' 
+                  ? (selectedStoreId === 'all' ? 'Todas las Tiendas' : stores.find(s => s.id === selectedStoreId)?.name) 
+                  : stores.find(s => s.id === userProfile?.storeId)?.name}
               />
             )}
             {currentView === 'form' && (
-              <SalesForm
-                onAddSale={handleAddSale}
+              <SalesForm 
+                onAddSale={handleAddSale} 
                 onUpdateSale={handleUpdateSale}
                 initialData={saleToEdit}
                 role={userProfile?.role}
+                userProfile={userProfile}
+                stores={stores}
+                activeStoreId={userProfile?.role === 'admin' && selectedStoreId !== 'all' ? selectedStoreId : userProfile?.storeId}
                 onCancel={() => {
                   setSaleToEdit(null);
                   setCurrentView('list');
@@ -1139,25 +1324,61 @@ create policy "Authenticated users can do everything on warranties" on public.wa
               />
             )}
             {currentView === 'dashboard' && (
-              <Dashboard sales={sales} closings={closings} role={userProfile?.role} />
+              <Dashboard 
+                sales={filteredSales}
+                closings={filteredClosings} 
+                role={userProfile?.role}
+                storeId={userProfile?.role === 'admin' ? (selectedStoreId === 'all' ? undefined : selectedStoreId) : userProfile?.storeId}
+                storeName={userProfile?.role === 'admin' 
+                  ? (selectedStoreId === 'all' ? 'Todas las Tiendas' : stores.find(s => s.id === selectedStoreId)?.name) 
+                  : stores.find(s => s.id === userProfile?.storeId)?.name}
+              />
             )}
             {currentView === 'closings' && (
               <DailyClosings
-                sales={sales}
-                closings={closings}
+                sales={filteredSales}
+                closings={filteredClosings}
                 onCloseDay={handleCloseDay}
                 onDeleteClosing={handleDeleteClosing}
                 role={userProfile?.role}
+                storeName={userProfile?.role === 'admin' 
+                  ? (selectedStoreId === 'all' ? 'Todas las Tiendas' : stores.find(s => s.id === selectedStoreId)?.name) 
+                  : stores.find(s => s.id === userProfile?.storeId)?.name}
               />
             )}
             {currentView === 'warranties' && (
               <Warranties
-                warranties={warranties}
+                warranties={filteredWarranties}
                 onAddWarranty={handleAddWarranty}
-                onUpdateStatus={handleUpdateWarrantyStatus}
+                onUpdateStatus={handleUpdateStatus}
                 onDeleteWarranty={handleDeleteWarranty}
                 brandConfigs={BRAND_CONFIGS}
-                isAdmin={userProfile?.role === 'admin'}
+                isAdmin={userProfile?.role === 'admin' || userProfile?.role === 'supervisor'}
+                userProfile={userProfile}
+                stores={stores}
+              />
+            )}
+            {currentView === 'attendance' && userProfile && (
+              <AttendanceManager 
+                user={userProfile} 
+              />
+            )}
+            {currentView === 'attendance-report' && (
+              <AttendanceReport 
+                selectedStoreId={selectedStoreId}
+                stores={stores}
+              />
+            )}
+            {currentView === 'supervision' && (userProfile?.role === 'admin' || userProfile?.role === 'supervisor') && (
+              <SupervisionPanel />
+            )}
+            {currentView === 'admin' && (userProfile?.role === 'admin' || userProfile?.role === 'supervisor') && (
+              <AdminPanel 
+                role={userProfile.role}
+                onRefresh={() => {
+                  fetchData();
+                  if (session) fetchUserProfile(session.user.id);
+                }} 
               />
             )}
           </div>

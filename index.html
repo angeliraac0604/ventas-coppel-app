@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#2563eb" />
   <link rel="icon" type="image/png" href="/pwa-icon.png" />
   <link rel="apple-touch-icon" href="/pwa-icon.png" />
-  <title>Ventas Telcel - Registro Móvil</title>
+  <title>Registro de Ventas Coppel (BETA)</title>
 
   <!-- Google Fonts: Inter -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -43,6 +43,39 @@
       }
     }
   </script>
+
+  <style>
+    /* Personalización de la barra de desplazamiento (Scrollbar) */
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 5px;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: transparent;
+      /* O el color del panel #0f172a */
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #1e293b;
+      /* Gris oscuro (slate-800) */
+      border-radius: 10px;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: #334155;
+      /* slate-700 al pasar el mouse */
+    }
+
+    /* Soporte para Firefox */
+    .custom-scrollbar {
+      scrollbar-width: thin;
+      scrollbar-color: #1e293b transparent;
+    }
+
+    .mirror {
+      transform: scaleX(-1);
+    }
+  </style>
 
 </head>
 

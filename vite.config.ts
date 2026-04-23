@@ -10,6 +10,7 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 3000,
       host: '0.0.0.0',
+      allowedHosts: true,
     },
     plugins: [
       react(),
@@ -17,8 +18,8 @@ export default defineConfig(({ mode }) => {
         registerType: 'autoUpdate',
         includeAssets: ['pwa-icon.png'],
         manifest: {
-          name: 'Control de Ventas',
-          short_name: 'Ventas',
+          name: 'Registro de Ventas Coppel (BETA)',
+          short_name: 'Ventas Beta',
           description: 'Aplicación de registro de ventas y cierres',
           theme_color: '#2563eb',
           background_color: '#ffffff',

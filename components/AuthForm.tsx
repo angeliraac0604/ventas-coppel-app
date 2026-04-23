@@ -3,10 +3,13 @@ import { supabase } from '../services/supabaseClient';
 import { Mail, Lock, Loader2, ArrowRight, ShieldCheck, Smartphone } from 'lucide-react';
 
 const AuthForm: React.FC = () => {
+  const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [invitationCode, setInvitationCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,10 +24,61 @@ const AuthForm: React.FC = () => {
       if (error) throw error;
     } catch (err: any) {
       // Mensaje de error más amigable para el usuario
-      const msg = err.message === 'Invalid login credentials'
-        ? 'Correo o contraseña incorrectos.'
-        : err.message || 'Error al iniciar sesión';
+      let msg = err.message;
+      if (err.message === 'Invalid login credentials') {
+        msg = 'Correo o contraseña incorrectos.';
+      } else if (err.message.includes('Email not confirmed')) {
+        msg = 'Debes confirmar tu correo electrónico antes de entrar. Revisa tu bandeja de entrada.';
+      }
       setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+
+    try {
+      // 1. Validar código
+      const { data: codeData, error: codeError } = await supabase
+        .from('invitation_codes')
+        .select('*')
+        .eq('code', invitationCode.toUpperCase())
+        .eq('is_used', false)
+        .single();
+
+      if (codeError || !codeData) {
+        throw new Error("El código de invitación no es válido o ya fue usado.");
+      }
+
+      // 2. Crear usuario en Auth
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            role: codeData.role,
+            store_id: codeData.store_id
+          }
+        }
+      });
+
+      if (signUpError) throw signUpError;
+
+      // 3. Marcar código como usado
+      await supabase
+        .from('invitation_codes')
+        .update({ is_used: true })
+        .eq('code', invitationCode.toUpperCase());
+
+      setSuccess("¡Cuenta creada correctamente! Ahora puedes iniciar sesión.");
+      setMode('login');
+      setInvitationCode('');
+    } catch (err: any) {
+      setError(err.message || "Error al registrar");
     } finally {
       setLoading(false);
     }
@@ -49,7 +103,7 @@ const AuthForm: React.FC = () => {
               <h1 className="text-3xl font-bold text-slate-800 tracking-tight">Ventas Telcel</h1>
             </div>
 
-            <div className="flex items-center justify-center gap-1.5 mt-2 bg-slate-100 py-1 px-3 rounded-full w-fit mx-auto">
+            <div className="flex items-center justify-center gap-1.5 mt-2 bg-slate-100 py-1 px-3 rounded-full w-fit mx-auto mb-8">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
               <p className="text-slate-500 text-xs font-semibold tracking-wide uppercase">
                 Acceso Privado
@@ -59,7 +113,7 @@ const AuthForm: React.FC = () => {
 
           <form onSubmit={handleLogin} className="space-y-5">
             <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Correo Corporativo</label>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Correo Electrónico</label>
               <div className="relative">
                 <Mail className="absolute left-3 top-2.5 w-5 h-5 text-slate-400" />
                 <input
@@ -89,23 +143,30 @@ const AuthForm: React.FC = () => {
             </div>
 
             {error && (
-              <div className="p-3 rounded-lg bg-red-50 text-red-600 text-xs font-bold border border-red-100 flex items-center gap-2 animate-in fade-in slide-in-from-top-1">
+              <div className="p-3 rounded-lg bg-red-50 text-red-600 text-[11px] font-bold border border-red-100 flex items-center gap-2 animate-in fade-in slide-in-from-top-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span>
                 {error}
+              </div>
+            )}
+
+            {success && (
+              <div className="p-3 rounded-lg bg-emerald-50 text-emerald-600 text-[11px] font-bold border border-emerald-100 flex items-center gap-2 animate-in fade-in slide-in-from-top-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+                {success}
               </div>
             )}
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-blue-200 flex items-center justify-center gap-2 hover:-translate-y-0.5 active:scale-95 mt-2"
+              className={`w-full ${mode === 'login' ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-100' : 'bg-slate-800 hover:bg-slate-900 shadow-slate-100'} text-white font-bold py-3.5 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 active:scale-[0.98] mt-2`}
             >
               {loading ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
               ) : (
                 <>
-                  Iniciar Sesión
-                  <ArrowRight className="w-4 h-4" />
+                  {mode === 'login' ? 'Entrar al Sistema' : 'Crear Mi Cuenta'}
+                  <ArrowRight className="w-4 h-4 ml-1" />
                 </>
               )}
             </button>

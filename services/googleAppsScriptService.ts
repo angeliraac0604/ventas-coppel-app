@@ -1,5 +1,11 @@
 
-export const uploadImageToDriveScript = async (base64Image: string, filename: string, date?: string, folderType: 'sales' | 'warranties' = 'sales'): Promise<string> => {
+export const uploadImageToDriveScript = async (
+    base64Image: string, 
+    filename: string, 
+    date?: string, 
+    folderType: 'sales' | 'warranties' | 'attendance' = 'sales',
+    userName: string = 'Usuario'
+): Promise<string> => {
     const scriptUrl = import.meta.env.VITE_GOOGLE_SCRIPT_URL;
 
     if (!scriptUrl) {
@@ -15,12 +21,15 @@ export const uploadImageToDriveScript = async (base64Image: string, filename: st
         const response = await fetch(scriptUrl, {
             method: 'POST',
             body: JSON.stringify({
-                action: 'upload', // New action parameter
+                action: 'upload',
                 filename: filename,
                 file: cleanBase64,
                 mimeType: 'image/jpeg',
-                date: date, // Send date for folder organization
-                folderType: folderType // 'sales' or 'warranties'
+                date: date,
+                folderType: folderType,
+                userName: userName,
+                storeName: (window as any)._activeStoreName || 'Sucursal Desconocida',
+                monthName: (window as any)._customMonthName // New hint
             }),
             headers: {
                 'Content-Type': 'text/plain;charset=utf-8',

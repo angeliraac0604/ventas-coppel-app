@@ -10,9 +10,10 @@ interface SalesListProps {
   onAdd: () => void;
   onEdit: (sale: Sale) => void;
   role?: string;
+  storeName?: string;
 }
 
-const SalesList: React.FC<SalesListProps> = ({ sales, onDelete, onEdit, onAdd, role }) => {
+const SalesList: React.FC<SalesListProps> = ({ sales, onDelete, onEdit, onAdd, role, storeName }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterBrand, setFilterBrand] = useState<Brand | 'ALL'>('ALL');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -141,12 +142,16 @@ const SalesList: React.FC<SalesListProps> = ({ sales, onDelete, onEdit, onAdd, r
                   <Share2 className="w-4 h-4" />
                 </button>
               </h2>
-              <p className="text-slate-400 text-sm mt-1 pl-4">
-                {todayDateObj.toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-              </p>
+              <div className="flex items-center gap-2 mt-1 pl-4">
+                <span className="text-blue-400 text-xs font-black uppercase tracking-widest">{storeName || 'Sucursal'}</span>
+                <span className="text-slate-600 text-[10px]">•</span>
+                <p className="text-slate-400 text-xs font-medium">
+                  {todayDateObj.toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                </p>
+              </div>
             </div>
-            <div className="bg-slate-800/50 backdrop-blur-sm px-4 py-1.5 rounded-full border border-slate-700 text-xs font-medium text-slate-300">
-              Ventas en tiempo real
+            <div className="bg-slate-800/50 backdrop-blur-sm px-4 py-2 rounded-xl border border-slate-700 text-[10px] font-black text-blue-400 uppercase tracking-tighter">
+              {storeName || 'Sin asignar'}
             </div>
           </div>
 
@@ -298,10 +303,17 @@ const SalesList: React.FC<SalesListProps> = ({ sales, onDelete, onEdit, onAdd, r
                       #{(() => {
                         const clean = String(sale.invoiceNumber).replace(/[^0-9]/g, '');
                         return clean.startsWith('1053') && clean.length > 4
-                          ? `1053-${clean.substring(4)}`
-                          : `1053-${clean}`;
+                          ? clean.slice(-4)
+                          : clean;
                       })()}
                     </span>
+
+                    {/* ETIQUETA DE SUCURSAL */}
+                    {sale.storeId && (
+                      <span className="ml-auto md:ml-0 text-[9px] font-black text-slate-400 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-md uppercase tracking-tighter">
+                        {sale.storeId === '00000000-0000-0000-0000-000000000000' ? 'TIENDA PRINCIPAL' : 'SUCURSAL'}
+                      </span>
+                    )}
                   </div>
 
                   <div>
@@ -317,7 +329,7 @@ const SalesList: React.FC<SalesListProps> = ({ sales, onDelete, onEdit, onAdd, r
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 pt-2 border-t border-slate-50 text-[10px] text-slate-400 font-bold uppercase tracking-wider">
                         <span className="flex items-center gap-1">
                           <User className="w-3 h-3 text-blue-400" />
-                          Registrado por: <span className="text-slate-600">{sale.createdByEmail || 'N/A'}</span>
+                          Registrado por: <span className="text-slate-600">{sale.createdByName || sale.createdByEmail || 'N/A'}</span>
                         </span>
                         <span className="flex items-center gap-1">
                           <Clock className="w-3 h-3 text-indigo-400" />

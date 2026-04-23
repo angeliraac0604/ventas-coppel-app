@@ -3,7 +3,8 @@ import { Plus, Camera, Loader2, Save, X, Trash2, Smartphone, Edit2, Eye, Share2,
 import { Brand, Sale } from '../types';
 import { BRAND_CONFIGS } from '../constants';
 import { supabase } from '../services/supabaseClient';
-import { uploadImageToDriveScript, deleteImageFromDriveScript } from '../services/googleAppsScriptService'; // Import delete service
+import { uploadImageToDriveScript, deleteImageFromDriveScript } from '../services/googleAppsScriptService';
+import { uploadToSupabaseStorage, smartImageUpload } from '../services/storageService';
 import { analyzeTicketImage } from '../services/geminiService';
 
 interface SalesFormProps {
@@ -12,6 +13,9 @@ interface SalesFormProps {
   initialData?: Sale | null;
   onCancel: () => void;
   role?: string;
+  userProfile?: any;
+  stores?: any[];
+  activeStoreId?: string;
 }
 
 interface SaleItem {
@@ -21,7 +25,7 @@ interface SaleItem {
   error?: string;
 }
 
-const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialData, onCancel, role }) => {
+const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialData, onCancel, role, userProfile, stores, activeStoreId }) => {
   // Construct local YYYY-MM-DD for default date to avoid UTC issues
   const localDate = new Date();
   const defaultDateStr = localDate.getFullYear() + '-' +
@@ -373,28 +377,26 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
     // -----------------------
     let finalImageUrl: string | undefined = ticketImage || undefined;
 
-    // Upload Image logic
-    // Only upload if it is a NEW image (starts with data:)
+    // 📸 NEW ROBUST UPLOAD LOGIC (Supabase + Background Drive Sync)
     if (ticketImage && ticketImage.startsWith('data:')) {
       try {
-        // If updating and there's a new file, and an old image exists on Drive
-        if (initialData && initialData.ticketImage && initialData.ticketImage.includes('google.com')) {
-          // FIRE AND FORGET: Do not await deletion, let it run in background to speed up UI
-          deleteImageFromDriveScript(initialData.ticketImage).catch(err => console.warn("Background delete failed", err));
-        }
-
+        const storeIdToUse = activeStoreId || userProfile?.storeId;
+        const storeName = stores?.find((s: any) => s.id === storeIdToUse)?.name || 'Sucursal Desconocida';
         const filename = `Ticket Factura #${commonData.invoiceNumber} - ${commonData.customerName.toUpperCase()}`;
-        const uploadedUrl = await uploadImageToDriveScript(ticketImage, filename, commonData.date);
-        if (uploadedUrl) {
-          finalImageUrl = uploadedUrl;
-        } else {
-          alert("Advertencia: No se pudo subir la imagen a Google Drive.");
-          setIsSubmitting(false);
-          return;
-        }
+        
+        // Month Formatting: Only Name (e.g. "Abril")
+        const [y, m, d] = commonData.date.split('-');
+        const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+        const monthIndex = parseInt(m) - 1;
+        const formattedMonth = monthNames[monthIndex];
+        
+        // Set global hint for background sync
+        (window as any)._customMonthName = formattedMonth;
+
+        finalImageUrl = await smartImageUpload(ticketImage, filename, commonData.date, storeName, 'sales');
       } catch (error) {
-        console.error("Error uploading:", error);
-        alert("Error al subir la imagen al script de Google. Verifica la consola.");
+        console.error("Error crítico en guardado de foto:", error);
+        alert("⚠️ No se pudo guardar la foto en el servidor. Verifica tu conexión.");
         setIsSubmitting(false);
         return;
       }

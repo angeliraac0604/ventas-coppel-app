@@ -24,7 +24,9 @@ export interface Sale {
   ticketImage?: string; // Base64 string
   createdBy?: string; // UUID of user
   createdAt?: string; // ISO Timestamp
-  createdByEmail?: string; // Email or Name for Admin only
+  createdByEmail?: string;
+  createdByName?: string;
+  storeId?: string; // UUID of store
 }
 
 export interface BrandConfig {
@@ -52,13 +54,35 @@ export interface DailyClose {
   topBrand: Brand | 'N/A';
 }
 
-export type UserRole = 'admin' | 'seller' | 'viewer';
+export type UserRole = 'admin' | 'supervisor' | 'seller' | 'viewer';
+
+export interface Store {
+  id: string;
+  name: string;
+  location?: string;
+  createdAt?: string;
+}
 
 export interface UserProfile {
   id: string;
   email: string;
   role: UserRole;
   fullName?: string;
+  storeId?: string;
+}
+
+export type AttendanceType = 'entry' | 'lunch_start' | 'lunch_end' | 'exit';
+
+export interface AttendanceRecord {
+  id: string;
+  userId: string;
+  storeId?: string;
+  type: AttendanceType;
+  timestamp: string;
+  date: string;
+  imageUrl?: string;
+  screenshotUrl?: string;
+  locationCoords?: string;
 }
 
 export interface MonthlyGoal {
@@ -81,4 +105,5 @@ export interface Warranty {
   ticketImage?: string; // URL de Google Drive o base64 temporal
   possibleEntryDate?: string; // Nuevo: Posible fecha de ingreso
   status: 'received' | 'sent_to_provider' | 'in_store' | 'delivered';
+  storeId?: string;
 }
