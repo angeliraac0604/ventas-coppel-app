@@ -190,6 +190,11 @@ returns uuid as $$
   select store_id from public.profiles where id = auth.uid();
 $$ language sql security definer;
 
+create or replace function public.is_supervisor()
+returns boolean as $$
+  select exists (select 1 from public.profiles where id = auth.uid() and role in ('supervisor', 'viewer'));
+$$ language sql security definer;
+
 -- Políticas de Ventas
 create policy "Admins see all sales" on public.sales for select to authenticated using (public.is_admin());
 create policy "Sellers see their store sales" on public.sales for select to authenticated using (store_id = public.get_user_store_id());
@@ -201,12 +206,12 @@ create policy "Sellers insert their store sales" on public.sales for insert to a
 create policy "Admins see all attendance" on public.attendance for select to authenticated using (public.is_admin());
 create policy "Users see own attendance" on public.attendance for select to authenticated using (user_id = auth.uid());
 create policy "Users insert own attendance" on public.attendance for insert to authenticated with check (user_id = auth.uid());
-create policy "Supervisors see attendance" on public.attendance for select to authenticated using (public.get_user_role() IN ('supervisor', 'viewer'));
+create policy "Supervisors see attendance" on public.attendance for select to authenticated using (public.is_supervisor());
 
 -- Políticas de Perfiles
 create policy "Users see own profile" on public.profiles for select to authenticated using (id = auth.uid());
 create policy "Admins see all profiles" on public.profiles for select to authenticated using (public.is_admin());
-create policy "Supervisors see all profiles" on public.profiles for select to authenticated using (public.get_user_role() IN ('supervisor', 'viewer'));
+create policy "Supervisors see all profiles" on public.profiles for select to authenticated using (public.is_supervisor());
 
 -- Políticas de Tiendas
 create policy "All authenticated users see stores" on public.stores for select to authenticated using (true);
