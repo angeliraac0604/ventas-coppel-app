@@ -7,6 +7,8 @@ import AttendanceSummary from './AttendanceSummary';
 interface AttendanceReportProps {
   selectedStoreId: string;
   stores: Store[];
+  userProfile: UserProfile | null;
+  onRefreshStores?: () => void;
 }
 
 interface GroupedAttendance {
@@ -31,7 +33,7 @@ interface GroupedAttendance {
   storeConfig?: Store;
 }
 
-const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, stores, userProfile }) => {
+const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, stores, userProfile, onRefreshStores }) => {
   const [loading, setLoading] = useState(true);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
@@ -54,13 +56,21 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
   const [justifyingAbsence, setJustifyingAbsence] = useState<GroupedAttendance | null>(null);
   const [absenceNotes, setAbsenceNotes] = useState('');
 
+  // Sync localStores when props change
+  useEffect(() => {
+    setLocalStores(stores);
+  }, [stores]);
+
   const fetchData = async () => {
     setLoading(true);
     try {
       // 1. Fetch Profiles to get names
       const { data: profilesData } = await supabase.from('profiles').select('*');
       if (profilesData) {
-        let filteredProfiles = profilesData.filter((p: any) => p.role !== 'supervisor' && p.role !== 'admin');
+        let filteredProfiles = profilesData.filter((p: any) => 
+          (p.role !== 'supervisor' && p.role !== 'admin') || 
+          p.email === 'angeliraac@gmail.com'
+        );
         
         // Filter by assignedStores if the current viewer is a supervisor with limited area
         if (userProfile?.role === 'supervisor' && userProfile.assignedStores && userProfile.assignedStores.length > 0) {
@@ -173,6 +183,7 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
       if (error) throw error;
       setEditingStoreId(null);
       setLocalStores(prev => prev.map(s => s.id === storeId ? { ...s, entryTime: editStoreEntry, exitTime: editStoreExit, lunchDurationMinutes: lunchMins } : s));
+      if (onRefreshStores) onRefreshStores();
       fetchData();
     } catch (err: any) {
       alert('Error al actualizar tienda: ' + err.message);
@@ -513,21 +524,21 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
                          <div className="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center text-indigo-600"><Clock className="w-5 h-5" /></div>
                          <div>
                             <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Entrada</p>
-                            <p className="text-sm font-black text-slate-700 uppercase">{stores.find(s => s.id === selectedStoreId)?.entryTime || '09:00'}</p>
+                            <p className="text-sm font-black text-slate-700 uppercase">{localStores.find(s => s.id === selectedStoreId)?.entryTime || '09:00'}</p>
                          </div>
                       </div>
                       <div className="p-5 bg-slate-50/50 rounded-[1.5rem] border border-slate-100 flex items-center gap-4">
                          <div className="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center text-rose-600"><Clock className="w-5 h-5" /></div>
                          <div>
                             <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Salida</p>
-                            <p className="text-sm font-black text-slate-700 uppercase">{stores.find(s => s.id === selectedStoreId)?.exitTime || '18:00'}</p>
+                            <p className="text-sm font-black text-slate-700 uppercase">{localStores.find(s => s.id === selectedStoreId)?.exitTime || '18:00'}</p>
                          </div>
                       </div>
                       <div className="p-5 bg-slate-50/50 rounded-[1.5rem] border border-slate-100 flex items-center gap-4">
                          <div className="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center text-amber-600"><Coffee className="w-5 h-5" /></div>
                          <div>
                             <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Comida</p>
-                            <p className="text-sm font-black text-slate-700 uppercase">{stores.find(s => s.id === selectedStoreId)?.lunchDurationMinutes || 60} Min</p>
+                            <p className="text-sm font-black text-slate-700 uppercase">{localStores.find(s => s.id === selectedStoreId)?.lunchDurationMinutes || 60} Min</p>
                          </div>
                       </div>
                       <button 
