@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     ShieldAlert,
     Plus,
@@ -31,6 +31,8 @@ interface WarrantiesProps {
     onDeleteWarranty: (warranty: Warranty) => Promise<void>;
     brandConfigs: Record<Brand, BrandConfig>;
     isAdmin: boolean;
+    userProfile?: any;
+    stores?: any[];
 }
 
 const Warranties: React.FC<WarrantiesProps> = ({
@@ -39,8 +41,21 @@ const Warranties: React.FC<WarrantiesProps> = ({
     onUpdateStatus,
     onDeleteWarranty,
     brandConfigs,
-    isAdmin
+    isAdmin,
+    userProfile,
+    stores = []
 }) => {
+    // Safety check: if no warranties provided, default to empty array
+    const safeWarranties = Array.isArray(warranties) ? warranties : [];
+    const safeBrandConfigs = brandConfigs || {} as any;
+
+    console.log("Warranties rendering with:", { 
+        count: safeWarranties.length, 
+        isAdmin, 
+        hasUserProfile: !!userProfile, 
+        storesCount: stores.length 
+    });
+
     const [isAdding, setIsAdding] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
@@ -194,7 +209,7 @@ const Warranties: React.FC<WarrantiesProps> = ({
 *📋 REPORTE DE GARANTÍA - TELCEL*
 --------------------------------
 *📅 Fecha de Recepción:* ${warranty.receptionDate}
-*📱 Equipo:* ${(brandConfigs[warranty.brand]?.label || warranty.brand).toUpperCase()} ${warranty.model.toUpperCase()}
+*📱 Equipo:* ${(brandConfigs[warranty.brand]?.label || warranty.brand || 'Equipo').toUpperCase()} ${warranty.model.toUpperCase()}
 *🔢 IMEI:* ${warranty.imei || 'N/A'}
 *🔧 Falla Reportada:* ${warranty.issueDescription}
 *🔌 Accesorios:* ${warranty.accessories || 'Ninguno'}
@@ -207,10 +222,11 @@ ${warranty.ticketImage ? `*📷 Foto:* ${warranty.ticketImage}` : ''}
     };
 
     // --- FILTERING ---
-    const filteredWarranties = warranties.filter(w => {
+    const filteredWarranties = safeWarranties.filter(w => {
+        if (!w) return false;
         const matchesSearch =
-            w.model.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            w.contactNumber.includes(searchTerm) ||
+            (w.model || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (w.contactNumber || '').includes(searchTerm) ||
             (w.imei && w.imei.includes(searchTerm));
 
         const matchesFilter = filterStatus === 'all' || w.status === filterStatus;
@@ -225,7 +241,8 @@ ${warranty.ticketImage ? `*📷 Foto:* ${warranty.ticketImage}` : ''}
         'delivered': 3
     };
 
-    const sortedWarranties = filteredWarranties.sort((a, b) => {
+    const sortedWarranties = [...filteredWarranties].sort((a, b) => {
+        if (!a || !b) return 0;
         const priorityA = statusPriority[a.status] ?? 99;
         const priorityB = statusPriority[b.status] ?? 99;
         return priorityA - priorityB;
@@ -385,8 +402,8 @@ ${warranty.ticketImage ? `*📷 Foto:* ${warranty.ticketImage}` : ''}
                                             onChange={(e) => setFormData({ ...formData, brand: e.target.value as Brand })}
                                             className="w-full pl-10 pr-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white"
                                         >
-                                            {Object.keys(brandConfigs).map((b) => (
-                                                <option key={b} value={b}>{brandConfigs[b as Brand].label}</option>
+                                            {Object.keys(safeBrandConfigs).map((b) => (
+                                                <option key={b} value={b}>{safeBrandConfigs[b as Brand]?.label || b}</option>
                                             ))}
                                         </select>
                                     </div>
@@ -521,7 +538,7 @@ ${warranty.ticketImage ? `*📷 Foto:* ${warranty.ticketImage}` : ''}
                 {sortedWarranties.map(warranty => (
                     <div key={warranty.id} className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm hover:shadow-md transition-shadow group relative overflow-hidden flex flex-col h-full">
                         {/* Brand Stripe */}
-                        <div className={`absolute top-0 left-0 w-1 h-full ${brandConfigs[warranty.brand]?.colorClass?.replace('text-', 'bg-') || 'bg-slate-500'}`}></div>
+                        <div className={`absolute top-0 left-0 w-1 h-full ${safeBrandConfigs[warranty.brand]?.colorClass?.replace('text-', 'bg-') || 'bg-slate-500'}`}></div>
 
                         <div className="pl-4 flex-1 flex flex-col">
                             {/* Header: Date & Status */}
@@ -559,10 +576,10 @@ ${warranty.ticketImage ? `*📷 Foto:* ${warranty.ticketImage}` : ''}
                             <div className="mb-4">
                                 <div className="flex items-center gap-2 mb-1">
                                     <span
-                                        className={`px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase tracking-wide ${brandConfigs[warranty.brand].colorClass}`}
-                                        style={brandConfigs[warranty.brand].colorClass.includes('text-black') ? { color: 'black' } : {}}
+                                        className={`px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase tracking-wide ${safeBrandConfigs[warranty.brand]?.colorClass || 'bg-slate-500'}`}
+                                        style={safeBrandConfigs[warranty.brand]?.colorClass?.includes('text-black') ? { color: 'black' } : {}}
                                     >
-                                        {brandConfigs[warranty.brand].label}
+                                        {safeBrandConfigs[warranty.brand]?.label || warranty.brand || 'OTRO'}
                                     </span>
                                     <h3 className="font-bold text-slate-900 text-lg">{warranty.model}</h3>
                                 </div>

@@ -52,6 +52,7 @@ export interface DailyClose {
   totalRevenue: number;
   closedAt: string;
   topBrand: Brand | 'N/A';
+  storeId?: string;
 }
 
 export type UserRole = 'admin' | 'supervisor' | 'seller' | 'viewer';
@@ -61,6 +62,9 @@ export interface Store {
   name: string;
   location?: string;
   createdAt?: string;
+  entryTime?: string;
+  exitTime?: string;
+  lunchDurationMinutes?: number;
 }
 
 export interface UserProfile {
@@ -69,9 +73,12 @@ export interface UserProfile {
   role: UserRole;
   fullName?: string;
   storeId?: string;
+  assignedStores?: string[];
+  restDays?: number[];
+  vacationDates?: string[];
 }
 
-export type AttendanceType = 'entry' | 'lunch_start' | 'lunch_end' | 'exit';
+export type AttendanceType = 'entry' | 'lunch_start' | 'lunch_end' | 'exit' | 'excused';
 
 export interface AttendanceRecord {
   id: string;
@@ -83,6 +90,7 @@ export interface AttendanceRecord {
   imageUrl?: string;
   screenshotUrl?: string;
   locationCoords?: string;
+  notes?: string;
 }
 
 export interface MonthlyGoal {
