@@ -677,15 +677,15 @@ create policy "Users insert store warranties" on public.warranties for insert to
     if (!userProfile) return [];
 
     // Admins see everything or filter by selectedStoreId
-    if (userProfile.role === 'admin') {
+    if (userProfile?.role === 'admin') {
       return selectedStoreId === 'all' ? data : data.filter(item => item.storeId === selectedStoreId);
     }
 
     // Supervisors and Viewers: handle "Global" vs "Area" access
-    if (userProfile.role === 'supervisor' || userProfile.role === 'viewer') {
-      const allowedStores = (userProfile.assignedStores && userProfile.assignedStores.length > 0)
+    if (userProfile?.role === 'supervisor' || userProfile?.role === 'viewer') {
+      const allowedStores = (userProfile?.assignedStores && userProfile.assignedStores?.length > 0)
         ? userProfile.assignedStores
-        : (userProfile.storeId ? [userProfile.storeId] : null);
+        : (userProfile?.storeId ? [userProfile.storeId] : null);
 
       const baseData = allowedStores 
         ? data.filter(item => allowedStores.includes(item.storeId || ''))
@@ -697,7 +697,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
     }
 
     // Default (Sellers): only show their store
-    return data.filter(item => item.storeId === userProfile.storeId);
+    return data.filter(item => item.storeId === userProfile?.storeId);
   };
 
   const filteredSales = getFilteredData(sales);
@@ -1347,7 +1347,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
                         .filter(s => {
                           if (userProfile?.role === 'admin') return true;
                           if (userProfile?.role === 'supervisor' || userProfile?.role === 'viewer') {
-                             if (userProfile.assignedStores && userProfile.assignedStores.length > 0) {
+                             if (userProfile?.assignedStores && userProfile.assignedStores?.length > 0) {
                                return userProfile.assignedStores.includes(s.id);
                              }
                              return true; // Global Access if no stores assigned
@@ -1448,7 +1448,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
             {currentView === 'attendance' && userProfile && (
               <AttendanceManager 
                 user={userProfile} 
-                storeName={stores.find(s => s.id === userProfile.storeId)?.name}
+                storeName={stores.find(s => s.id === userProfile?.storeId)?.name}
               />
             )}
             {currentView === 'attendance-report' && (
@@ -1468,7 +1468,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
             )}
             {currentView === 'admin' && (userProfile?.role === 'admin' || userProfile?.role === 'supervisor') && (
               <AdminPanel 
-                role={userProfile.role}
+                role={userProfile?.role}
                 onRefresh={() => {
                   fetchData();
                   if (session) fetchUserProfile(session.user.id);

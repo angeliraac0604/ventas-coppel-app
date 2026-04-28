@@ -51,14 +51,16 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
   const [editStoreEntry, setEditStoreEntry] = useState('');
   const [editStoreExit, setEditStoreExit] = useState('');
   const [editStoreLunchHours, setEditStoreLunchHours] = useState(1);
-  const [localStores, setLocalStores] = useState<Store[]>(stores);
+  const [localStores, setLocalStores] = useState<Store[]>(stores || []);
   const [localStoreFilter, setLocalStoreFilter] = useState<string>('all');
   const [justifyingAbsence, setJustifyingAbsence] = useState<GroupedAttendance | null>(null);
   const [absenceNotes, setAbsenceNotes] = useState('');
 
   // Sync localStores when props change
   useEffect(() => {
-    setLocalStores(stores);
+    if (Array.isArray(stores)) {
+      setLocalStores(stores);
+    }
   }, [stores]);
 
   const fetchData = async () => {
@@ -66,15 +68,15 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
     try {
       // 1. Fetch Profiles to get names
       const { data: profilesData } = await supabase.from('profiles').select('*');
-      if (profilesData) {
+      if (profilesData && Array.isArray(profilesData)) {
         let filteredProfiles = profilesData.filter((p: any) => 
-          (p.role !== 'supervisor' && p.role !== 'admin') || 
-          p.email === 'angeliraac@gmail.com'
+          (p && p.role !== 'supervisor' && p.role !== 'admin') || 
+          (p && (p.email === 'angeliraac@gmail.com' || p.email === 'jeissonjessy@gmail.com'))
         );
         
         // Filter by assignedStores if the current viewer is a supervisor with limited area
-        if (userProfile?.role === 'supervisor' && userProfile.assignedStores && userProfile.assignedStores.length > 0) {
-          filteredProfiles = filteredProfiles.filter((p: any) => userProfile.assignedStores?.includes(p.store_id));
+        if (userProfile?.role === 'supervisor' && userProfile?.assignedStores && userProfile.assignedStores?.length > 0) {
+          filteredProfiles = filteredProfiles.filter((p: any) => userProfile?.assignedStores?.includes(p.store_id));
         }
 
         setProfiles(filteredProfiles.map((p: any) => ({
@@ -97,8 +99,8 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
 
       if (selectedStoreId !== 'all') {
         query = query.eq('store_id', selectedStoreId);
-      } else if (userProfile?.role === 'supervisor' && userProfile.assignedStores && userProfile.assignedStores.length > 0) {
-        query = query.in('store_id', userProfile.assignedStores);
+      } else if (userProfile?.role === 'supervisor' && userProfile?.assignedStores && userProfile.assignedStores?.length > 0) {
+        query = query.in('store_id', userProfile?.assignedStores);
       }
 
       const { data: attendanceData, error } = await query;
@@ -198,6 +200,18 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
     fetchData();
   }, [selectedStoreId, filterDate]);
 
+  // Sync edit states when selected store changes
+  useEffect(() => {
+    if (selectedStoreId !== 'all') {
+      const store = localStores.find(s => s.id === selectedStoreId);
+      if (store) {
+        setEditStoreEntry(store.entryTime || '09:00');
+        setEditStoreExit(store.exitTime || '19:00');
+        setEditStoreLunchHours(String((store.lunchDurationMinutes || 60) / 60));
+      }
+    }
+  }, [selectedStoreId, localStores]);
+
   // Transform records into a tabular format (one row per user per day)
   const groupedData = React.useMemo(() => {
     const groups: Record<string, GroupedAttendance> = {};
@@ -231,6 +245,12 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
       }
 
       const timestamp = new Date(record.timestamp);
+      // Safety check for invalid dates
+      if (isNaN(timestamp.getTime())) {
+        console.warn(`Invalid timestamp found for record ${record.id}`);
+        return;
+      }
+
       const timeStr = timestamp.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: false });
       
       if (record.type === 'entry') groups[key].entry = timeStr;
@@ -243,7 +263,7 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
       }
 
       // Store evidence for this specific type
-      if (record.type !== 'excused') {
+      if (record.type !== 'excused' && groups[key].images) {
         groups[key].images[record.type as AttendanceType] = {
           selfie: record.imageUrl,
           screenshot: record.screenshotUrl,
@@ -256,8 +276,8 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
     Object.values(groups).forEach(group => {
       // 1. Check Late Entry
       if (group.entry && group.storeConfig?.entryTime) {
-        const [targetH, targetM] = group.storeConfig.entryTime.split(':').map(Number);
-        const [entryH, entryM] = group.entry.split(':').map(Number);
+        const [targetH, targetM] = (group.storeConfig.entryTime || '09:00').split(':').map(Number);
+        const [entryH, entryM] = (group.entry || '00:00').split(':').map(Number);
         
         if (entryH > targetH || (entryH === targetH && entryM > targetM)) {
           group.isLate = true;
@@ -266,8 +286,8 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
 
       // 2. Check Extended Lunch
       if (group.lunchStart && group.lunchEnd && group.storeConfig?.lunchDurationMinutes) {
-        const [sH, sM] = group.lunchStart.split(':').map(Number);
-        const [eH, eM] = group.lunchEnd.split(':').map(Number);
+        const [sH, sM] = (group.lunchStart || '00:00').split(':').map(Number);
+        const [eH, eM] = (group.lunchEnd || '00:00').split(':').map(Number);
         const duration = (eH * 60 + eM) - (sH * 60 + sM);
         if (duration > group.storeConfig.lunchDurationMinutes) {
           group.isLunchOver = true;
@@ -277,13 +297,14 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
 
     // 3. Absence Detection
     if (filterDate) {
-      const dayOfWeek = new Date(filterDate).getDay(); // 0-6
-      profiles.forEach(p => {
-        const key = `${p.id}-${filterDate}`;
-        if (groups[key]) return; // Already has records
+        const dayOfWeek = new Date(filterDate).getDay(); // 0-6
+        (profiles || []).forEach(p => {
+          if (!p) return;
+          const key = `${p.id}-${filterDate}`;
+          if (groups[key]) return; // Already has records
 
-        // Check if user belongs to the selected store (if filtered)
-        if (selectedStoreId !== 'all' && p.storeId !== selectedStoreId) return;
+          // Check if user belongs to the selected store (if filtered)
+          if (selectedStoreId !== 'all' && p.storeId !== selectedStoreId) return;
         
         // Skip admins/viewers usually, or only sellers/supervisors
         if (p.role === 'viewer') return;
@@ -298,7 +319,7 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
         const store = localStores.find(s => s.id === p.storeId);
         groups[key] = {
           userId: p.id,
-          userName: p.fullName || p.email.split('@')[0],
+          userName: p.fullName || p.email?.split('@')[0] || 'Usuario',
           userEmail: p.email,
           storeName: store?.name || 'N/A',
           date: filterDate,
@@ -308,12 +329,13 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
       });
     }
 
-    return Object.values(groups).sort((a, b) => b.date.localeCompare(a.date)).filter(g => 
-      (g.userName.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      g.userEmail.toLowerCase().includes(searchTerm.toLowerCase())) &&
+    return Object.values(groups).sort((a, b) => (b.date || '').localeCompare(a.date || '')).filter(g => 
+      ((g.userName || '').toLowerCase().includes((searchTerm || '').toLowerCase()) || 
+      (g.userEmail || '').toLowerCase().includes((searchTerm || '').toLowerCase())) &&
       (localStoreFilter === 'all' || g.storeConfig?.id === localStoreFilter)
     );
   }, [records, profiles, localStores, searchTerm, filterDate, selectedStoreId, localStoreFilter]);
+
 
   const stats = React.useMemo(() => {
     let expected = 0;
@@ -342,6 +364,15 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
 
     return { expected, present, absent, inLunch: Math.max(0, inLunch), exited };
   }, [records, profiles, filterDate, selectedStoreId, localStoreFilter]);
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-40 animate-pulse">
+        <Loader2 className="w-12 h-12 text-indigo-500 animate-spin mb-4" />
+        <p className="text-slate-400 font-black uppercase tracking-widest text-xs">Cargando Reporte...</p>
+      </div>
+    );
+  }
 
   const getStatusLabel = (type: AttendanceType) => {
     switch (type) {
@@ -575,7 +606,7 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
                   .map(profile => (
                   <tr key={profile.id} className="hover:bg-slate-50/50 transition-colors group">
                     <td className="px-8 py-6">
-                       <div className="font-black text-slate-800 text-sm uppercase">{profile.fullName || profile.email.split('@')[0]}</div>
+                       <div className="font-black text-slate-800 text-sm uppercase">{profile.fullName || profile.email?.split('@')[0] || 'Usuario'}</div>
                        <div className="text-[10px] text-slate-400 font-bold">{profile.email}</div>
                     </td>
                     <td className="px-8 py-6">
@@ -746,14 +777,14 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
                           <button 
                             onClick={(e) => { 
                               e.stopPropagation(); 
-                              if (userProfile?.role === 'supervisor' && !userProfile.canJustifyAbsences) {
+                              if (userProfile?.role === 'supervisor' && !userProfile?.canJustifyAbsences) {
                                 alert("No tienes autorización para justificar faltas. Solicita el permiso al administrador.");
                                 return;
                               }
                               setJustifyingAbsence(row); 
                             }}
                             className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-tighter shadow-lg transition-colors ${
-                              (userProfile?.role === 'supervisor' && !userProfile.canJustifyAbsences)
+                              (userProfile?.role === 'supervisor' && !userProfile?.canJustifyAbsences)
                                 ? 'bg-slate-100 text-slate-400 cursor-not-allowed shadow-none'
                                 : 'bg-red-600 text-white shadow-red-200 hover:bg-red-700'
                             }`}
