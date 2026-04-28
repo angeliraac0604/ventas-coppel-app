@@ -6,9 +6,10 @@ import { smartImageUpload } from '../services/storageService';
 
 interface AttendanceManagerProps {
   user: UserProfile;
+  storeName?: string;
 }
 
-const AttendanceManager: React.FC<AttendanceManagerProps> = ({ user }) => {
+const AttendanceManager: React.FC<AttendanceManagerProps> = ({ user, storeName }) => {
   const [history, setHistory] = useState<AttendanceRecord[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [todayRecords, setTodayRecords] = useState<AttendanceType[]>([]);
@@ -185,11 +186,29 @@ const AttendanceManager: React.FC<AttendanceManagerProps> = ({ user }) => {
             // Reverse Geocoding (Nominatim - OpenStreetMap)
             const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`);
             const data = await res.json();
-            if (data.display_name) {
-              setLocation(data.display_name);
+            
+            if (data.address) {
+              const parts = [];
+              if (storeName) parts.push(storeName.toUpperCase());
+              
+              // Skip the specific POI name from Nominatim because it's often outdated or wrong for commercial branches
+              if (data.address.road) parts.push(data.address.road);
+              if (data.address.suburb) parts.push(data.address.suburb);
+              
+              const city = data.address.city || data.address.town || data.address.village || data.address.county;
+              if (city) parts.push(city);
+              
+              if (data.address.state) parts.push(data.address.state);
+
+              setLocation(parts.filter(Boolean).join(', '));
+            } else if (data.display_name) {
+              setLocation(storeName ? `${storeName.toUpperCase()}, ${data.display_name}` : data.display_name);
+            } else {
+              setLocation(coords);
             }
           } catch (err) {
             console.error("Reverse geocoding failed:", err);
+            setLocation(coords);
           }
         },
         () => setLocation('Ubicación no disponible')

@@ -1455,6 +1455,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
             {currentView === 'attendance' && userProfile && (
               <AttendanceManager 
                 user={userProfile} 
+                storeName={stores.find(s => s.id === userProfile.storeId)?.name}
               />
             )}
             {currentView === 'attendance-report' && (
