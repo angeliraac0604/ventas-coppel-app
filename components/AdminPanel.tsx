@@ -12,6 +12,7 @@ import {
   X, 
   Check, 
   AlertCircle,
+  CheckCircle,
   Save,
   Edit2,
   Building,
@@ -480,7 +481,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
                         )}
                         {profile.role === 'supervisor' && profile.canJustifyAbsences && (
                            <div className="flex items-center gap-1.5 mt-1 text-emerald-600">
-                             <CheckCircle2 className="w-3 h-3" />
+                             <CheckCircle className="w-3 h-3" />
                              <span className="text-[8px] font-black uppercase">Autorizado para justificar</span>
                            </div>
                         )}
