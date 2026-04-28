@@ -234,6 +234,27 @@ const AttendanceSummary: React.FC<AttendanceSummaryProps> = ({ stores, profiles,
         
         // Convert absenceDates to a Set of numbers for fast lookup
         const absenceSet = new Set(viewingAbsences.dates.map(d => parseInt(d.split('-')[2])));
+        
+        // Function to determine day status and color
+        const getDayStatus = (day: number) => {
+          const dateStr = `${year}-${String(m + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          const dayOfWeek = new Date(year, m, day).getDay();
+          
+          const dayRecords = records.filter(r => r.userId === viewingAbsences.profile.id && r.date === dateStr);
+          const hasEntry = dayRecords.some(r => r.type === 'entry');
+          const hasExcused = dayRecords.some(r => r.type === 'excused');
+          const isRestDay = viewingAbsences.profile.restDays?.includes(dayOfWeek);
+          const isVacation = viewingAbsences.profile.vacationDates?.includes(dateStr);
+          const isAbsent = absenceSet.has(day);
+
+          if (hasEntry) return { color: 'bg-emerald-500 text-white', label: 'Asistencia' };
+          if (hasExcused) return { color: 'bg-blue-400 text-white', label: 'Permiso' };
+          if (isVacation) return { color: 'bg-amber-400 text-white', label: 'Vacaciones' };
+          if (isRestDay) return { color: 'bg-slate-200 text-slate-500', label: 'Descanso' };
+          if (isAbsent) return { color: 'bg-rose-500 text-white', label: 'Falta' };
+          
+          return { color: 'text-slate-400', label: 'Sin registro' };
+        };
 
         return (
           <div className="fixed inset-0 z-[60] bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4">
@@ -274,14 +295,10 @@ const AttendanceSummary: React.FC<AttendanceSummaryProps> = ({ stores, profiles,
                         ))}
                         {Array.from({ length: daysInMonth }).map((_, i) => {
                           const day = i + 1;
-                          const isAbsent = absenceSet.has(day);
+                          const { color, label } = getDayStatus(day);
                           return (
                             <div key={day} className="flex items-center justify-center">
-                              <div className={`w-8 h-8 flex items-center justify-center rounded-lg text-sm transition-all ${
-                                isAbsent 
-                                  ? 'bg-[#E393A7] text-white font-black ring-2 ring-[#E393A7] ring-offset-1 shadow-sm' 
-                                  : 'text-slate-600 font-medium'
-                              }`}>
+                              <div className={`w-8 h-8 flex items-center justify-center rounded-lg text-[11px] transition-all ${color}`} title={label}>
                                 {day}
                               </div>
                             </div>
@@ -290,9 +307,27 @@ const AttendanceSummary: React.FC<AttendanceSummaryProps> = ({ stores, profiles,
                       </div>
                    </div>
                    
-                   <div className="mt-6 flex items-center justify-center gap-2">
-                     <div className="w-3 h-3 rounded-full bg-[#E393A7] shadow-sm"></div>
-                     <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Días con falta registrada</span>
+                   <div className="mt-6 grid grid-cols-2 gap-x-4 gap-y-2 px-2">
+                     <div className="flex items-center gap-2">
+                       <div className="w-3 h-3 rounded-full bg-emerald-500 shadow-sm"></div>
+                       <span className="text-[9px] font-black text-slate-500 uppercase">Asistencia</span>
+                     </div>
+                     <div className="flex items-center gap-2">
+                       <div className="w-3 h-3 rounded-full bg-rose-500 shadow-sm"></div>
+                       <span className="text-[9px] font-black text-slate-500 uppercase">Falta</span>
+                     </div>
+                     <div className="flex items-center gap-2">
+                       <div className="w-3 h-3 rounded-full bg-amber-400 shadow-sm"></div>
+                       <span className="text-[9px] font-black text-slate-500 uppercase">Vacaciones</span>
+                     </div>
+                     <div className="flex items-center gap-2">
+                       <div className="w-3 h-3 rounded-full bg-blue-400 shadow-sm"></div>
+                       <span className="text-[9px] font-black text-slate-500 uppercase">Permiso</span>
+                     </div>
+                     <div className="flex items-center gap-2">
+                       <div className="w-3 h-3 rounded-full bg-slate-200 shadow-sm"></div>
+                       <span className="text-[9px] font-black text-slate-500 uppercase">Descanso</span>
+                     </div>
                    </div>
                 </div>
              </div>
