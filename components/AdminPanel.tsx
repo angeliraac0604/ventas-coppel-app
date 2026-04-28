@@ -58,6 +58,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
   const [targetRole, setTargetRole] = useState<UserRole>('seller');
   const [targetStoreId, setTargetStoreId] = useState('');
   const [targetAssignedStores, setTargetAssignedStores] = useState<string[]>([]);
+  const [targetCanJustifyAbsences, setTargetCanJustifyAbsences] = useState(false);
+  const [directCanJustifyAbsences, setDirectCanJustifyAbsences] = useState(false);
   
   // Store Edit State
   const [editingStoreId, setEditingStoreId] = useState<string | null>(null);
@@ -97,7 +99,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
           role: p.role,
           fullName: p.full_name,
           storeId: p.store_id,
-          assignedStores: p.assigned_stores || []
+          assignedStores: p.assigned_stores || [],
+          canJustifyAbsences: p.can_justify_absences || false
         })));
       }
 
@@ -172,7 +175,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
         .update({
           full_name: directFullName.toUpperCase(),
           role: directRole,
-          store_id: directStoreId || null
+          store_id: directStoreId || null,
+          can_justify_absences: directCanJustifyAbsences
         })
         .eq('id', authData.user.id);
 
@@ -198,7 +202,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
         full_name: targetFullName.toUpperCase(),
         role: targetRole,
         store_id: targetStoreId || null,
-        assigned_stores: (targetRole === 'supervisor' || targetRole === 'viewer') ? targetAssignedStores : null
+        assigned_stores: (targetRole === 'supervisor' || targetRole === 'viewer') ? targetAssignedStores : null,
+        can_justify_absences: targetCanJustifyAbsences
       }).eq('id', userId);
 
       if (error) throw error;
@@ -416,29 +421,24 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
                           {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                         </select>
                         
-                        {(targetRole === 'supervisor' || targetRole === 'viewer') && (
-                          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1">Autorizar Acceso (Multiselección)</p>
-                            <div className="max-h-32 overflow-y-auto space-y-1.5 pr-2 custom-scrollbar">
-                              {stores.map(s => (
-                                <label key={s.id} className="flex items-center gap-3 px-3 py-2 hover:bg-white rounded-xl cursor-pointer transition-all border border-transparent hover:border-slate-100 group">
-                                  <input 
-                                    type="checkbox" 
-                                    checked={targetAssignedStores.includes(s.id)}
-                                    onChange={(e) => {
-                                      if (e.target.checked) setTargetAssignedStores([...targetAssignedStores, s.id]);
-                                      else setTargetAssignedStores(targetAssignedStores.filter(id => id !== s.id));
-                                    }}
-                                    className="w-4 h-4 rounded-lg border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                                  />
-                                  <span className="text-[10px] font-black text-slate-600 uppercase group-hover:text-indigo-600">{s.name}</span>
-                                </label>
-                              ))}
-                            </div>
+                        {targetRole === 'supervisor' && (
+                          <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 mt-3">
+                            <label className="flex items-center gap-3 cursor-pointer group">
+                              <input 
+                                type="checkbox" 
+                                checked={targetCanJustifyAbsences}
+                                onChange={(e) => setTargetCanJustifyAbsences(e.target.checked)}
+                                className="w-4 h-4 rounded-lg border-emerald-300 text-emerald-600 focus:ring-emerald-500"
+                              />
+                              <div className="flex flex-col">
+                                <span className="text-[10px] font-black text-emerald-700 uppercase">Autorizar Justificar Faltas</span>
+                                <span className="text-[8px] text-emerald-600/70 font-bold uppercase">Permite al supervisor marcar faltas como permiso</span>
+                              </div>
+                            </label>
                           </div>
                         )}
-                      </div>
-                    ) : (
+                        </div>
+                      ) : (
                       <div className="space-y-2">
                         <span className="text-xs font-black text-slate-700 uppercase flex items-center gap-2">
                           <Building className="w-3.5 h-3.5 text-slate-400" />
@@ -452,6 +452,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
                               </span>
                             ))}
                           </div>
+                        )}
+                        {profile.role === 'supervisor' && profile.canJustifyAbsences && (
+                           <div className="flex items-center gap-1.5 mt-1 text-emerald-600">
+                             <CheckCircle2 className="w-3 h-3" />
+                             <span className="text-[8px] font-black uppercase">Autorizado para justificar</span>
+                           </div>
                         )}
                       </div>
                     )}
@@ -470,6 +476,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
                           setTargetRole(profile.role); 
                           setTargetStoreId(profile.storeId || ''); 
                           setTargetAssignedStores(profile.assignedStores || []);
+                          setTargetCanJustifyAbsences(profile.canJustifyAbsences || false);
                         }} className="p-3 hover:bg-indigo-50 text-slate-300 hover:text-indigo-600 rounded-xl transition-all"><Edit2 className="w-5 h-5" /></button>
                         <button onClick={() => handleDeleteUser(profile.id)} className="p-3 hover:bg-red-50 text-slate-300 hover:text-red-500 rounded-xl transition-all"><Trash2 className="w-5 h-5" /></button>
                       </div>
@@ -555,6 +562,23 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
                           </select>
                         </div>
                       </div>
+
+                      {directRole === 'supervisor' && (
+                        <div className="bg-emerald-50 border border-emerald-100 p-5 rounded-[1.2rem] flex items-center gap-4">
+                          <input 
+                            type="checkbox" 
+                            id="directJustify"
+                            checked={directCanJustifyAbsences}
+                            onChange={(e) => setDirectCanJustifyAbsences(e.target.checked)}
+                            className="w-5 h-5 rounded-lg border-emerald-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                          />
+                          <label htmlFor="directJustify" className="flex-1 cursor-pointer">
+                             <p className="text-[10px] font-black text-emerald-700 uppercase">Autorizar Justificar Faltas</p>
+                             <p className="text-[9px] text-emerald-600/70 font-bold uppercase leading-none mt-1">Este supervisor podrá autorizar permisos en las asistencias.</p>
+                          </label>
+                        </div>
+                      )}
+
                       <button type="submit" disabled={isDirectLoading} className="w-full bg-indigo-600 text-white font-black py-7 rounded-[1.5rem] shadow-2xl shadow-indigo-200 uppercase tracking-[0.2em] text-xs hover:scale-[1.02] active:scale-95 transition-all">Activar Cuenta</button>
                    </form>
                  )}

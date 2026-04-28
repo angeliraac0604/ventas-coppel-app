@@ -1456,6 +1456,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
               <AttendanceReport 
                 selectedStoreId={selectedStoreId}
                 stores={stores}
+                userProfile={userProfile}
               />
             )}
             {currentView === 'supervision' && (userProfile?.role === 'admin' || userProfile?.role === 'supervisor') && (
