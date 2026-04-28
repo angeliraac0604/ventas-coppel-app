@@ -519,8 +519,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
       {activeModal !== 'none' && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-300">
            <div className="absolute inset-0" onClick={() => setActiveModal('none')}></div>
-           <div className="bg-white rounded-[3.5rem] shadow-[0_32px_64px_-12px_rgba(0,0,0,0.3)] w-full max-w-xl overflow-hidden relative z-10 animate-in zoom-in-95 duration-300">
-              <div className="px-12 pt-12 pb-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
+           <div className="bg-white rounded-[3.5rem] shadow-[0_32px_64px_-12px_rgba(0,0,0,0.3)] w-full max-w-xl max-h-[90vh] overflow-y-auto relative z-10 animate-in zoom-in-95 duration-300 custom-scrollbar">
+              <div className="sticky top-0 z-20 px-12 pt-12 pb-8 border-b border-slate-50 flex justify-between items-center bg-white/80 backdrop-blur-md">
                  <h3 className="text-3xl font-black text-slate-800 uppercase tracking-tighter">
                    {activeModal === 'store' && 'Nueva Sucursal'}
                    {activeModal === 'direct' && 'Alta de Usuario'}
