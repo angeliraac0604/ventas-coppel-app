@@ -44,7 +44,7 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
 
       if (selectedStoreId !== 'all') {
         salesQuery = salesQuery.eq('store_id', selectedStoreId);
-      } else if (userProfile.role === 'supervisor' || userProfile.role === 'viewer') {
+      } else if (userProfile.role === 'viewer') {
         if (userProfile.assignedStores && userProfile.assignedStores.length > 0) {
           salesQuery = salesQuery.in('store_id', userProfile.assignedStores);
         } else if (userProfile.storeId) {

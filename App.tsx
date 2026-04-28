@@ -197,6 +197,7 @@ $$ language sql security definer;
 
 -- Políticas de Ventas
 create policy "Admins see all sales" on public.sales for select to authenticated using (public.is_admin());
+create policy "Supervisors see all sales" on public.sales for select to authenticated using (public.is_supervisor());
 create policy "Sellers see their store sales" on public.sales for select to authenticated using (store_id = public.get_user_store_id());
 create policy "Sellers insert their store sales" on public.sales for insert to authenticated with check (
   public.is_admin() or (store_id = public.get_user_store_id() and auth.uid() = created_by)
@@ -241,6 +242,7 @@ create table if not exists public.monthly_goals (
 
 alter table public.monthly_goals enable row level security;
 create policy "Admins see all goals" on public.monthly_goals for select to authenticated using (public.is_admin());
+create policy "Supervisors see all goals" on public.monthly_goals for select to authenticated using (public.is_supervisor());
 create policy "Sellers see store goals" on public.monthly_goals for select to authenticated using (store_id = public.get_user_store_id());
 create policy "Admins upsert goals" on public.monthly_goals for all to authenticated using (public.is_admin()) with check (public.is_admin());
 
@@ -265,6 +267,7 @@ create table if not exists public.warranties (
 
 alter table public.warranties enable row level security;
 create policy "Admins see all warranties" on public.warranties for select to authenticated using (public.is_admin());
+create policy "Supervisors see all warranties" on public.warranties for select to authenticated using (public.is_supervisor());
 create policy "Sellers see store warranties" on public.warranties for select to authenticated using (store_id = public.get_user_store_id());
 create policy "Users insert store warranties" on public.warranties for insert to authenticated with check (store_id = public.get_user_store_id());
 `;
@@ -1349,17 +1352,8 @@ create policy "Users insert store warranties" on public.warranties for insert to
                       <option value="all">Ver Todas (Global)</option>
                       {stores
                         .filter(s => {
-                          if (userProfile?.role === 'admin') return true;
-                          if (userProfile?.role === 'supervisor') {
-                            if (userProfile.assignedStores && userProfile.assignedStores.length > 0) {
-                              return userProfile.assignedStores.includes(s.id);
-                            }
-                            if (userProfile.storeId) {
-                               return s.id === userProfile.storeId;
-                            }
-                            return true;
-                          }
-                          return false;
+                          if (userProfile?.role === 'admin' || userProfile?.role === 'supervisor') return true;
+                          return s.id === userProfile?.storeId;
                         })
                         .map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
