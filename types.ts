@@ -76,6 +76,7 @@ export interface UserProfile {
   assignedStores?: string[];
   restDays?: number[];
   vacationDates?: string[];
+  canJustifyAbsences?: boolean;
 }
 
 export type AttendanceType = 'entry' | 'lunch_start' | 'lunch_end' | 'exit' | 'excused';

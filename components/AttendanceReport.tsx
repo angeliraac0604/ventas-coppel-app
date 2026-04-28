@@ -31,7 +31,7 @@ interface GroupedAttendance {
   storeConfig?: Store;
 }
 
-const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, stores }) => {
+const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, stores, userProfile }) => {
   const [loading, setLoading] = useState(true);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
@@ -69,7 +69,8 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
             fullName: p.full_name,
             storeId: p.store_id,
             restDays: p.rest_days || [],
-            vacationDates: p.vacation_dates || []
+            vacationDates: p.vacation_dates || [],
+            canJustifyAbsences: p.can_justify_absences
           })));
       }
 
@@ -724,8 +725,19 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
                           </span>
                         ) : row.isAbsence ? (
                           <button 
-                            onClick={(e) => { e.stopPropagation(); setJustifyingAbsence(row); }}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-red-600 text-white rounded-full text-[9px] font-black uppercase tracking-tighter shadow-lg shadow-red-200 hover:bg-red-700 transition-colors cursor-pointer"
+                            onClick={(e) => { 
+                              e.stopPropagation(); 
+                              if (userProfile?.role === 'supervisor' && !userProfile.canJustifyAbsences) {
+                                alert("No tienes autorización para justificar faltas. Solicita el permiso al administrador.");
+                                return;
+                              }
+                              setJustifyingAbsence(row); 
+                            }}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-tighter shadow-lg transition-colors ${
+                              (userProfile?.role === 'supervisor' && !userProfile.canJustifyAbsences)
+                                ? 'bg-slate-100 text-slate-400 cursor-not-allowed shadow-none'
+                                : 'bg-red-600 text-white shadow-red-200 hover:bg-red-700'
+                            }`}
                             title="Click para justificar (Añadir Permiso)"
                           >
                             <AlertCircle className="w-3 h-3" /> Falta Injustificada
