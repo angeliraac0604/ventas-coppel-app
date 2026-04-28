@@ -176,7 +176,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
           full_name: directFullName.toUpperCase(),
           role: directRole,
           store_id: directStoreId || null,
-          can_justify_absences: directCanJustifyAbsences
+          can_justify_absences: directCanJustifyAbsences,
+          assigned_stores: (directRole === 'supervisor' || directRole === 'viewer') ? directAssignedStores : null
         })
         .eq('id', authData.user.id);
 
@@ -421,8 +422,31 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
                           {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                         </select>
                         
+                        {(targetRole === 'supervisor' || targetRole === 'viewer') && (
+                          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 px-1">Selección de Tiendas</p>
+                            <p className="text-[8px] text-slate-400 font-bold uppercase mb-3 px-1 leading-tight">Si no seleccionas ninguna, tendrá acceso GLOBAL (todas las actuales y futuras)</p>
+                            <div className="max-h-32 overflow-y-auto space-y-1.5 pr-2 custom-scrollbar">
+                              {stores.map(s => (
+                                <label key={s.id} className="flex items-center gap-3 px-3 py-2 hover:bg-white rounded-xl cursor-pointer transition-all border border-transparent hover:border-slate-100 group">
+                                  <input 
+                                    type="checkbox" 
+                                    checked={targetAssignedStores.includes(s.id)}
+                                    onChange={(e) => {
+                                      if (e.target.checked) setTargetAssignedStores([...targetAssignedStores, s.id]);
+                                      else setTargetAssignedStores(targetAssignedStores.filter(id => id !== s.id));
+                                    }}
+                                    className="w-4 h-4 rounded-lg border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                  />
+                                  <span className="text-[10px] font-black text-slate-600 uppercase group-hover:text-indigo-600">{s.name}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
                         {targetRole === 'supervisor' && (
-                          <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 mt-3">
+                          <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100">
                             <label className="flex items-center gap-3 cursor-pointer group">
                               <input 
                                 type="checkbox" 
@@ -554,7 +578,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
                         </div>
                         <div className="space-y-2">
                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Nivel de Acceso</label>
-                          <select value={directRole} onChange={(e) => setDirectRole(e.target.value as UserRole)} className="bg-slate-50 border border-slate-200 rounded-[1.2rem] px-6 py-5 text-sm font-black w-full uppercase">
+                          <select value={directRole} onChange={(e) => {
+                             setDirectRole(e.target.value as UserRole);
+                             if (e.target.value !== 'supervisor' && e.target.value !== 'viewer') setDirectAssignedStores([]);
+                          }} className="bg-slate-50 border border-slate-200 rounded-[1.2rem] px-6 py-5 text-sm font-black w-full uppercase">
                             <option value="seller">VENDEDOR</option>
                             <option value="supervisor">SUPERVISOR</option>
                             <option value="admin">ADMINISTRADOR</option>
@@ -562,6 +589,29 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
                           </select>
                         </div>
                       </div>
+
+                      {(directRole === 'supervisor' || directRole === 'viewer') && (
+                        <div className="bg-slate-50 p-6 rounded-[1.5rem] border border-slate-100">
+                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 px-1">Seleccionar Área (Tiendas)</p>
+                           <p className="text-[8px] text-slate-400 font-bold uppercase mb-4 px-1 leading-tight">Deja vacío para Supervisor General (todas las tiendas)</p>
+                           <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
+                              {stores.map(s => (
+                                <label key={s.id} className="flex items-center gap-3 px-4 py-3 bg-white border border-slate-100 rounded-xl cursor-pointer hover:border-indigo-200 transition-all">
+                                   <input 
+                                     type="checkbox" 
+                                     checked={directAssignedStores.includes(s.id)}
+                                     onChange={(e) => {
+                                       if (e.target.checked) setDirectAssignedStores([...directAssignedStores, s.id]);
+                                       else setDirectAssignedStores(directAssignedStores.filter(id => id !== s.id));
+                                     }}
+                                     className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                   />
+                                   <span className="text-[10px] font-black text-slate-600 uppercase">{s.name}</span>
+                                </label>
+                              ))}
+                           </div>
+                        </div>
+                      )}
 
                       {directRole === 'supervisor' && (
                         <div className="bg-emerald-50 border border-emerald-100 p-5 rounded-[1.2rem] flex items-center gap-4">

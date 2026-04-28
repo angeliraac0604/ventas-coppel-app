@@ -681,26 +681,19 @@ create policy "Users insert store warranties" on public.warranties for insert to
       return selectedStoreId === 'all' ? data : data.filter(item => item.storeId === selectedStoreId);
     }
 
-    // Supervisors: 
-    // - If no assignedStores, they are "General Supervisors" and see ALL if their storeId is null, or only their store if it is set.
-    // - If assignedStores exists, they see only those stores.
-    if (userProfile.role === 'supervisor') {
-      if (userProfile.assignedStores && userProfile.assignedStores.length > 0) {
-        return data.filter(item => userProfile.assignedStores?.includes(item.storeId || ''));
-      }
-      // Fallback: if they have a storeId assigned, they see only that store.
-      // If they have NO storeId and NO assignedStores, they see EVERYTHING (General Supervisor).
-      if (!userProfile.storeId) return data;
-      return data.filter(item => item.storeId === userProfile.storeId);
-    }
+    // Supervisors and Viewers: handle "Global" vs "Area" access
+    if (userProfile.role === 'supervisor' || userProfile.role === 'viewer') {
+      const allowedStores = (userProfile.assignedStores && userProfile.assignedStores.length > 0)
+        ? userProfile.assignedStores
+        : (userProfile.storeId ? [userProfile.storeId] : null);
 
-    // Viewers/Lectors: restricted to assigned stores or their primary store
-    if (userProfile.role === 'viewer') {
-      const allowedStores = userProfile.assignedStores && userProfile.assignedStores.length > 0 
-        ? userProfile.assignedStores 
-        : (userProfile.storeId ? [userProfile.storeId] : []);
-      
-      return data.filter(item => allowedStores.includes(item.storeId || ''));
+      const baseData = allowedStores 
+        ? data.filter(item => allowedStores.includes(item.storeId || ''))
+        : data;
+
+      return selectedStoreId === 'all' 
+        ? baseData 
+        : baseData.filter(item => item.storeId === selectedStoreId);
     }
 
     // Default (Sellers): only show their store
@@ -1352,7 +1345,13 @@ create policy "Users insert store warranties" on public.warranties for insert to
                       <option value="all">Ver Todas (Global)</option>
                       {stores
                         .filter(s => {
-                          if (userProfile?.role === 'admin' || userProfile?.role === 'supervisor') return true;
+                          if (userProfile?.role === 'admin') return true;
+                          if (userProfile?.role === 'supervisor' || userProfile?.role === 'viewer') {
+                             if (userProfile.assignedStores && userProfile.assignedStores.length > 0) {
+                               return userProfile.assignedStores.includes(s.id);
+                             }
+                             return true; // Global Access if no stores assigned
+                          }
                           return s.id === userProfile?.storeId;
                         })
                         .map(s => <option key={s.id} value={s.id}>{s.name}</option>)}

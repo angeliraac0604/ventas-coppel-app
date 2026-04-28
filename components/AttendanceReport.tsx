@@ -60,9 +60,14 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
       // 1. Fetch Profiles to get names
       const { data: profilesData } = await supabase.from('profiles').select('*');
       if (profilesData) {
-        setProfiles(profilesData
-          .filter((p: any) => p.role !== 'supervisor' && p.role !== 'admin')
-          .map((p: any) => ({
+        let filteredProfiles = profilesData.filter((p: any) => p.role !== 'supervisor' && p.role !== 'admin');
+        
+        // Filter by assignedStores if the current viewer is a supervisor with limited area
+        if (userProfile?.role === 'supervisor' && userProfile.assignedStores && userProfile.assignedStores.length > 0) {
+          filteredProfiles = filteredProfiles.filter((p: any) => userProfile.assignedStores?.includes(p.store_id));
+        }
+
+        setProfiles(filteredProfiles.map((p: any) => ({
             id: p.id,
             email: p.email,
             role: p.role,
@@ -82,6 +87,8 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
 
       if (selectedStoreId !== 'all') {
         query = query.eq('store_id', selectedStoreId);
+      } else if (userProfile?.role === 'supervisor' && userProfile.assignedStores && userProfile.assignedStores.length > 0) {
+        query = query.in('store_id', userProfile.assignedStores);
       }
 
       const { data: attendanceData, error } = await query;
@@ -552,6 +559,7 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
               <tbody className="divide-y divide-slate-50">
                 {profiles
                   .filter(p => p.role !== 'viewer')
+                  .filter(p => selectedStoreId === 'all' || p.storeId === selectedStoreId)
                   .filter(p => p.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) || p.email.toLowerCase().includes(searchTerm.toLowerCase()))
                   .map(profile => (
                   <tr key={profile.id} className="hover:bg-slate-50/50 transition-colors group">
