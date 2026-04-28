@@ -11,9 +11,13 @@ interface PerformanceData {
   revenue: number;
 }
 
-const SupervisionPanel: React.FC = () => {
-  const [stores, setStores] = useState<Store[]>([]);
-  const [selectedStoreId, setSelectedStoreId] = useState<string>('all');
+interface SupervisionPanelProps {
+  stores: Store[];
+  selectedStoreId: string;
+  userProfile: UserProfile;
+}
+
+const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedStoreId, userProfile }) => {
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [sales, setSales] = useState<any[]>([]);
   const [goals, setGoals] = useState<any[]>([]);
@@ -31,17 +35,26 @@ const SupervisionPanel: React.FC = () => {
       const { data: storesData } = await supabase.from('stores').select('*').order('name');
       const { data: profilesData } = await supabase.from('profiles').select('*');
       
-      // Fetch month-specific sales with a safe range to ensure all records (e.g., Jan/Feb) are loaded.
-      const { data: salesData } = await supabase.from('sales')
+      let salesQuery = supabase.from('sales')
         .select('*')
         .gte('date', `${targetMonth}-01`)
         .lte('date', `${targetMonth}-31`)
         .order('date', { ascending: false })
         .range(0, 1999);
+
+      if (selectedStoreId !== 'all') {
+        salesQuery = salesQuery.eq('store_id', selectedStoreId);
+      } else if (userProfile.role === 'supervisor' || userProfile.role === 'viewer') {
+        if (userProfile.assignedStores && userProfile.assignedStores.length > 0) {
+          salesQuery = salesQuery.in('store_id', userProfile.assignedStores);
+        } else if (userProfile.storeId) {
+          salesQuery = salesQuery.eq('store_id', userProfile.storeId);
+        }
+      }
         
+      const { data: salesData } = await salesQuery;
       const { data: goalsData } = await supabase.from('monthly_goals').select('*');
 
-      if (storesData) setStores(storesData);
       if (profilesData) setProfiles(profilesData);
       if (salesData) setSales(salesData || []);
       if (goalsData) setGoals(goalsData);
@@ -195,17 +208,7 @@ const SupervisionPanel: React.FC = () => {
               />
            </div>
 
-           <div className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-2xl px-4 py-2">
-              <Building className="w-4 h-4 text-indigo-500" />
-              <select 
-                value={selectedStoreId} 
-                onChange={(e) => setSelectedStoreId(e.target.value)}
-                className="bg-transparent text-sm font-black text-slate-700 outline-none cursor-pointer appearance-none pr-4"
-              >
-                <option value="all">Todas las Tiendas</option>
-                {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-           </div>
+           {/* Internal store select removed as it's now controlled by the global header */}
         </div>
       </div>
 
@@ -356,44 +359,46 @@ const SupervisionPanel: React.FC = () => {
         <div className="space-y-8">
            
            {/* GOAL ASSIGNMENT FORM */}
-           <div className="bg-slate-900 text-white p-8 rounded-[2.5rem] shadow-xl relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/20 rounded-full -mr-12 -mt-12"></div>
-              <div className="relative z-10">
-                 <div className="flex items-center gap-3 mb-6">
-                    <Target className="w-5 h-5 text-indigo-400" />
-                    <h3 className="text-base font-black uppercase tracking-tight">Asignar Metas</h3>
-                 </div>
-                 <form onSubmit={handleSaveGoal} className="space-y-5">
-                    <div>
-                       <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-2 px-1">Presupuesto ($)</label>
-                       <input 
-                         type="number" 
-                         value={revenueGoal} 
-                         onChange={(e) => setRevenueGoal(e.target.value)}
-                         placeholder="0.00"
-                         className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-sm font-black text-white outline-none focus:ring-4 focus:ring-indigo-500/20 transition-all" 
-                       />
-                    </div>
-                    <div>
-                       <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-2 px-1">Equipos (Qty)</label>
-                       <input 
-                         type="number" 
-                         value={devicesGoal} 
-                         onChange={(e) => setDevicesGoal(e.target.value)}
-                         placeholder="0"
-                         className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-sm font-black text-white outline-none focus:ring-4 focus:ring-indigo-500/20 transition-all" 
-                       />
-                    </div>
-                    <button 
-                      type="submit" 
-                      disabled={isSavingGoal}
-                      className="w-full bg-indigo-600 hover:bg-white hover:text-indigo-600 text-white font-black py-4 rounded-2xl transition-all shadow-lg shadow-indigo-900/40 text-[10px] uppercase tracking-widest mt-2 flex items-center justify-center gap-2"
-                    >
-                      {isSavingGoal ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Save className="w-4 h-4" /> Actualizar Meta</>}
-                    </button>
-                 </form>
-              </div>
-           </div>
+           {userProfile.role === 'admin' && (
+             <div className="bg-slate-900 text-white p-8 rounded-[2.5rem] shadow-xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/20 rounded-full -mr-12 -mt-12"></div>
+                <div className="relative z-10">
+                   <div className="flex items-center gap-3 mb-6">
+                      <Target className="w-5 h-5 text-indigo-400" />
+                      <h3 className="text-base font-black uppercase tracking-tight">Asignar Metas</h3>
+                   </div>
+                   <form onSubmit={handleSaveGoal} className="space-y-5">
+                      <div>
+                         <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-2 px-1">Presupuesto ($)</label>
+                         <input 
+                           type="number" 
+                           value={revenueGoal} 
+                           onChange={(e) => setRevenueGoal(e.target.value)}
+                           placeholder="0.00"
+                           className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-sm font-black text-white outline-none focus:ring-4 focus:ring-indigo-500/20 transition-all" 
+                         />
+                      </div>
+                      <div>
+                         <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-2 px-1">Equipos (Qty)</label>
+                         <input 
+                           type="number" 
+                           value={devicesGoal} 
+                           onChange={(e) => setDevicesGoal(e.target.value)}
+                           placeholder="0"
+                           className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-sm font-black text-white outline-none focus:ring-4 focus:ring-indigo-500/20 transition-all" 
+                         />
+                      </div>
+                      <button 
+                        type="submit" 
+                        disabled={isSavingGoal}
+                        className="w-full bg-indigo-600 hover:bg-white hover:text-indigo-600 text-white font-black py-4 rounded-2xl transition-all shadow-lg shadow-indigo-900/40 text-[10px] uppercase tracking-widest mt-2 flex items-center justify-center gap-2"
+                      >
+                        {isSavingGoal ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Save className="w-4 h-4" /> Actualizar Meta</>}
+                      </button>
+                   </form>
+                </div>
+             </div>
+           )}
 
            {/* SELLER RANKING */}
            <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex-1">

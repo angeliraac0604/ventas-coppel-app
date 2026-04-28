@@ -11,7 +11,7 @@ import SupervisionPanel from './components/SupervisionPanel';
 import AttendanceReport from './components/AttendanceReport';
 import AuthForm from './components/AuthForm';
 import CompleteProfile from './components/CompleteProfile';
-import { Sale, DailyClose, Brand, UserProfile, Warranty, Store } from './types';
+import { Sale, DailyClose, Brand, UserProfile, Warranty, Store, UserRole } from './types';
 import { BRAND_CONFIGS } from './constants';
 import { supabase } from './services/supabaseClient';
 import { deleteImageFromDriveScript } from './services/googleAppsScriptService';
@@ -79,6 +79,7 @@ const App: React.FC = () => {
   const [sales, setSales] = useState<Sale[]>([]);
   const [closings, setClosings] = useState<DailyClose[]>([]);
   const [warranties, setWarranties] = useState<Warranty[]>([]);
+  const [alerts, setAlerts] = useState<any[]>([]);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -200,10 +201,12 @@ create policy "Sellers insert their store sales" on public.sales for insert to a
 create policy "Admins see all attendance" on public.attendance for select to authenticated using (public.is_admin());
 create policy "Users see own attendance" on public.attendance for select to authenticated using (user_id = auth.uid());
 create policy "Users insert own attendance" on public.attendance for insert to authenticated with check (user_id = auth.uid());
+create policy "Supervisors see attendance" on public.attendance for select to authenticated using (public.get_user_role() IN ('supervisor', 'viewer'));
 
 -- Políticas de Perfiles
 create policy "Users see own profile" on public.profiles for select to authenticated using (id = auth.uid());
 create policy "Admins see all profiles" on public.profiles for select to authenticated using (public.is_admin());
+create policy "Supervisors see all profiles" on public.profiles for select to authenticated using (public.get_user_role() IN ('supervisor', 'viewer'));
 
 -- Políticas de Tiendas
 create policy "All authenticated users see stores" on public.stores for select to authenticated using (true);
@@ -313,8 +316,19 @@ create policy "Users insert store warranties" on public.warranties for insert to
           email: data.email,
           role: data.role as UserRole,
           fullName: data.full_name,
-          storeId: data.store_id
+          storeId: data.store_id,
+          assignedStores: data.assigned_stores || [],
+          restDays: data.rest_days || [],
+          vacationDates: data.vacation_dates || []
         });
+        
+        // Ensure supervisors start on their allowed default view
+        if (data.role === 'supervisor') {
+          setCurrentView('supervision');
+        } else if (data.role === 'viewer') {
+          setCurrentView('dashboard');
+        }
+        
         return;
       }
 
@@ -349,7 +363,8 @@ create policy "Users insert store warranties" on public.warranties for insert to
             email: newProfile.email || '',
             role: newProfile.role as UserRole,
             fullName: null,
-            storeId: newProfile.store_id
+            storeId: newProfile.store_id,
+            assignedStores: []
           });
         }
       }
@@ -421,8 +436,8 @@ create policy "Users insert store warranties" on public.warranties for insert to
         // Ya se está procesando en esta ejecución
         if (processingDatesRef.current.has(date)) return false;
 
-        // No tiene corte registrado en el estado local
-        const hasClosing = closings.some(c => c.date === date);
+        // No tiene corte registrado en el estado local para MI TIENDA
+        const hasClosing = closings.some(c => c.date === date && c.storeId === userProfile?.storeId);
         if (hasClosing) return false;
 
         // Si es hoy, solo cerrar si es después de las 7 PM (19h)
@@ -485,7 +500,8 @@ create policy "Users insert store warranties" on public.warranties for insert to
           };
 
           setClosings(prev => {
-            const exists = prev.some(c => c.date === formattedClose.date);
+            // Check if this specific store/date combo already exists
+            const exists = prev.some(c => c.date === formattedClose.date && c.storeId === formattedClose.storeId);
             if (exists) return prev;
             return [formattedClose, ...prev].sort((a, b) => b.date.localeCompare(a.date));
           });
@@ -630,7 +646,11 @@ create policy "Users insert store warranties" on public.warranties for insert to
           id: s.id,
           name: s.name,
           location: s.location,
-          createdAt: s.created_at
+          createdAt: s.created_at,
+          prefix: s.prefix,
+          entryTime: s.entry_time,
+          exitTime: s.exit_time,
+          lunchDurationMinutes: s.lunch_duration_minutes
         })));
       }
 
@@ -646,11 +666,37 @@ create policy "Users insert store warranties" on public.warranties for insert to
 
   // --- FILTERED DATA logic ---
   const getFilteredData = <T extends { storeId?: string }>(data: T[]) => {
-    if (userProfile?.role === 'admin') {
+    if (!userProfile) return [];
+
+    // Admins see everything or filter by selectedStoreId
+    if (userProfile.role === 'admin') {
       return selectedStoreId === 'all' ? data : data.filter(item => item.storeId === selectedStoreId);
     }
-    // For normal users, only show their store
-    return data.filter(item => item.storeId === userProfile?.storeId);
+
+    // Supervisors: 
+    // - If no assignedStores, they are "General Supervisors" and see ALL if their storeId is null, or only their store if it is set.
+    // - If assignedStores exists, they see only those stores.
+    if (userProfile.role === 'supervisor') {
+      if (userProfile.assignedStores && userProfile.assignedStores.length > 0) {
+        return data.filter(item => userProfile.assignedStores?.includes(item.storeId || ''));
+      }
+      // Fallback: if they have a storeId assigned, they see only that store.
+      // If they have NO storeId and NO assignedStores, they see EVERYTHING (General Supervisor).
+      if (!userProfile.storeId) return data;
+      return data.filter(item => item.storeId === userProfile.storeId);
+    }
+
+    // Viewers/Lectors: restricted to assigned stores or their primary store
+    if (userProfile.role === 'viewer') {
+      const allowedStores = userProfile.assignedStores && userProfile.assignedStores.length > 0 
+        ? userProfile.assignedStores 
+        : (userProfile.storeId ? [userProfile.storeId] : []);
+      
+      return data.filter(item => allowedStores.includes(item.storeId || ''));
+    }
+
+    // Default (Sellers): only show their store
+    return data.filter(item => item.storeId === userProfile.storeId);
   };
 
   const filteredSales = getFilteredData(sales);
@@ -862,13 +908,13 @@ create policy "Users insert store warranties" on public.warranties for insert to
 
       const { error } = await supabase
         .from('daily_closings')
-        .upsert(dbPayload, { onConflict: 'id' });
+        .upsert(dbPayload, { onConflict: 'date,store_id' });
 
       if (error) throw error;
 
       setClosings(prev => {
-        // Remove existing if any, then add new one
-        const filtered = prev.filter(c => c.date !== newClose.date);
+        // Remove existing if any (matching date AND store), then add new one
+        const filtered = prev.filter(c => !(c.date === newClose.date && c.storeId === finalStoreId));
         return [newClose, ...filtered].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       });
 
@@ -1017,7 +1063,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
     }
   };
 
-  const NavButton = ({ view, icon: Icon, label }: { view: 'form' | 'list' | 'dashboard' | 'closings' | 'warranties' | 'admin' | 'attendance' | 'supervision', icon: any, label: string }) => {
+  const NavButton = ({ view, icon: Icon, label, badge }: { view: 'form' | 'list' | 'dashboard' | 'closings' | 'warranties' | 'admin' | 'attendance' | 'supervision' | 'attendance-report', icon: any, label: string, badge?: number }) => {
     const isActive = currentView === view;
     return (
       <button
@@ -1035,7 +1081,11 @@ create policy "Users insert store warranties" on public.warranties for insert to
       >
         <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-slate-500 group-hover:text-white'}`} />
         <span className="font-medium text-sm tracking-wide">{label}</span>
-        {isActive && <ChevronRight className="w-4 h-4 ml-auto opacity-50" />}
+        {badge ? (
+          <span className="ml-auto bg-red-600 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full animate-bounce shadow-lg shadow-red-900/50">
+            {badge > 99 ? '99+' : badge}
+          </span>
+        ) : isActive && <ChevronRight className="w-4 h-4 ml-auto opacity-50" />}
       </button>
     );
   };
@@ -1184,17 +1234,37 @@ create policy "Users insert store warranties" on public.warranties for insert to
 
         {/* Navigation Items */}
         <div className="flex-1 px-4 space-y-2 overflow-y-auto custom-scrollbar">
-          <div className="text-[10px] font-bold text-slate-500 px-4 py-2 uppercase tracking-wider">Menú Principal</div>
-          <NavButton view="list" icon={LayoutList} label="Registro de Ventas" />
-          <NavButton view="attendance" icon={Clock} label="Asistencia" />
-          <NavButton view="dashboard" icon={BarChart3} label="Estadísticas" />
-          <NavButton view="closings" icon={CalendarCheck} label="Cierre de Venta" />
+          {userProfile?.role !== 'supervisor' && (
+            <>
+              <div className="text-[10px] font-bold text-slate-500 px-4 py-2 uppercase tracking-wider">Menú Principal</div>
+              {userProfile?.role !== 'viewer' && (
+                <>
+                  <NavButton view="list" icon={LayoutList} label="Registro de Ventas" />
+                  <NavButton view="attendance" icon={Clock} label="Asistencia" />
+                </>
+              )}
+              <NavButton view="dashboard" icon={BarChart3} label="Estadísticas" />
+              {userProfile?.role !== 'viewer' && (
+                <NavButton view="closings" icon={CalendarCheck} label="Cierre de Venta" />
+              )}
+            </>
+          )}
+          
           {(userProfile?.role === 'admin' || userProfile?.role === 'supervisor' || userProfile?.email === 'jeissonjessy@gmail.com' || userProfile?.id === 'b4ba233c-afa9-42fc-9bed-afa0e9be3f8c') && (
             <>
               <div className="text-[10px] font-bold text-slate-500 px-4 py-2 mt-4 uppercase tracking-wider">Administración</div>
-              <NavButton view="warranties" icon={ShieldAlert} label="Garantías" />
-              <NavButton view="attendance-report" icon={CalendarCheck} label="Reporte Asistencias" />
-              <NavButton view="admin" icon={Shield} label="Administración" />
+              {userProfile?.role === 'admin' && (
+                <NavButton view="warranties" icon={ShieldAlert} label="Garantías" />
+              )}
+              <NavButton 
+                view="attendance-report" 
+                icon={CalendarCheck} 
+                label="Reporte Asistencias" 
+                badge={alerts.length > 0 ? alerts.length : undefined}
+              />
+              {userProfile?.role === 'admin' && (
+                <NavButton view="admin" icon={Shield} label="Administración" />
+              )}
               <NavButton view="supervision" icon={TrendingUp} label="Rendimiento" />
             </>
           )}
@@ -1213,7 +1283,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
               <div className="flex items-center gap-1.5 mt-0.5">
                 <Shield className={`w-3 h-3 ${userProfile?.role === 'admin' ? 'text-yellow-400' : 'text-slate-500'}`} />
                 <p className="text-slate-500 text-[10px] uppercase font-bold truncate">
-                  {userProfile?.role === 'admin' ? 'Administrador' : userProfile?.role === 'viewer' ? 'Visualizador' : 'Vendedor'}
+                  {userProfile?.role === 'admin' ? 'Administrador' : userProfile?.role === 'supervisor' ? 'Supervisor' : userProfile?.role === 'viewer' ? 'Visualizador' : 'Vendedor'}
                 </p>
               </div>
             </div>
@@ -1262,7 +1332,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
             </div>
 
             <div className="flex items-center gap-3">
-              {userProfile?.role === 'admin' && (
+              {(userProfile?.role === 'admin' || userProfile?.role === 'supervisor') && (
                  <div className="flex items-center gap-2 bg-white px-4 py-2.5 rounded-2xl border border-slate-200 shadow-sm transition-all hover:bg-slate-50">
                     <Building className="w-4 h-4 text-blue-600" />
                     <select 
@@ -1272,12 +1342,26 @@ create policy "Users insert store warranties" on public.warranties for insert to
                     >
                       <option value="all" disabled={selectedStoreId !== 'all'}>Seleccionar Tienda...</option>
                       <option value="all">Ver Todas (Global)</option>
-                      {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      {stores
+                        .filter(s => {
+                          if (userProfile?.role === 'admin') return true;
+                          if (userProfile?.role === 'supervisor') {
+                            if (userProfile.assignedStores && userProfile.assignedStores.length > 0) {
+                              return userProfile.assignedStores.includes(s.id);
+                            }
+                            if (userProfile.storeId) {
+                               return s.id === userProfile.storeId;
+                            }
+                            return true;
+                          }
+                          return false;
+                        })
+                        .map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
                  </div>
               )}
 
-              {currentView === 'list' && userProfile?.role !== 'viewer' && (
+              {currentView === 'list' && (userProfile?.role === 'admin' || userProfile?.role === 'seller') && (
                 <button
                   onClick={() => setCurrentView('form')}
                   className="hidden md:flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-semibold shadow-lg shadow-blue-200 transition-all hover:-translate-y-0.5"
@@ -1290,17 +1374,21 @@ create policy "Users insert store warranties" on public.warranties for insert to
           </div>
 
           <div className="fade-in">
-            {currentView === 'list' && (
+            {currentView === 'list' && userProfile?.role !== 'supervisor' && userProfile?.role !== 'viewer' && (
               <SalesList
                 sales={filteredSales}
                 onDelete={handleDeleteSale}
                 onEdit={(sale) => {
-                  setSaleToEdit(sale);
-                  setCurrentView('form');
+                  if (userProfile?.role === 'admin' || userProfile?.role === 'seller') {
+                    setSaleToEdit(sale);
+                    setCurrentView('form');
+                  }
                 }}
                 onAdd={() => {
-                  setSaleToEdit(null);
-                  setCurrentView('form');
+                  if (userProfile?.role === 'admin' || userProfile?.role === 'seller') {
+                    setSaleToEdit(null);
+                    setCurrentView('form');
+                  }
                 }}
                 role={userProfile?.role}
                 storeName={userProfile?.role === 'admin' 
@@ -1323,7 +1411,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
                 }}
               />
             )}
-            {currentView === 'dashboard' && (
+            {currentView === 'dashboard' && userProfile?.role !== 'supervisor' && (
               <Dashboard 
                 sales={filteredSales}
                 closings={filteredClosings} 
@@ -1334,7 +1422,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
                   : stores.find(s => s.id === userProfile?.storeId)?.name}
               />
             )}
-            {currentView === 'closings' && (
+            {currentView === 'closings' && userProfile?.role !== 'supervisor' && userProfile?.role !== 'viewer' && (
               <DailyClosings
                 sales={filteredSales}
                 closings={filteredClosings}
@@ -1344,13 +1432,14 @@ create policy "Users insert store warranties" on public.warranties for insert to
                 storeName={userProfile?.role === 'admin' 
                   ? (selectedStoreId === 'all' ? 'Todas las Tiendas' : stores.find(s => s.id === selectedStoreId)?.name) 
                   : stores.find(s => s.id === userProfile?.storeId)?.name}
+                activeStoreId={userProfile?.role === 'admin' ? selectedStoreId : userProfile?.storeId}
               />
             )}
-            {currentView === 'warranties' && (
+            {currentView === 'warranties' && userProfile?.role !== 'supervisor' && (
               <Warranties
                 warranties={filteredWarranties}
                 onAddWarranty={handleAddWarranty}
-                onUpdateStatus={handleUpdateStatus}
+                onUpdateStatus={handleUpdateWarrantyStatus}
                 onDeleteWarranty={handleDeleteWarranty}
                 brandConfigs={BRAND_CONFIGS}
                 isAdmin={userProfile?.role === 'admin' || userProfile?.role === 'supervisor'}
@@ -1370,7 +1459,11 @@ create policy "Users insert store warranties" on public.warranties for insert to
               />
             )}
             {currentView === 'supervision' && (userProfile?.role === 'admin' || userProfile?.role === 'supervisor') && (
-              <SupervisionPanel />
+              <SupervisionPanel 
+                stores={stores}
+                selectedStoreId={selectedStoreId}
+                userProfile={userProfile}
+              />
             )}
             {currentView === 'admin' && (userProfile?.role === 'admin' || userProfile?.role === 'supervisor') && (
               <AdminPanel 
@@ -1387,7 +1480,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
       </main>
 
       {/* Floating Action Button (Mobile Only for List View) */}
-      {currentView === 'list' && userProfile?.role !== 'viewer' && (
+      {currentView === 'list' && (userProfile?.role === 'admin' || userProfile?.role === 'seller') && (
         <button
           onClick={() => {
             setSaleToEdit(null);

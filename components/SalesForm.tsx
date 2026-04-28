@@ -32,47 +32,39 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
     String(localDate.getMonth() + 1).padStart(2, '0') + '-' +
     String(localDate.getDate()).padStart(2, '0');
 
-  // Helper to ensure #1053- prefix format (Strict)
+  // Helper to determine the current store prefix
+  const getCurrentPrefix = () => {
+    const store = stores?.find(s => s.id === activeStoreId);
+    return store?.prefix || '1053';
+  };
+
+  // Helper to ensure branch-specific prefix format (Strict)
   const formatInvoice = (val: string) => {
-    if (!val) return '#1053-';
+    const prefix = getCurrentPrefix();
+    if (!val) return `#${prefix}-`;
 
     // Clean to alphanumeric/dash only, removing existing hashes to normalize
     let clean = val.replace(/#/g, '').trim();
 
-    // If starts with 1053-
-    if (/^1053-\d+$/.test(clean)) {
-      return '#' + clean;
-    }
-
-    // Check if it starts with 1053 but no dash (e.g. 1053123)
-    if (/^1053\d+$/.test(clean)) {
-      // Insert dash? Users might just type 1053123. 
-      // We'll normalize to #1053-123
-      return '#1053-' + clean.substring(4);
-    }
-
-    // Just digits? Add #1053-
-    // But remove 1053 prefix if user blindly typed it without dash?
-    // Let's use simple logic: Remove 1053 if present at start, then prepend strict prefix.
     clean = clean.replace(/[^0-9-]/g, ''); // Keep dash
 
-    // If user typed '1053-' manually
-    if (clean.startsWith('1053-')) {
+    // If user typed 'prefix-' manually
+    if (clean.startsWith(`${prefix}-`)) {
       return '#' + clean;
     }
 
     // If just digits
     const digits = clean.replace(/\D/g, '');
-    if (digits.startsWith('1053') && digits.length > 4) {
-      return '#1053-' + digits.substring(4);
+    if (digits.startsWith(prefix) && digits.length > prefix.length) {
+      return `#${prefix}-` + digits.substring(prefix.length);
     }
 
-    return '#1053-' + digits;
+    return `#${prefix}-` + digits;
   };
 
   // Common fields for the whole ticket
   const [commonData, setCommonData] = useState({
-    invoiceNumber: initialData?.invoiceNumber ? formatInvoice(initialData.invoiceNumber) : '#1053-',
+    invoiceNumber: initialData?.invoiceNumber ? formatInvoice(initialData.invoiceNumber) : `#${getCurrentPrefix()}-`,
     customerName: initialData?.customerName || '',
     date: initialData?.date || defaultDateStr,
   });
@@ -149,35 +141,32 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
   const handleCommonChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
 
-    // Validation: Prefix 1053- logic
+    // Validation: Prefix dynamic logic
     if (name === 'invoiceNumber') {
-      // Remove 1053- prefix if present to get just the user input part
+      const prefix = getCurrentPrefix();
+      // Remove prefix if present to get just the user input part
       let inputVal = value;
 
       // If user tries to delete the prefix, enforce it back
-      if (!inputVal.startsWith('1053-')) {
-        // Check if they deleted the dash or part of 1053
+      if (!inputVal.startsWith(`${prefix}-`)) {
+        // Check if they deleted the dash or part of prefix
         const digits = inputVal.replace(/\D/g, ''); // all digits
-        // If they have less than 4 digits, it means they deleted part of '1053'. Reset to '1053-'
-        // But we also want to capture if they pasted '1053800'
-        if (digits.startsWith('1053') && digits.length >= 4) {
-          inputVal = '1053-' + digits.slice(4);
+        // If they have enough digits to match prefix
+        if (digits.startsWith(prefix) && digits.length >= prefix.length) {
+          inputVal = `${prefix}-` + digits.slice(prefix.length);
         } else {
-          // Just reconstruct from whatever digits are after the imaginary prefix
-          // This is tricky. simpler: get everything after '1053-'?
-          // If the user selects all and types '6', value is '6'. 
-          // We want '1053-6'.
-          inputVal = '1053-' + digits.replace(/^1053/, '');
+          inputVal = `${prefix}-` + digits.replace(new RegExp(`^${prefix}`), '');
         }
       }
 
-      // Extract suffix (everything after 1053-)
-      let suffix = inputVal.replace(/^1053-/, '').replace(/\D/g, '');
+      // Extract suffix (everything after prefix-)
+      const prefixPattern = new RegExp(`^${prefix}-`);
+      let suffix = inputVal.replace(prefixPattern, '').replace(/\D/g, '');
 
       // Limit to 6 digits
       if (suffix.length > 6) suffix = suffix.slice(0, 6);
 
-      setCommonData(prev => ({ ...prev, [name]: '1053-' + suffix }));
+      setCommonData(prev => ({ ...prev, [name]: `${prefix}-` + suffix }));
       return;
     }
 
@@ -409,9 +398,10 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
         await onUpdateSale({
           id: initialData.id,
           invoiceNumber: (() => {
+            const prefix = getCurrentPrefix();
             let c = commonData.invoiceNumber.replace(/[^0-9]/g, '');
-            if (c.startsWith('1053') && c.length > 4) c = c.substring(4);
-            return `#1053-${c}`;
+            if (c.startsWith(prefix) && c.length > prefix.length) c = c.substring(prefix.length);
+            return `#${prefix}-${c}`;
           })(),
           customerName: commonData.customerName.toUpperCase(),
           date: commonData.date,
@@ -426,9 +416,10 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
         await Promise.all(validatedItems.map(item => {
           return onAddSale({
             invoiceNumber: (() => {
+              const prefix = getCurrentPrefix();
               let c = commonData.invoiceNumber.replace(/[^0-9]/g, '');
-              if (c.startsWith('1053') && c.length > 4) c = c.substring(4);
-              return `#1053-${c}`;
+              if (c.startsWith(prefix) && c.length > prefix.length) c = c.substring(prefix.length);
+              return `#${prefix}-${c}`;
             })(),
             customerName: commonData.customerName.toUpperCase(),
             date: commonData.date,

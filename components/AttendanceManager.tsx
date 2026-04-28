@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, Coffee, LogOut, LogIn, Calendar, CheckCircle2, History, Camera, MapPin, Upload, X, Loader2 } from 'lucide-react';
+import { Clock, Coffee, LogOut, LogIn, Calendar, CheckCircle2, History, Camera, MapPin, Upload, X, Loader2, ArrowRight } from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
 import { AttendanceRecord, AttendanceType, UserProfile } from '../types';
 import { smartImageUpload } from '../services/storageService';
@@ -12,8 +12,9 @@ const AttendanceManager: React.FC<AttendanceManagerProps> = ({ user }) => {
   const [history, setHistory] = useState<AttendanceRecord[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [todayRecords, setTodayRecords] = useState<AttendanceType[]>([]);
+  const [expandedDate, setExpandedDate] = useState<string | null>(null);
   
-  // New States for Enhanced Tracking
+  // Camera & Verification States
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [pendingType, setPendingType] = useState<AttendanceType | null>(null);
   const [location, setLocation] = useState<string>('');
@@ -21,6 +22,7 @@ const AttendanceManager: React.FC<AttendanceManagerProps> = ({ user }) => {
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
+  const [storeConfig, setStoreConfig] = useState<any>(null);
 
   const todayStr = new Date().toISOString().split('T')[0];
 
@@ -55,7 +57,15 @@ const AttendanceManager: React.FC<AttendanceManagerProps> = ({ user }) => {
 
   useEffect(() => {
     fetchAttendance();
-  }, [user.id]);
+    
+    const fetchStore = async () => {
+      if (user.storeId) {
+        const { data } = await supabase.from('stores').select('*').eq('id', user.storeId).single();
+        if (data) setStoreConfig(data);
+      }
+    };
+    fetchStore();
+  }, [user.id, user.storeId]);
 
   const handleRegister = async (type: AttendanceType, imageBase64?: string, screenshotBase64?: string, locationStr?: string) => {
     setIsLoading(true);
@@ -101,8 +111,47 @@ const AttendanceManager: React.FC<AttendanceManagerProps> = ({ user }) => {
       });
 
       if (error) throw error;
+
+      // --- SMART ALERT LOGIC ---
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: false });
+
+      if (type === 'entry' && storeConfig?.entry_time) {
+        const [targetH, targetM] = storeConfig.entry_time.split(':').map(Number);
+        const entryH = now.getHours();
+        const entryM = now.getMinutes();
+        
+        if (entryH > targetH || (entryH === targetH && entryM > targetM)) {
+          await supabase.from('attendance_alerts').insert({
+            user_id: user.id,
+            store_id: user.storeId,
+            date: todayStr,
+            type: 'late_entry',
+            details: `Llegada tarde registrada a las ${timeStr} (Horario esperado: ${storeConfig.entry_time})`
+          });
+        }
+      }
+
+      if (type === 'lunch_end' && storeConfig?.lunch_duration_minutes) {
+        const startRecord = history.find(r => r.date === todayStr && r.type === 'lunch_start');
+        if (startRecord) {
+          const startTime = new Date(startRecord.timestamp);
+          const durationMins = Math.round((now.getTime() - startTime.getTime()) / 60000);
+          
+          if (durationMins > storeConfig.lunch_duration_minutes) {
+            await supabase.from('attendance_alerts').insert({
+              user_id: user.id,
+              store_id: user.storeId,
+              date: todayStr,
+              type: 'extended_lunch',
+              details: `Tiempo de comida excedido: ${durationMins} min (Máximo: ${storeConfig.lunch_duration_minutes} min)`
+            });
+          }
+        }
+      }
       
       // Reset and Refresh
+      await fetchAttendance();
       setIsCameraOpen(false);
       setPendingType(null);
       setCapturedImage(null);
@@ -251,7 +300,6 @@ const AttendanceManager: React.FC<AttendanceManagerProps> = ({ user }) => {
       case 'exit': return { label: 'Salida', color: 'bg-red-500', icon: LogOut };
     }
   };
-
   const isActionDisabled = (type: AttendanceType) => {
     if (todayRecords.includes(type)) return true;
     
@@ -262,6 +310,23 @@ const AttendanceManager: React.FC<AttendanceManagerProps> = ({ user }) => {
     
     return false;
   };
+
+  // Group history by date
+  const groupedHistory = React.useMemo(() => {
+    const groups: Record<string, Record<AttendanceType, AttendanceRecord>> = {};
+    
+    history.forEach(record => {
+      if (!groups[record.date]) {
+        groups[record.date] = {} as Record<AttendanceType, AttendanceRecord>;
+      }
+      // Keep only one record per type per day (the most recent if duplicates exist)
+      if (!groups[record.date][record.type]) {
+        groups[record.date][record.type] = record;
+      }
+    });
+
+    return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]));
+  }, [history]);
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -474,62 +539,93 @@ const AttendanceManager: React.FC<AttendanceManagerProps> = ({ user }) => {
         </div>
       )}
 
-      {/* History Table */}
-      <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
+      {/* History List */}
+      <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
         <div className="px-8 py-6 border-b border-slate-50 flex items-center justify-between bg-slate-50/50">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-blue-50 rounded-lg">
               <History className="w-5 h-5 text-blue-600" />
             </div>
-            <h3 className="font-bold text-slate-800">Historial Reciente</h3>
+            <h3 className="font-bold text-slate-800">Historial de Asistencia</h3>
           </div>
-          <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Últimos 20 registros</span>
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Organizado por día</span>
         </div>
         
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-100">
-                <th className="px-8 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Fecha</th>
-                <th className="px-8 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Evento</th>
-                <th className="px-8 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Hora</th>
-                <th className="px-8 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Estado</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {history.map((record) => {
-                const config = getStatusConfig(record.type);
-                const recordDate = new Date(record.timestamp);
-                
-                return (
-                  <tr key={record.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="px-8 py-5 font-bold text-slate-700">{record.date}</td>
-                    <td className="px-8 py-5">
-                      <div className="flex items-center gap-2">
-                        <div className={`w-2 h-2 rounded-full ${config?.color}`}></div>
-                        <span className="font-semibold text-slate-800">{config?.label}</span>
+        <div className="p-4 space-y-3">
+          {groupedHistory.length > 0 ? (
+            groupedHistory.map(([date, events]) => {
+              const isExpanded = expandedDate === date;
+              const hasEntry = events.entry;
+              const hasExit = events.exit;
+              
+              return (
+                <div key={date} className="border border-slate-100 rounded-[2rem] overflow-hidden transition-all duration-300">
+                   <button 
+                     onClick={() => setExpandedDate(isExpanded ? null : date)}
+                     className={`w-full px-6 py-5 flex items-center justify-between transition-colors ${isExpanded ? 'bg-slate-50' : 'hover:bg-slate-50/50'}`}
+                   >
+                      <div className="flex items-center gap-4">
+                         <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs ${date === todayStr ? 'bg-blue-600 text-white shadow-lg shadow-blue-200' : 'bg-slate-100 text-slate-500'}`}>
+                            {date === todayStr ? 'Hoy' : date.split('-')[2]}
+                         </div>
+                         <div className="text-left">
+                            <p className="text-sm font-black text-slate-800 uppercase tracking-tight">
+                              {new Date(date + 'T12:00:00').toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' })}
+                            </p>
+                            <div className="flex items-center gap-3 mt-1">
+                               {events.entry && (
+                                 <span className="text-[10px] font-bold text-emerald-500 flex items-center gap-1">
+                                   <LogIn className="w-2.5 h-2.5" /> {new Date(events.entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                 </span>
+                               )}
+                               {events.exit && (
+                                 <span className="text-[10px] font-bold text-red-500 flex items-center gap-1">
+                                   <LogOut className="w-2.5 h-2.5" /> {new Date(events.exit.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                 </span>
+                               )}
+                               {!events.entry && !events.exit && <span className="text-[10px] font-bold text-slate-300 uppercase italic tracking-widest">Sin registros</span>}
+                            </div>
+                         </div>
                       </div>
-                    </td>
-                    <td className="px-8 py-5 font-mono text-slate-500">
-                      {recordDate.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                    </td>
-                    <td className="px-8 py-5">
-                      <span className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-[10px] font-bold uppercase tracking-wider border border-blue-100">
-                        Sincronizado
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-              {history.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-8 py-12 text-center text-slate-400 italic">
-                    No se han encontrado registros de asistencia.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                      <ArrowRight className={`w-5 h-5 text-slate-300 transition-transform duration-300 ${isExpanded ? 'rotate-90 text-blue-500' : ''}`} />
+                   </button>
+
+                   {isExpanded && (
+                     <div className="px-6 py-6 bg-white grid grid-cols-2 md:grid-cols-4 gap-4 border-t border-slate-50 animate-in slide-in-from-top-2 duration-300">
+                        {(['entry', 'lunch_start', 'lunch_end', 'exit'] as AttendanceType[]).map(type => {
+                           const event = events[type];
+                           const config = getStatusConfig(type);
+                           const Icon = config.icon;
+                           
+                           return (
+                             <div key={type} className={`p-4 rounded-2xl border ${event ? 'bg-slate-50 border-slate-100' : 'bg-white border-dashed border-slate-100'}`}>
+                                <div className="flex items-center gap-2 mb-2">
+                                   <Icon className={`w-3.5 h-3.5 ${event ? 'text-blue-500' : 'text-slate-300'}`} />
+                                   <span className={`text-[10px] font-black uppercase tracking-widest ${event ? 'text-slate-800' : 'text-slate-300'}`}>
+                                     {config.label}
+                                   </span>
+                                </div>
+                                {event ? (
+                                  <p className="text-sm font-bold text-slate-700 tabular-nums">
+                                    {new Date(event.timestamp).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
+                                  </p>
+                                ) : (
+                                  <p className="text-xs font-bold text-slate-300 italic">--:--</p>
+                                )}
+                             </div>
+                           );
+                        })}
+                     </div>
+                   )}
+                </div>
+              );
+            })
+          ) : (
+            <div className="py-20 text-center">
+               <History className="w-12 h-12 text-slate-100 mx-auto mb-4" />
+               <p className="text-slate-400 font-bold uppercase text-xs tracking-widest">No hay registros disponibles</p>
+            </div>
+          )}
         </div>
       </div>
     </div>

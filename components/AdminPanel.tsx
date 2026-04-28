@@ -1,100 +1,130 @@
 import React, { useState, useEffect } from 'react';
-import { Store, UserPlus, Building, Users, Save, Shield, LayoutGrid, CheckCircle2, Loader2, Search, Edit2, Trash2, X, Mail, Plus, ChevronDown } from 'lucide-react';
+import { 
+  Users, 
+  Store as StoreIcon, 
+  Trash2, 
+  UserPlus, 
+  Mail, 
+  Shield, 
+  Search, 
+  Filter, 
+  ChevronRight, 
+  X, 
+  Check, 
+  AlertCircle,
+  Save,
+  Edit2,
+  Building,
+  Plus,
+  ArrowRight
+} from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
-import { UserProfile, Store as StoreType, UserRole } from '../types';
+import { Store, UserProfile, UserRole } from '../types';
 
 interface AdminPanelProps {
-  onRefresh?: () => void;
   role?: UserRole;
+  onRefresh?: () => void;
 }
 
-const AdminPanel: React.FC<AdminPanelProps> = ({ onRefresh, role }) => {
-  const [stores, setStores] = useState<StoreType[]>([]);
-  const [profiles, setProfiles] = useState<UserProfile[]>([]);
-  const [pendingInvites, setPendingInvites] = useState<any[]>([]);
+const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
+  const [activeModal, setActiveModal] = useState<'none' | 'store' | 'invite' | 'direct' | 'stores-list'>('none');
   const [isLoading, setIsLoading] = useState(false);
+  const [isDirectLoading, setIsDirectLoading] = useState(false);
+  const [dataLoading, setDataLoading] = useState(true);
 
-  // Modal State
-  const [activeModal, setActiveModal] = useState<'none' | 'store' | 'direct' | 'invite' | 'stores-list'>('none');
+  const [stores, setStores] = useState<Store[]>([]);
+  const [profiles, setProfiles] = useState<UserProfile[]>([]);
+  const [invites, setInvites] = useState<any[]>([]);
 
-  // Form States
+  // Store Form
   const [newStoreName, setNewStoreName] = useState('');
   const [newStoreLocation, setNewStoreLocation] = useState('');
-  
-  const [editingUserId, setEditingUserId] = useState<string | null>(null);
-  const [targetFullName, setTargetFullName] = useState<string>('');
-  const [targetStoreId, setTargetStoreId] = useState<string>('');
-  const [targetRole, setTargetRole] = useState<UserRole>('seller');
 
+  // Invite Form
   const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState('seller' as UserRole);
   const [inviteStoreId, setInviteStoreId] = useState('');
-  const [inviteRole, setInviteRole] = useState<UserRole>('seller');
 
-  const [directFullName, setDirectFullName] = useState('');
+  // Direct Create Form
   const [directEmail, setDirectEmail] = useState('');
   const [directPassword, setDirectPassword] = useState('');
+  const [directFullName, setDirectFullName] = useState('');
+  const [directRole, setDirectRole] = useState('seller' as UserRole);
   const [directStoreId, setDirectStoreId] = useState('');
-  const [directRole, setDirectRole] = useState<UserRole>('seller');
-  const [isDirectLoading, setIsDirectLoading] = useState(false);
 
+  // Edit State
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [targetFullName, setTargetFullName] = useState('');
+  const [targetRole, setTargetRole] = useState<UserRole>('seller');
+  const [targetStoreId, setTargetStoreId] = useState('');
+  const [targetAssignedStores, setTargetAssignedStores] = useState<string[]>([]);
+  
+  // Store Edit State
   const [editingStoreId, setEditingStoreId] = useState<string | null>(null);
   const [editStoreName, setEditStoreName] = useState('');
   const [editStoreLocation, setEditStoreLocation] = useState('');
-  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
-  // Filtering State
-  const [storeFilter, setStoreFilter] = useState<string>('all');
+  // Filter State
   const [searchQuery, setSearchQuery] = useState('');
+  const [storeFilter, setStoreFilter] = useState('all');
 
-  const fetchData = async () => {
-    setIsLoading(true);
+  useEffect(() => {
+    fetchAllData();
+  }, []);
+
+  const fetchAllData = async () => {
+    setDataLoading(true);
     try {
+      // 1. Fetch Stores
       const { data: storesData } = await supabase.from('stores').select('*').order('name');
       if (storesData) {
         setStores(storesData.map((s: any) => ({
           id: s.id,
           name: s.name,
           location: s.location,
-          createdAt: s.created_at
+          entryTime: s.entry_time,
+          exitTime: s.exit_time,
+          lunchDurationMinutes: s.lunch_duration_minutes
         })));
       }
 
-      const { data: profilesData } = await supabase.from('profiles').select('*').order('email');
+      // 2. Fetch Profiles
+      const { data: profilesData } = await supabase.from('profiles').select('*');
       if (profilesData) {
         setProfiles(profilesData.map((p: any) => ({
           id: p.id,
           email: p.email,
-          role: p.role as UserRole,
+          role: p.role,
           fullName: p.full_name,
-          storeId: p.store_id
+          storeId: p.store_id,
+          assignedStores: p.assigned_stores || []
         })));
       }
 
-      const { data: invitesData } = await supabase.from('pending_invitations').select('*, stores(name)');
-      if (invitesData) setPendingInvites(invitesData);
+      // 3. Fetch Invites
+      const { data: invitesData } = await supabase.from('user_invites').select('*, stores(name)').eq('status', 'pending');
+      if (invitesData) setInvites(invitesData);
 
     } catch (err) {
-      console.error('Error al cargar datos:', err);
+      console.error('Error fetching admin data:', err);
     } finally {
-      setIsLoading(false);
+      setDataLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
   const handleCreateStore = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newStoreName) return;
     setIsLoading(true);
     try {
-      const { error } = await supabase.from('stores').insert({ name: newStoreName, location: newStoreLocation });
+      const { error } = await supabase.from('stores').insert([
+        { name: newStoreName.toUpperCase(), location: newStoreLocation.toUpperCase() }
+      ]);
       if (error) throw error;
       setNewStoreName('');
       setNewStoreLocation('');
       setActiveModal('none');
-      fetchData();
+      fetchAllData();
+      if (onRefresh) onRefresh();
     } catch (err: any) {
       alert('Error: ' + err.message);
     } finally {
@@ -102,20 +132,24 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onRefresh, role }) => {
     }
   };
 
-  const handleUpdateProfile = async (userId: string) => {
+  const handleInviteUser = async (e: React.FormEvent) => {
+    e.preventDefault();
     setIsLoading(true);
     try {
-      const { error } = await supabase.from('profiles').update({
-        full_name: targetFullName,
-        store_id: targetStoreId || null,
-        role: targetRole
-      }).eq('id', userId);
+      const { error } = await supabase.from('user_invites').insert([
+        { 
+          email: inviteEmail.toLowerCase(), 
+          role: inviteRole, 
+          store_id: inviteStoreId || null,
+          status: 'pending'
+        }
+      ]);
       if (error) throw error;
-      setEditingUserId(null);
-      await fetchData();
-      if (onRefresh) onRefresh();
+      setInviteEmail('');
+      setActiveModal('none');
+      fetchAllData();
     } catch (err: any) {
-      alert('Error: ' + err.message);
+      alert('Error al invitar: ' + err.message);
     } finally {
       setIsLoading(false);
     }
@@ -125,21 +159,32 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onRefresh, role }) => {
     e.preventDefault();
     setIsDirectLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('crear-empleado-directo', {
-        body: {
-          email: directEmail.trim(),
-          password: directPassword,
-          full_name: directFullName,
-          store_id: directStoreId,
-          role: directRole,
-          admin_secret: 'ventas-coppel-2026'
-        }
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: directEmail,
+        password: directPassword,
       });
-      if (error || data?.error) throw new Error(error?.message || data?.error || 'Error');
-      alert(`¡Usuario ${directFullName} creado correctamente!`);
-      setDirectEmail(''); setDirectPassword(''); setDirectFullName(''); setDirectStoreId('');
+
+      if (authError) throw authError;
+      if (!authData.user) throw new Error('No se pudo crear el usuario');
+
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({
+          full_name: directFullName.toUpperCase(),
+          role: directRole,
+          store_id: directStoreId || null
+        })
+        .eq('id', authData.user.id);
+
+      if (profileError) throw profileError;
+
+      alert('Usuario creado correctamente.');
+      setDirectEmail('');
+      setDirectPassword('');
+      setDirectFullName('');
       setActiveModal('none');
-      fetchData();
+      fetchAllData();
+      if (onRefresh) onRefresh();
     } catch (err: any) {
       alert('Error: ' + err.message);
     } finally {
@@ -147,202 +192,178 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onRefresh, role }) => {
     }
   };
 
-  const handleInviteUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
+  const handleUpdateProfile = async (userId: string) => {
     try {
-      await supabase.from('pending_invitations').upsert({ email: inviteEmail.trim(), store_id: inviteStoreId, role: inviteRole });
-      const { error } = await supabase.auth.signInWithOtp({
-        email: inviteEmail.trim(),
-        options: { emailRedirectTo: window.location.origin }
-      });
+      const { error } = await supabase.from('profiles').update({
+        full_name: targetFullName.toUpperCase(),
+        role: targetRole,
+        store_id: targetStoreId || null,
+        assigned_stores: (targetRole === 'supervisor' || targetRole === 'viewer') ? targetAssignedStores : null
+      }).eq('id', userId);
+
       if (error) throw error;
-      alert(`¡Invitación enviada a ${inviteEmail}!`);
-      setInviteEmail('');
-      setActiveModal('none');
-      fetchData();
+      setEditingUserId(null);
+      fetchAllData();
+      if (onRefresh) onRefresh();
     } catch (err: any) {
       alert('Error: ' + err.message);
-    } finally {
-      setIsLoading(false);
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    if (!confirm('¿Estás seguro de eliminar este usuario?')) return;
+    try {
+      const { error } = await supabase.from('profiles').delete().eq('id', userId);
+      if (error) throw error;
+      fetchAllData();
+      if (onRefresh) onRefresh();
+    } catch (err: any) {
+      alert('Error: ' + err.message);
     }
   };
 
   const handleCancelInvite = async (email: string) => {
-    if (!window.confirm("¿Cancelar invitación?")) return;
     try {
-      await supabase.from('pending_invitations').delete().eq('email', email);
-      fetchData();
-    } catch (err) { alert("Error"); }
+      await supabase.from('user_invites').delete().eq('email', email);
+      fetchAllData();
+    } catch (err) {
+      console.error(err);
+    }
   };
 
-  const handleDeleteUser = async (userId: string) => {
-    if (!window.confirm("¿Eliminar usuario?")) return;
+  const handleUpdateStore = async (storeId: string) => {
     try {
-      await supabase.from('profiles').delete().eq('id', userId);
-      fetchData();
-    } catch (err: any) { alert(err.message); }
-  };
-
-  const handleUpdateStore = async (id: string) => {
-    try {
-      await supabase.from('stores').update({ name: editStoreName, location: editStoreLocation }).eq('id', id);
+      const { error } = await supabase.from('stores').update({
+        name: editStoreName.toUpperCase(),
+        location: editStoreLocation.toUpperCase()
+      }).eq('id', storeId);
+      if (error) throw error;
       setEditingStoreId(null);
-      fetchData();
+      fetchAllData();
       if (onRefresh) onRefresh();
-    } catch (err: any) { alert(err.message); }
+    } catch (err: any) {
+      alert('Error: ' + err.message);
+    }
   };
+
+  if (dataLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 animate-pulse">
+        <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mb-4">
+           <Shield className="w-8 h-8 text-indigo-200 animate-spin" />
+        </div>
+        <p className="text-xs font-black text-slate-300 uppercase tracking-widest">Cargando Administración...</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      {/* HEADER & SUMMARY GRID */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {/* Stats */}
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center justify-between group hover:bg-slate-50 transition-all cursor-pointer" onClick={() => setActiveModal('stores-list')}>
-          <div>
-            <span className="block text-3xl font-black text-slate-800 tracking-tight">{stores.length}</span>
-            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Sucursales</span>
+    <div className="space-y-8 animate-in fade-in duration-500">
+      
+      {/* Header with Stats Summary */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <div className="lg:col-span-2 bg-white p-10 rounded-[3rem] shadow-xl shadow-slate-200/50 border border-slate-50 flex items-center justify-between group overflow-hidden relative">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-700"></div>
+          <div className="relative z-10">
+            <h2 className="text-4xl font-black text-slate-800 tracking-tighter mb-2">Panel Admin</h2>
+            <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Gestión de sucursales y personal</p>
           </div>
-          <div className="p-3 bg-indigo-50 rounded-2xl text-indigo-600">
-            <Building className="w-6 h-6" />
-          </div>
-        </div>
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center justify-between">
-          <div>
-            <span className="block text-3xl font-black text-slate-800 tracking-tight">{profiles.length}</span>
-            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Usuarios</span>
-          </div>
-          <div className="p-3 bg-blue-50 rounded-2xl text-blue-600">
-            <Users className="w-6 h-6" />
+          <div className="relative z-10 flex gap-3">
+             <div className="text-right">
+                <p className="text-[10px] font-black text-slate-400 uppercase">Usuarios</p>
+                <p className="text-2xl font-black text-slate-800">{profiles.length}</p>
+             </div>
+             <div className="w-12 h-12 bg-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-200">
+                <Shield className="w-6 h-6" />
+             </div>
           </div>
         </div>
-        
-        {/* Master Actions Buttons */}
-        <div className="bg-slate-900 text-white p-6 rounded-3xl shadow-lg shadow-slate-100 flex flex-col justify-between group">
-          <Shield className="w-6 h-6 text-indigo-400 opacity-60" />
-          <div>
-            <span className="block text-2xl font-black">{profiles.filter(p => p.role === 'admin').length}</span>
-            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Administradores</span>
+
+        <button onClick={() => setActiveModal('invite')} className="bg-white p-8 rounded-[2.5rem] shadow-lg shadow-slate-100 border border-slate-50 flex flex-col items-center justify-center gap-3 hover:scale-[1.02] active:scale-95 transition-all group">
+          <div className="w-14 h-14 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition-colors duration-300">
+            <Mail className="w-7 h-7" />
           </div>
-        </div>
-        <button onClick={() => setActiveModal('store')} className="bg-slate-900 hover:bg-slate-800 text-white p-6 rounded-3xl shadow-lg shadow-slate-100 flex flex-col justify-between transition-all hover:-translate-y-1 group border-b-4 border-slate-700">
-          <Plus className="w-6 h-6 text-indigo-400 opacity-40 group-hover:opacity-100 transition-opacity" />
-          <span className="text-sm font-black text-left mt-4 leading-tight uppercase">Nueva<br/>Tienda</span>
+          <p className="text-xs font-black text-slate-600 uppercase tracking-widest">Invitar Usuario</p>
+        </button>
+
+        <button onClick={() => setActiveModal('direct')} className="bg-indigo-600 p-8 rounded-[2.5rem] shadow-xl shadow-indigo-200 flex flex-col items-center justify-center gap-3 hover:scale-[1.02] active:scale-95 transition-all group">
+          <div className="w-14 h-14 bg-white/20 text-white rounded-2xl flex items-center justify-center">
+            <UserPlus className="w-7 h-7" />
+          </div>
+          <p className="text-xs font-black text-white uppercase tracking-widest">Alta Directa</p>
         </button>
       </div>
 
-      {/* USER TABLE AREA */}
-      <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden min-h-[500px]">
-        <div className="px-8 py-8 bg-slate-50/50 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="flex items-center gap-4">
-            <div className="p-4 bg-indigo-600 rounded-2xl shadow-lg shadow-indigo-100">
-              <Users className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <h2 className="text-xl font-black text-slate-800 tracking-tight uppercase">Personal</h2>
-              <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest leading-none mt-1">Gestión de accesos</p>
-            </div>
+      {/* Main Management Area */}
+      <div className="bg-white rounded-[3.5rem] shadow-2xl shadow-slate-200/60 overflow-hidden border border-slate-50">
+        <div className="p-10 border-b border-slate-50 flex flex-col md:flex-row items-center justify-between gap-6 bg-slate-50/30">
+          <div className="flex items-center gap-6 w-full md:w-auto">
+             <div className="w-14 h-14 bg-white rounded-2xl shadow-sm flex items-center justify-center text-indigo-600 border border-slate-100">
+                <Users className="w-7 h-7" />
+             </div>
+             <div>
+                <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight">Personal Activo</h3>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Administra roles y sucursales</p>
+             </div>
           </div>
-          
-          <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+
+          <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
             <div className="relative flex-1 md:w-64">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input 
                 type="text" 
+                placeholder="BUSCAR POR NOMBRE O CORREO..." 
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Filtrar por nombre o email..." 
-                className="w-full pl-12 pr-6 py-3.5 bg-white border border-slate-200 rounded-2xl text-sm font-bold text-slate-700 outline-none focus:ring-4 focus:ring-indigo-50 transition-all shadow-inner" 
+                className="w-full pl-12 pr-6 py-4 bg-white border border-slate-200 rounded-2xl text-xs font-bold uppercase outline-none focus:ring-4 focus:ring-indigo-50 transition-all"
               />
             </div>
-
-            {/* STORE FILTER DROPDOWN */}
-            <div className="relative">
-               <Building className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-400 pointer-events-none" />
-               <select 
-                value={storeFilter}
-                onChange={(e) => setStoreFilter(e.target.value)}
-                className="pl-11 pr-10 py-3.5 bg-white border border-slate-200 rounded-2xl text-[11px] font-black uppercase tracking-wider text-slate-600 outline-none focus:ring-4 focus:ring-indigo-50 appearance-none cursor-pointer shadow-sm min-w-[160px]"
-               >
-                 <option value="all">Todas las tiendas</option>
-                 {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-               </select>
-            </div>
-
-            <div className="h-10 w-px bg-slate-200 mx-1 hidden lg:block"></div>
             
-            <div className="relative">
-              <button 
-                onClick={() => setIsUserMenuOpen(!isUserMenuOpen)} 
-                className="px-6 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-100 flex items-center gap-2 transition-all active:scale-95 border-b-4 border-indigo-800"
-              >
-                <UserPlus className="w-4 h-4" /> Nuevo usuario <ChevronDown className={`w-3 h-3 transition-transform ${isUserMenuOpen ? 'rotate-180' : ''}`} />
-              </button>
+            <select 
+              value={storeFilter}
+              onChange={(e) => setStoreFilter(e.target.value)}
+              className="bg-white border border-slate-200 rounded-2xl px-6 py-4 text-xs font-black uppercase outline-none"
+            >
+              <option value="all">TODAS LAS TIENDAS</option>
+              {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
 
-              {isUserMenuOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setIsUserMenuOpen(false)}></div>
-                  <div className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-2xl border border-slate-100 py-2 z-50 animate-in fade-in zoom-in-95 duration-200">
-                    <button 
-                      onClick={() => { setActiveModal('direct'); setIsUserMenuOpen(false); }}
-                      className="w-full px-5 py-3 text-left hover:bg-slate-50 flex items-center gap-3 group transition-colors"
-                    >
-                      <div className="p-2 bg-indigo-50 rounded-lg group-hover:bg-indigo-100 transition-colors">
-                        <Shield className="w-4 h-4 text-indigo-600" />
-                      </div>
-                      <div>
-                        <div className="text-xs font-black text-slate-800 uppercase tracking-tight">Alta Directa</div>
-                        <div className="text-[9px] text-slate-400 font-bold uppercase">Crear cuenta ahora</div>
-                      </div>
-                    </button>
-                    <button 
-                      onClick={() => { setActiveModal('invite'); setIsUserMenuOpen(false); }}
-                      className="w-full px-5 py-3 text-left hover:bg-slate-50 flex items-center gap-3 group transition-colors"
-                    >
-                      <div className="p-2 bg-blue-50 rounded-lg group-hover:bg-blue-100 transition-colors">
-                        <Mail className="w-4 h-4 text-blue-600" />
-                      </div>
-                      <div>
-                        <div className="text-xs font-black text-slate-800 uppercase tracking-tight">Invitar</div>
-                        <div className="text-[9px] text-slate-400 font-bold uppercase">Enviar por email</div>
-                      </div>
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
+            <button onClick={() => setActiveModal('stores-list')} className="p-4 bg-white text-slate-600 border border-slate-200 rounded-2xl hover:bg-slate-50 transition-all flex items-center gap-2 font-black text-[10px] uppercase tracking-widest">
+              <Building className="w-4 h-4" /> Tiendas
+            </button>
+            
+            <button onClick={() => setActiveModal('store')} className="p-4 bg-white text-indigo-600 border-2 border-dashed border-indigo-200 rounded-2xl hover:bg-indigo-50 transition-all flex items-center gap-2 font-black text-[10px] uppercase tracking-widest">
+              <Plus className="w-4 h-4" /> Nueva Tienda
+            </button>
           </div>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
-              <tr className="bg-slate-50/20 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                <th className="px-8 py-6">Identidad</th>
-                <th className="px-8 py-6">Rol</th>
-                <th className="px-8 py-6">Sucursal</th>
-                <th className="px-8 py-6 text-right">Acciones</th>
+              <tr className="bg-slate-50/50">
+                <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Colaborador</th>
+                <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Rol / Nivel</th>
+                <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Sucursal Asignada</th>
+                <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] text-right">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {/* FILTERED PENDING INVITES */}
-              {pendingInvites
-                .filter(invite => (storeFilter === 'all' || invite.store_id === storeFilter))
-                .filter(invite => invite.email.toLowerCase().includes(searchQuery.toLowerCase()))
-                .map(invite => (
-                <tr key={invite.email} className="bg-blue-50/5">
-                  <td className="px-8 py-6 opacity-60">
-                    <div className="font-black italic text-sm">Pendiente</div>
-                    <div className="text-[11px] font-bold">{invite.email}</div>
+              {/* PENDING INVITES */}
+              {invites.map(invite => (
+                <tr key={invite.id} className="bg-blue-50/20 italic">
+                  <td className="px-10 py-6">
+                    <div className="font-bold text-slate-400 text-sm">{invite.email}</div>
+                    <div className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Pendiente</div>
                   </td>
                   <td className="px-8 py-6">
-                    <span className="px-2 py-1 bg-slate-100 text-slate-400 rounded text-[9px] font-black uppercase">Espera...</span>
+                    <span className="px-2 py-1 bg-blue-100 text-blue-600 rounded text-[9px] font-black uppercase">{invite.role}</span>
                   </td>
                   <td className="px-8 py-6 text-[11px] font-black text-slate-400 uppercase">
-                    {invite.stores?.name}
+                    {invite.stores?.name || 'GLOBAL'}
                   </td>
-                  <td className="px-8 py-6 text-right">
-                    <button onClick={() => handleCancelInvite(invite.email)} className="p-2.5 text-slate-200 hover:text-red-500 rounded-xl transition-all"><Trash2 className="w-5 h-5" /></button>
+                  <td className="px-10 py-6 text-right">
+                    <button onClick={() => handleCancelInvite(invite.email)} className="p-3 text-slate-300 hover:text-red-500 rounded-xl transition-all"><Trash2 className="w-5 h-5" /></button>
                   </td>
                 </tr>
               ))}
@@ -355,57 +376,102 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onRefresh, role }) => {
                   profile.email.toLowerCase().includes(searchQuery.toLowerCase())
                 ))
                 .map(profile => (
-                <tr key={profile.id} className="hover:bg-slate-50/80 group">
-                  <td className="px-8 py-6">
+                <tr key={profile.id} className="hover:bg-slate-50/80 group transition-colors">
+                  <td className="px-10 py-6">
                     {editingUserId === profile.id ? (
-                      <input type="text" value={targetFullName} onChange={(e) => setTargetFullName(e.target.value.toUpperCase())} className="bg-white border border-indigo-200 rounded-xl px-4 py-2.5 text-sm font-black w-full uppercase" />
+                      <input type="text" value={targetFullName} onChange={(e) => setTargetFullName(e.target.value.toUpperCase())} className="bg-white border border-indigo-200 rounded-xl px-4 py-2.5 text-sm font-black w-full uppercase outline-none focus:ring-4 focus:ring-indigo-50" />
                     ) : (
                       <div>
-                        <div className="font-black text-slate-800 text-sm">{profile.fullName || 'INCOMPLETO'}</div>
+                        <div className="font-black text-slate-800 text-sm uppercase tracking-tight">{profile.fullName || 'INCOMPLETO'}</div>
                         <div className="text-[10px] text-slate-400 font-bold">{profile.email}</div>
                       </div>
                     )}
                   </td>
                   <td className="px-8 py-6">
                     {editingUserId === profile.id ? (
-                      <select value={targetRole} onChange={(e) => setTargetRole(e.target.value as UserRole)} className="bg-white border border-indigo-100 rounded-xl px-3 py-2 text-xs font-black">
-                        <option value="seller">Vendedor</option>
-                        <option value="supervisor">Supervisor</option>
-                        <option value="admin">Admin</option>
-                        <option value="viewer">Lector</option>
+                      <select value={targetRole} onChange={(e) => setTargetRole(e.target.value as UserRole)} className="bg-white border border-indigo-200 rounded-xl px-4 py-2.5 text-xs font-black uppercase outline-none">
+                        <option value="seller">VENDEDOR</option>
+                        <option value="supervisor">SUPERVISOR</option>
+                        <option value="admin">ADMINISTRADOR</option>
+                        <option value="viewer">LECTOR</option>
                       </select>
                     ) : (
-                      <span className={`px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest border ${
+                      <span className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border ${
                         profile.role === 'admin' ? 'bg-amber-50 text-amber-600 border-amber-100' : 
                         profile.role === 'supervisor' ? 'bg-indigo-50 text-indigo-600 border-indigo-100' :
-                        'bg-slate-50 text-slate-500 border-slate-100'
+                        profile.role === 'viewer' ? 'bg-slate-100 text-slate-500 border-slate-200' :
+                        'bg-emerald-50 text-emerald-600 border-emerald-100'
                       }`}>
-                        {profile.role}
+                        {profile.role === 'admin' ? 'ADMINISTRADOR' : 
+                         profile.role === 'supervisor' ? 'SUPERVISOR' : 
+                         profile.role === 'viewer' ? 'LECTOR' : 'VENDEDOR'}
                       </span>
                     )}
                   </td>
                   <td className="px-8 py-6">
                     {editingUserId === profile.id ? (
-                      <select value={targetStoreId} onChange={(e) => setTargetStoreId(e.target.value)} className="bg-white border border-indigo-100 rounded-xl px-3 py-2 text-xs font-black w-full">
-                        <option value="">Sin Sucursal</option>
-                        {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                      </select>
+                      <div className="space-y-3">
+                        <select value={targetStoreId} onChange={(e) => setTargetStoreId(e.target.value)} className="bg-white border border-indigo-200 rounded-xl px-4 py-2.5 text-xs font-black uppercase outline-none w-full">
+                          <option value="">TIENDA GLOBAL</option>
+                          {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        </select>
+                        
+                        {(targetRole === 'supervisor' || targetRole === 'viewer') && (
+                          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1">Autorizar Acceso (Multiselección)</p>
+                            <div className="max-h-32 overflow-y-auto space-y-1.5 pr-2 custom-scrollbar">
+                              {stores.map(s => (
+                                <label key={s.id} className="flex items-center gap-3 px-3 py-2 hover:bg-white rounded-xl cursor-pointer transition-all border border-transparent hover:border-slate-100 group">
+                                  <input 
+                                    type="checkbox" 
+                                    checked={targetAssignedStores.includes(s.id)}
+                                    onChange={(e) => {
+                                      if (e.target.checked) setTargetAssignedStores([...targetAssignedStores, s.id]);
+                                      else setTargetAssignedStores(targetAssignedStores.filter(id => id !== s.id));
+                                    }}
+                                    className="w-4 h-4 rounded-lg border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                  />
+                                  <span className="text-[10px] font-black text-slate-600 uppercase group-hover:text-indigo-600">{s.name}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     ) : (
-                      <span className="text-xs font-black text-slate-600 uppercase">
-                        {stores.find(s => s.id === profile.storeId)?.name || 'NO ASIGNADO'}
-                      </span>
+                      <div className="space-y-2">
+                        <span className="text-xs font-black text-slate-700 uppercase flex items-center gap-2">
+                          <Building className="w-3.5 h-3.5 text-slate-400" />
+                          {stores.find(s => s.id === profile.storeId)?.name || 'TIENDA GLOBAL'}
+                        </span>
+                        {profile.assignedStores && profile.assignedStores.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {profile.assignedStores.map(sid => (
+                              <span key={sid} className="text-[8px] bg-indigo-50 text-indigo-500 px-2 py-0.5 rounded-full font-black uppercase border border-indigo-100">
+                                {stores.find(s => s.id === sid)?.name || '?'}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     )}
                   </td>
-                  <td className="px-8 py-6 text-right">
+                  <td className="px-10 py-6 text-right">
                     {editingUserId === profile.id ? (
                       <div className="flex justify-end gap-2">
-                        <button onClick={() => handleUpdateProfile(profile.id)} className="p-2.5 bg-emerald-500 text-white rounded-xl shadow-lg"><Save className="w-5 h-5" /></button>
-                        <button onClick={() => setEditingUserId(null)} className="p-2 text-slate-400"><X className="w-5 h-5" /></button>
+                        <button onClick={() => handleUpdateProfile(profile.id)} className="p-3 bg-emerald-500 text-white rounded-xl shadow-lg shadow-emerald-200 hover:scale-[1.05] active:scale-95 transition-all"><Save className="w-5 h-5" /></button>
+                        <button onClick={() => setEditingUserId(null)} className="p-3 bg-slate-100 text-slate-400 rounded-xl hover:bg-slate-200 transition-all"><X className="w-5 h-5" /></button>
                       </div>
                     ) : (
                       <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                        <button onClick={() => { setEditingUserId(profile.id); setTargetFullName(profile.fullName || ''); setTargetRole(profile.role); setTargetStoreId(profile.storeId || ''); }} className="p-2.5 hover:bg-indigo-50 text-slate-300 hover:text-indigo-600 rounded-xl transition-all"><Edit2 className="w-5 h-5" /></button>
-                        <button onClick={() => handleDeleteUser(profile.id)} className="p-2.5 hover:bg-red-50 text-slate-300 hover:text-red-500 rounded-xl transition-all"><Trash2 className="w-5 h-5" /></button>
+                        <button onClick={() => { 
+                          setEditingUserId(profile.id); 
+                          setTargetFullName(profile.fullName || ''); 
+                          setTargetRole(profile.role); 
+                          setTargetStoreId(profile.storeId || ''); 
+                          setTargetAssignedStores(profile.assignedStores || []);
+                        }} className="p-3 hover:bg-indigo-50 text-slate-300 hover:text-indigo-600 rounded-xl transition-all"><Edit2 className="w-5 h-5" /></button>
+                        <button onClick={() => handleDeleteUser(profile.id)} className="p-3 hover:bg-red-50 text-slate-300 hover:text-red-500 rounded-xl transition-all"><Trash2 className="w-5 h-5" /></button>
                       </div>
                     )}
                   </td>
@@ -418,139 +484,142 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onRefresh, role }) => {
 
       {/* MODALS */}
       {activeModal !== 'none' && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-md animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-300">
            <div className="absolute inset-0" onClick={() => setActiveModal('none')}></div>
-           <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-xl overflow-hidden relative z-10 animate-in zoom-in-95 duration-300">
-              <div className="px-10 pt-10 pb-8 border-b border-slate-50 flex justify-between items-center">
-                 <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">
-                   {activeModal === 'store' && 'Nueva Tienda'}
-                   {activeModal === 'direct' && 'Alta Directa'}
-                   {activeModal === 'invite' && 'Invitar'}
+           <div className="bg-white rounded-[3.5rem] shadow-[0_32px_64px_-12px_rgba(0,0,0,0.3)] w-full max-w-xl overflow-hidden relative z-10 animate-in zoom-in-95 duration-300">
+              <div className="px-12 pt-12 pb-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
+                 <h3 className="text-3xl font-black text-slate-800 uppercase tracking-tighter">
+                   {activeModal === 'store' && 'Nueva Sucursal'}
+                   {activeModal === 'direct' && 'Alta de Usuario'}
+                   {activeModal === 'invite' && 'Invitar Personal'}
                    {activeModal === 'stores-list' && 'Sucursales'}
                  </h3>
-                 <button onClick={() => setActiveModal('none')} className="p-2 hover:bg-slate-100 rounded-2xl"><X className="w-6 h-6" /></button>
+                 <button onClick={() => setActiveModal('none')} className="p-4 hover:bg-slate-200 rounded-2xl transition-colors"><X className="w-8 h-8 text-slate-500" /></button>
               </div>
 
-              <div className="p-10">
+              <div className="p-12">
                  {activeModal === 'store' && (
-                   <form onSubmit={handleCreateStore} className="space-y-6">
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nombre Comercial</label>
-                        <input type="text" value={newStoreName} onChange={(e) => setNewStoreName(e.target.value.toUpperCase())} placeholder="EJ. COPPEL FEDERAL" className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-6 py-5 text-lg font-black uppercase outline-none focus:ring-8 focus:ring-indigo-50" required />
+                   <form onSubmit={handleCreateStore} className="space-y-8">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Nombre Comercial</label>
+                        <input type="text" value={newStoreName} onChange={(e) => setNewStoreName(e.target.value.toUpperCase())} placeholder="EJ. COPPEL CÁRDENAS" className="w-full bg-slate-50 border border-slate-200 rounded-[1.5rem] px-8 py-6 text-xl font-black uppercase outline-none focus:ring-8 focus:ring-indigo-50 transition-all" required />
                       </div>
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Ubicación / Referral</label>
-                        <input type="text" value={newStoreLocation} onChange={(e) => setNewStoreLocation(e.target.value.toUpperCase())} placeholder="CIUDAD O PLAZA" className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-6 py-5 text-sm font-bold uppercase outline-none focus:ring-8 focus:ring-indigo-50" />
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Ubicación / Ciudad</label>
+                        <input type="text" value={newStoreLocation} onChange={(e) => setNewStoreLocation(e.target.value.toUpperCase())} placeholder="EJ. VILLAHERMOSA, TABASCO" className="w-full bg-slate-50 border border-slate-200 rounded-[1.5rem] px-8 py-6 text-sm font-bold uppercase outline-none focus:ring-8 focus:ring-indigo-50 transition-all" />
                       </div>
-                      <button type="submit" disabled={isLoading} className="w-full bg-indigo-600 text-white font-black py-6 rounded-2xl shadow-xl shadow-indigo-100 uppercase tracking-widest text-xs">Registrar Sucursal</button>
+                      <button type="submit" disabled={isLoading} className="w-full bg-indigo-600 text-white font-black py-7 rounded-[1.5rem] shadow-2xl shadow-indigo-200 uppercase tracking-[0.2em] text-xs hover:scale-[1.02] active:scale-95 transition-all">Crear Sucursal Ahora</button>
                    </form>
                  )}
 
                  {activeModal === 'direct' && (
                    <form onSubmit={handleCreateUserDirectly} className="space-y-6">
-                      <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-2xl mb-2 flex items-start gap-3">
-                        <Shield className="w-5 h-5 text-indigo-600 mt-0.5 shrink-0" />
+                      <div className="bg-indigo-50 border border-indigo-100 p-5 rounded-[1.5rem] mb-2 flex items-start gap-4">
+                        <Shield className="w-6 h-6 text-indigo-600 mt-0.5 shrink-0" />
                         <p className="text-[11px] text-indigo-900 font-bold leading-relaxed uppercase">
-                          Crea una cuenta lista para usar. El usuario podrá entrar con su correo y la clave que asignes ahora.
+                          ACCESO DIRECTO: El usuario podrá entrar de inmediato con su correo y la clave asignada.
                         </p>
                       </div>
 
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nombre Completo del Usuario</label>
-                        <input type="text" value={directFullName} onChange={(e) => setDirectFullName(e.target.value.toUpperCase())} placeholder="EJ. JUAN PÉREZ" className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-6 py-5 text-base font-black uppercase outline-none focus:ring-8 focus:ring-indigo-50" required />
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Nombre Completo</label>
+                        <input type="text" value={directFullName} onChange={(e) => setDirectFullName(e.target.value.toUpperCase())} placeholder="EJ. JOSÉ LUIS MENDOZA" className="w-full bg-slate-50 border border-slate-200 rounded-[1.5rem] px-8 py-6 text-lg font-black uppercase outline-none focus:ring-8 focus:ring-indigo-50 transition-all" required />
                       </div>
 
                       <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Correo Electrónico</label>
-                          <input type="email" value={directEmail} onChange={(e) => setDirectEmail(e.target.value)} placeholder="email@ejemplo.com" className="bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-bold outline-none w-full" required />
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Email</label>
+                          <input type="email" value={directEmail} onChange={(e) => setDirectEmail(e.target.value)} placeholder="vendedor@mail.com" className="bg-slate-50 border border-slate-200 rounded-[1.2rem] px-6 py-5 text-sm font-bold outline-none w-full" required />
                         </div>
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Contraseña</label>
-                          <input type="password" value={directPassword} onChange={(e) => setDirectPassword(e.target.value)} placeholder="Mín. 6 car." className="bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-bold outline-none w-full" required minLength={6} />
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Password</label>
+                          <input type="password" value={directPassword} onChange={(e) => setDirectPassword(e.target.value)} placeholder="Contraseña" className="bg-slate-50 border border-slate-200 rounded-[1.2rem] px-6 py-5 text-sm font-bold outline-none w-full" required minLength={6} />
                         </div>
                       </div>
 
                       <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Sucursal</label>
-                          <select value={directStoreId} onChange={(e) => setDirectStoreId(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-black w-full" required>
-                            <option value="">SELECCIONAR...</option>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Asignar Tienda</label>
+                          <select value={directStoreId} onChange={(e) => setDirectStoreId(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-[1.2rem] px-6 py-5 text-sm font-black w-full uppercase" required>
+                            <option value="">GLOBAL / NINGUNA</option>
                             {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                           </select>
                         </div>
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Rol</label>
-                          <select value={directRole} onChange={(e) => setDirectRole(e.target.value as UserRole)} className="bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-black w-full">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Nivel de Acceso</label>
+                          <select value={directRole} onChange={(e) => setDirectRole(e.target.value as UserRole)} className="bg-slate-50 border border-slate-200 rounded-[1.2rem] px-6 py-5 text-sm font-black w-full uppercase">
                             <option value="seller">VENDEDOR</option>
                             <option value="supervisor">SUPERVISOR</option>
-                            <option value="admin">ADMIN</option>
-                            <option value="viewer">LECTOR (SÓLO VER)</option>
+                            <option value="admin">ADMINISTRADOR</option>
+                            <option value="viewer">LECTOR</option>
                           </select>
                         </div>
                       </div>
-                      <button type="submit" disabled={isDirectLoading} className="w-full bg-indigo-600 text-white font-black py-6 rounded-2xl shadow-xl shadow-indigo-100 uppercase tracking-widest text-xs">Crear Cuenta Ahora</button>
+                      <button type="submit" disabled={isDirectLoading} className="w-full bg-indigo-600 text-white font-black py-7 rounded-[1.5rem] shadow-2xl shadow-indigo-200 uppercase tracking-[0.2em] text-xs hover:scale-[1.02] active:scale-95 transition-all">Activar Cuenta</button>
                    </form>
                  )}
 
                  {activeModal === 'invite' && (
-                   <form onSubmit={handleInviteUser} className="space-y-6">
-                      <div className="bg-blue-50 border border-blue-100 p-4 rounded-2xl mb-2 flex items-start gap-3">
-                        <Mail className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
+                   <form onSubmit={handleInviteUser} className="space-y-8">
+                      <div className="bg-blue-50 border border-blue-100 p-6 rounded-[1.5rem] flex items-start gap-4">
+                        <Mail className="w-6 h-6 text-blue-600 mt-0.5 shrink-0" />
                         <p className="text-[11px] text-blue-900 font-bold leading-relaxed uppercase">
-                          Envía una invitación formal. El usuario recibirá un enlace y él mismo definirá su contraseña al registrarse.
+                          Invitación por Email: El usuario recibirá un enlace para registrarse y crear su propia contraseña.
                         </p>
                       </div>
 
-                      <div className="space-y-1.5">
-                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Correo del Invitado</label>
-                         <input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="email@ejemplo.com" className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-6 py-5 text-base font-black outline-none focus:ring-8 focus:ring-blue-50" required />
+                      <div className="space-y-2">
+                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Email del Invitado</label>
+                         <input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="ejemplo@correo.com" className="w-full bg-slate-50 border border-slate-200 rounded-[1.5rem] px-8 py-6 text-lg font-black outline-none focus:ring-8 focus:ring-blue-50 transition-all" required />
                       </div>
 
                       <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1.5">
-                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Sucursal</label>
-                           <select value={inviteStoreId} onChange={(e) => setInviteStoreId(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-black w-full" required>
-                             <option value="">SELECCIONAR...</option>
+                        <div className="space-y-2">
+                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Sucursal</label>
+                           <select value={inviteStoreId} onChange={(e) => setInviteStoreId(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-[1.2rem] px-6 py-5 text-sm font-black w-full uppercase" required>
+                             <option value="">GLOBAL / NINGUNA</option>
                              {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                            </select>
                         </div>
-                        <div className="space-y-1.5">
-                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Rol</label>
-                           <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value as UserRole)} className="bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-black w-full">
+                        <div className="space-y-2">
+                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Rol</label>
+                           <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value as UserRole)} className="bg-slate-50 border border-slate-200 rounded-[1.2rem] px-6 py-5 text-sm font-black w-full uppercase">
                              <option value="seller">VENDEDOR</option>
                              <option value="supervisor">SUPERVISOR</option>
-                             <option value="admin">ADMIN</option>
-                             <option value="viewer">LECTOR (SÓLO VER)</option>
+                             <option value="admin">ADMINISTRADOR</option>
+                             <option value="viewer">LECTOR</option>
                            </select>
                         </div>
                       </div>
-                      <button type="submit" disabled={isLoading} className="w-full bg-blue-600 text-white font-black py-6 rounded-2xl shadow-xl shadow-blue-100 uppercase tracking-widest text-xs">Enviar Enlace de Invitación</button>
+                      <button type="submit" disabled={isLoading} className="w-full bg-blue-600 text-white font-black py-7 rounded-[1.5rem] shadow-2xl shadow-blue-200 uppercase tracking-[0.2em] text-xs hover:scale-[1.02] active:scale-95 transition-all">Enviar Invitación</button>
                    </form>
                  )}
 
                  {activeModal === 'stores-list' && (
-                    <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
-                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 px-2">Listado de Tiendas en el Sistema</p>
+                    <div className="space-y-4 max-h-[500px] overflow-y-auto pr-4 custom-scrollbar">
+                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 px-2">Sucursales del Sistema</p>
                        {stores.map(store => (
-                         <div key={store.id} className="p-6 rounded-[2rem] bg-slate-50 border border-slate-100 flex justify-between items-center group">
-                            {editingStoreId === store.id ? (
-                              <div className="flex-1 flex gap-2">
-                                <input type="text" value={editStoreName} onChange={(e) => setEditStoreName(e.target.value.toUpperCase())} className="flex-1 bg-white border border-indigo-200 rounded-xl px-4 py-2 text-sm font-black uppercase" />
-                                <button onClick={() => handleUpdateStore(store.id)} className="bg-emerald-500 text-white p-2.5 rounded-xl"><Save className="w-5 h-5" /></button>
-                                <button onClick={() => setEditingStoreId(null)} className="p-2.5 bg-slate-200 text-slate-500 rounded-xl"><X className="w-5 h-5" /></button>
-                              </div>
-                            ) : (
-                              <>
-                                <div>
-                                  <div className="font-black text-slate-800 uppercase text-base">{store.name}</div>
-                                  <div className="text-[10px] text-slate-400 font-black uppercase">{store.location || 'GLOBAL'}</div>
-                                </div>
-                                <button onClick={() => { setEditingStoreId(store.id); setEditStoreName(store.name); setEditStoreLocation(store.location || ''); }} className="p-3 bg-white text-slate-300 hover:text-indigo-600 rounded-xl border border-slate-100 shadow-sm opacity-0 group-hover:opacity-100 transition-all"><Edit2 className="w-5 h-5" /></button>
-                              </>
-                            )}
-                         </div>
-                       ))}
+                          <div key={store.id} className="p-8 rounded-[2.5rem] bg-slate-50 border border-slate-100 flex justify-between items-center group transition-all hover:bg-white hover:shadow-xl hover:shadow-slate-100">
+                             {editingStoreId === store.id ? (
+                               <div className="flex-1 flex gap-3">
+                                 <input type="text" value={editStoreName} onChange={(e) => setEditStoreName(e.target.value.toUpperCase())} className="flex-1 bg-white border border-indigo-200 rounded-xl px-5 py-3 text-sm font-black uppercase outline-none" />
+                                 <button onClick={() => handleUpdateStore(store.id)} className="bg-emerald-500 text-white p-3.5 rounded-2xl shadow-lg shadow-emerald-100 hover:scale-105 active:scale-95 transition-all"><Save className="w-6 h-6" /></button>
+                                 <button onClick={() => setEditingStoreId(null)} className="p-3.5 bg-slate-200 text-slate-500 rounded-2xl hover:bg-slate-300 transition-all"><X className="w-6 h-6" /></button>
+                               </div>
+                             ) : (
+                               <>
+                                 <div>
+                                   <div className="font-black text-slate-800 uppercase text-xl tracking-tight leading-none mb-2">{store.name}</div>
+                                   <div className="flex items-center gap-2">
+                                      <Building className="w-3.5 h-3.5 text-slate-400" />
+                                      <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest">{store.location || 'UBICACIÓN NO ESPECIFICADA'}</span>
+                                   </div>
+                                 </div>
+                                 <button onClick={() => { setEditingStoreId(store.id); setEditStoreName(store.name); setEditStoreLocation(store.location || ''); }} className="p-4 bg-white text-slate-300 hover:text-indigo-600 rounded-2xl border border-slate-100 shadow-sm opacity-0 group-hover:opacity-100 transition-all hover:scale-110"><Edit2 className="w-5 h-5" /></button>
+                               </>
+                             )}
+                          </div>
+                        ))}
                     </div>
                  )}
               </div>

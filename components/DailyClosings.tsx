@@ -10,9 +10,10 @@ interface DailyClosingsProps {
   onDeleteClosing?: (id: string) => void;
   role?: string;
   storeName?: string;
+  activeStoreId?: string;
 }
 
-const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseDay, onDeleteClosing, role, storeName }) => {
+const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseDay, onDeleteClosing, role, storeName, activeStoreId }) => {
   const [activeTab, setActiveTab] = useState<'daily' | 'monthly'>('daily');
   const dateInputRef = useRef<HTMLInputElement>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -166,14 +167,20 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
       return;
     }
 
-    if (window.confirm(`¿Estás seguro de que deseas realizar el corte del día ${targetDateStr}?`)) {
+    if (!activeStoreId || activeStoreId === 'all') {
+      alert("Por favor, selecciona una sucursal específica en la parte superior antes de realizar el corte.");
+      return;
+    }
+
+    if (window.confirm(`¿Estás seguro de que deseas realizar el corte del día ${targetDateStr} para la sucursal ${storeName}?`)) {
       const newClose: DailyClose = {
-        id: crypto.randomUUID(),
+        id: `close-${targetDateStr}-${activeStoreId}`, // Use the same ID format as DB
         date: targetDateStr,
         totalSales: targetCount,
         totalRevenue: targetRevenue,
         closedAt: new Date().toISOString(),
-        topBrand: topBrandToday || 'N/A' as any
+        topBrand: topBrandToday || 'N/A' as any,
+        storeId: activeStoreId
       };
       onCloseDay(newClose);
       setManualDate(''); // Reset after close
