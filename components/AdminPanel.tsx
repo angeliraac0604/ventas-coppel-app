@@ -60,6 +60,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
   const [targetAssignedStores, setTargetAssignedStores] = useState<string[]>([]);
   const [targetCanJustifyAbsences, setTargetCanJustifyAbsences] = useState(false);
   const [directCanJustifyAbsences, setDirectCanJustifyAbsences] = useState(false);
+  const [directAssignedStores, setDirectAssignedStores] = useState<string[]>([]);
   
   // Store Edit State
   const [editingStoreId, setEditingStoreId] = useState<string | null>(null);
