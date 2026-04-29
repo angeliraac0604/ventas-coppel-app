@@ -6,10 +6,21 @@ const AuthForm: React.FC = () => {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState(''); // Nuevo
   const [fullName, setFullName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  // Efecto para detectar invitación por URL
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const modeParam = params.get('mode');
+    const emailParam = params.get('email');
+
+    if (modeParam === 'register') setMode('register');
+    if (emailParam) setEmail(emailParam);
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,6 +53,8 @@ const AuthForm: React.FC = () => {
 
     try {
       if (!fullName) throw new Error("Por favor ingresa tu nombre completo.");
+      if (password !== confirmPassword) throw new Error("Las contraseñas no coinciden.");
+      if (password.length < 6) throw new Error("La contraseña debe tener al menos 6 caracteres.");
 
       // 1. Validar invitación por correo en pending_invitations
       const { data: inviteData, error: inviteError } = await supabase
@@ -153,6 +166,23 @@ const AuthForm: React.FC = () => {
                 />
               </div>
             </div>
+
+            {mode === 'register' && (
+              <div className="animate-in fade-in slide-in-from-left-2">
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Confirmar Contraseña</label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-2.5 w-5 h-5 text-slate-400" />
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-slate-900 text-sm font-medium placeholder:text-slate-300"
+                    placeholder="••••••••"
+                    required={mode === 'register'}
+                  />
+                </div>
+              </div>
+            )}
 
             {error && (
               <div className="p-3 rounded-lg bg-red-50 text-red-600 text-[11px] font-bold border border-red-100 flex items-center gap-2 animate-in fade-in slide-in-from-top-1">
