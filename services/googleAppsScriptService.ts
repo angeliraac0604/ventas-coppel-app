@@ -91,3 +91,33 @@ export const deleteImageFromDriveScript = async (fileUrl: string): Promise<void>
         // We generally don't block the UI if delete fails, just log it
     }
 };
+
+export const sendInviteEmailScript = async (
+    targetEmail: string,
+    role: string,
+    storeName: string
+): Promise<void> => {
+    const scriptUrl = import.meta.env.VITE_GOOGLE_SCRIPT_URL;
+    if (!scriptUrl) return;
+
+    try {
+        const appUrl = window.location.origin;
+        const inviteLink = `${appUrl}?mode=register&email=${encodeURIComponent(targetEmail)}`;
+
+        await fetch(scriptUrl, {
+            method: 'POST',
+            body: JSON.stringify({
+                action: 'sendInvite',
+                email: targetEmail,
+                role: role,
+                storeName: storeName,
+                link: inviteLink
+            }),
+            headers: {
+                'Content-Type': 'text/plain;charset=utf-8',
+            }
+        });
+    } catch (error) {
+        console.error("Error sending invite email:", error);
+    }
+};

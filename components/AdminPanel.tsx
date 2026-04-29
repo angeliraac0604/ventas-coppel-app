@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { sendInviteEmailScript } from '../services/googleAppsScriptService';
 import { 
   Users, 
   Store as StoreIcon, 
@@ -150,6 +151,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
         }
       ]);
       if (error) throw error;
+      
+      // Enviar correo de invitación
+      const targetStore = stores.find(s => s.id === inviteStoreId)?.name || 'Global';
+      sendInviteEmailScript(inviteEmail, inviteRole, targetStore);
+
       setInviteEmail('');
       setActiveModal('none');
       fetchAllData();
