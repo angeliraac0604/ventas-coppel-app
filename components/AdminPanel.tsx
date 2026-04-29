@@ -107,7 +107,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
       }
 
       // 3. Fetch Invites
-      const { data: invitesData } = await supabase.from('user_invites').select('*, stores(name)').eq('status', 'pending');
+      const { data: invitesData } = await supabase.from('pending_invitations').select('*, stores(name)');
       if (invitesData) setInvites(invitesData);
 
     } catch (err) {
@@ -141,12 +141,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
     e.preventDefault();
     setIsLoading(true);
     try {
-      const { error } = await supabase.from('user_invites').insert([
+      const { error } = await supabase.from('pending_invitations').insert([
         { 
           email: inviteEmail.toLowerCase(), 
           role: inviteRole, 
           store_id: inviteStoreId || null,
-          status: 'pending'
+          invited_by: (await supabase.auth.getUser()).data.user?.id
         }
       ]);
       if (error) throw error;

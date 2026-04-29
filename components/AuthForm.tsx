@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { supabase } from '../services/supabaseClient';
-import { Mail, Lock, Loader2, ArrowRight, ShieldCheck, Smartphone } from 'lucide-react';
+import { Mail, Lock, Loader2, ArrowRight, ShieldCheck } from 'lucide-react';
 
 const AuthForm: React.FC = () => {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [invitationCode, setInvitationCode] = useState('');
+  const [fullName, setFullName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -23,7 +23,6 @@ const AuthForm: React.FC = () => {
       });
       if (error) throw error;
     } catch (err: any) {
-      // Mensaje de error más amigable para el usuario
       let msg = err.message;
       if (err.message === 'Invalid login credentials') {
         msg = 'Correo o contraseña incorrectos.';
@@ -42,41 +41,43 @@ const AuthForm: React.FC = () => {
     setError(null);
 
     try {
-      // 1. Validar código
-      const { data: codeData, error: codeError } = await supabase
-        .from('invitation_codes')
+      if (!fullName) throw new Error("Por favor ingresa tu nombre completo.");
+
+      // 1. Validar invitación por correo en pending_invitations
+      const { data: inviteData, error: inviteError } = await supabase
+        .from('pending_invitations')
         .select('*')
-        .eq('code', invitationCode.toUpperCase())
-        .eq('is_used', false)
+        .eq('email', email.toLowerCase())
         .single();
 
-      if (codeError || !codeData) {
-        throw new Error("El código de invitación no es válido o ya fue usado.");
+      if (inviteError || !inviteData) {
+        throw new Error("No tienes una invitación pendiente para este correo. Contacta al administrador.");
       }
 
       // 2. Crear usuario en Auth
       const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-        email,
+        email: email.toLowerCase(),
         password,
         options: {
           data: {
-            role: codeData.role,
-            store_id: codeData.store_id
+            full_name: fullName.toUpperCase(),
+            role: inviteData.role,
+            store_id: inviteData.store_id
           }
         }
       });
 
       if (signUpError) throw signUpError;
 
-      // 3. Marcar código como usado
+      // 3. Eliminar la invitación ya usada
       await supabase
-        .from('invitation_codes')
-        .update({ is_used: true })
-        .eq('code', invitationCode.toUpperCase());
+        .from('pending_invitations')
+        .delete()
+        .eq('email', email.toLowerCase());
 
       setSuccess("¡Cuenta creada correctamente! Ahora puedes iniciar sesión.");
       setMode('login');
-      setInvitationCode('');
+      setFullName('');
     } catch (err: any) {
       setError(err.message || "Error al registrar");
     } finally {
@@ -86,18 +87,14 @@ const AuthForm: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 font-sans relative overflow-hidden">
-
-      {/* Background decoration */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
         <div className="absolute top-[-10%] right-[-10%] w-96 h-96 bg-blue-600/20 rounded-full blur-[100px]"></div>
         <div className="absolute bottom-[-10%] left-[-10%] w-96 h-96 bg-indigo-600/20 rounded-full blur-[100px]"></div>
       </div>
 
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden relative z-10">
-
         <div className="p-8 md:p-10 w-full">
           <div className="text-center mb-8">
-            {/* Logo Section Restored to Text/Icon */}
             <div className="flex flex-col items-center justify-center gap-4 mb-6">
               <img src="/pwa-icon.png" alt="Logo" className="w-24 h-24 object-contain drop-shadow-lg rounded-full" />
               <h1 className="text-3xl font-bold text-slate-800 tracking-tight">Ventas Telcel</h1>
@@ -105,13 +102,28 @@ const AuthForm: React.FC = () => {
 
             <div className="flex items-center justify-center gap-1.5 mt-2 bg-slate-100 py-1 px-3 rounded-full w-fit mx-auto mb-8">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              <p className="text-slate-500 text-xs font-semibold tracking-wide uppercase">
-                Acceso Privado
-              </p>
+              <p className="text-slate-500 text-xs font-semibold tracking-wide uppercase">Acceso Privado</p>
             </div>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-5">
+          <form onSubmit={mode === 'login' ? handleLogin : handleRegister} className="space-y-5">
+            {mode === 'register' && (
+              <div className="animate-in fade-in slide-in-from-left-2">
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Nombre Completo</label>
+                <div className="relative">
+                  <ShieldCheck className="absolute left-3 top-2.5 w-5 h-5 text-slate-400" />
+                  <input
+                    type="text"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value.toUpperCase())}
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-slate-900 text-sm font-medium placeholder:text-slate-300 uppercase"
+                    placeholder="NOMBRE Y APELLIDOS"
+                    required={mode === 'register'}
+                  />
+                </div>
+              </div>
+            )}
+
             <div>
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Correo Electrónico</label>
               <div className="relative">
@@ -173,7 +185,13 @@ const AuthForm: React.FC = () => {
           </form>
 
           <div className="mt-8 text-center border-t border-slate-100 pt-6">
-            <p className="text-[10px] text-slate-400 leading-relaxed max-w-xs mx-auto">
+            <button
+              onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
+              className="text-xs font-black text-blue-600 uppercase tracking-widest hover:text-blue-800 transition-colors"
+            >
+              {mode === 'login' ? '¿No tienes cuenta? Regístrate aquí' : '¿Ya tienes cuenta? Inicia sesión'}
+            </button>
+            <p className="text-[10px] text-slate-400 leading-relaxed max-w-xs mx-auto mt-4">
               Esta aplicación es de uso exclusivo interno. Si necesitas una cuenta o has olvidado tu contraseña, contacta al administrador del sistema.
             </p>
           </div>

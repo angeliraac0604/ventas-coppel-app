@@ -324,12 +324,36 @@ const AttendanceManager: React.FC<AttendanceManagerProps> = ({ user, storeName }
     }
   };
   const isActionDisabled = (type: AttendanceType) => {
+    // Si ya se marcó este tipo específico HOY, deshabilitar (para evitar duplicados el mismo día natural)
     if (todayRecords.includes(type)) return true;
     
-    // Logic: can't exit if no entry, etc.
-    if (type === 'exit' && !todayRecords.includes('entry')) return true;
-    if (type === 'lunch_start' && !todayRecords.includes('entry')) return true;
-    if (type === 'lunch_end' && !todayRecords.includes('lunch_start')) return true;
+    // Obtener el último registro global para ver si hay un turno abierto
+    const lastRecord = history[0]; // history está ordenado desc por timestamp
+    const hasOpenShift = lastRecord && lastRecord.type !== 'exit' && lastRecord.type !== 'excused';
+    
+    // Calcular horas desde el último registro
+    const hoursSinceLast = lastRecord 
+      ? (new Date().getTime() - new Date(lastRecord.timestamp).getTime()) / (1000 * 60 * 60)
+      : 999;
+
+    // Lógica para Salida, Inicio Comida y Fin Comida
+    if (type === 'exit' || type === 'lunch_start' || type === 'lunch_end') {
+      // Solo permitir si hay un turno abierto y es reciente (menos de 16 horas)
+      if (!hasOpenShift || hoursSinceLast > 16) return true;
+      
+      // Validaciones específicas de secuencia
+      if (type === 'lunch_end' && lastRecord.type !== 'lunch_start') return true;
+      if (type === 'lunch_start' && lastRecord.type !== 'entry') return true;
+      
+      return false;
+    }
+
+    // Lógica para Entrada
+    if (type === 'entry') {
+      // No permitir entrada si ya hay un turno abierto reciente
+      if (hasOpenShift && hoursSinceLast < 16) return true;
+      return false;
+    }
     
     return false;
   };
