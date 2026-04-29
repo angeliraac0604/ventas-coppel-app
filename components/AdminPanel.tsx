@@ -154,7 +154,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
       
       // Enviar correo de invitación
       const targetStore = stores.find(s => s.id === inviteStoreId)?.name || 'Global';
-      sendInviteEmailScript(inviteEmail, inviteRole, targetStore);
+      console.log("Llamando a sendInviteEmailScript...");
+      await sendInviteEmailScript(inviteEmail, inviteRole, targetStore);
 
       setInviteEmail('');
       setActiveModal('none');

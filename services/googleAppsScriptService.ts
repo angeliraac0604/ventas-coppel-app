@@ -98,13 +98,19 @@ export const sendInviteEmailScript = async (
     storeName: string
 ): Promise<void> => {
     const scriptUrl = import.meta.env.VITE_GOOGLE_SCRIPT_URL;
-    if (!scriptUrl) return;
+    
+    console.log("Intentando enviar correo a:", targetEmail);
+    
+    if (!scriptUrl) {
+        console.error("❌ ERROR: No se encontró VITE_GOOGLE_SCRIPT_URL en las variables de entorno.");
+        return;
+    }
 
     try {
         const appUrl = window.location.origin;
         const inviteLink = `${appUrl}?mode=register&email=${encodeURIComponent(targetEmail)}`;
 
-        await fetch(scriptUrl, {
+        const response = await fetch(scriptUrl, {
             method: 'POST',
             body: JSON.stringify({
                 action: 'sendInvite',
@@ -117,7 +123,10 @@ export const sendInviteEmailScript = async (
                 'Content-Type': 'text/plain;charset=utf-8',
             }
         });
+
+        const result = await response.json();
+        console.log("Respuesta del servidor de correo:", result);
     } catch (error) {
-        console.error("Error sending invite email:", error);
+        console.error("❌ Error enviando correo de invitación:", error);
     }
 };
