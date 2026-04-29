@@ -232,7 +232,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
 
   const handleCancelInvite = async (email: string) => {
     try {
-      await supabase.from('user_invites').delete().eq('email', email);
+      await supabase.from('pending_invitations').delete().eq('email', email);
       fetchAllData();
     } catch (err) {
       console.error(err);
