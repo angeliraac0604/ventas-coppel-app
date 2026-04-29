@@ -18,9 +18,17 @@ const AuthForm: React.FC = () => {
     const modeParam = params.get('mode');
     const emailParam = params.get('email');
 
-    if (modeParam === 'register') setMode('register');
-    if (emailParam) setEmail(emailParam);
+    if (modeParam === 'register') {
+      setMode('register');
+      if (emailParam) setEmail(emailParam);
+    }
   }, []);
+
+  const toggleMode = () => {
+    setMode(prev => prev === 'login' ? 'register' : 'login');
+    setError(null);
+    setSuccess(null);
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -88,7 +96,13 @@ const AuthForm: React.FC = () => {
         .delete()
         .eq('email', email.toLowerCase());
 
-      setSuccess("¡Cuenta creada correctamente! Ahora puedes iniciar sesión.");
+        .eq('email', email.toLowerCase());
+      
+      const message = signUpData.session 
+        ? "¡Cuenta creada y sesión iniciada correctamente!" 
+        : "¡Cuenta creada! Ya puedes iniciar sesión con tu nueva contraseña. (Si el sistema no te deja entrar, revisa tu correo para confirmar tu cuenta).";
+
+      setSuccess(message);
       setMode('login');
       setFullName('');
     } catch (err: any) {
@@ -212,19 +226,23 @@ const AuthForm: React.FC = () => {
                 </>
               )}
             </button>
-          </form>
 
-          <div className="mt-8 text-center border-t border-slate-100 pt-6">
-            <button
-              onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
-              className="text-xs font-black text-blue-600 uppercase tracking-widest hover:text-blue-800 transition-colors"
-            >
-              {mode === 'login' ? '¿No tienes cuenta? Regístrate aquí' : '¿Ya tienes cuenta? Inicia sesión'}
-            </button>
-            <p className="text-[10px] text-slate-400 leading-relaxed max-w-xs mx-auto mt-4">
-              Esta aplicación es de uso exclusivo interno. Si necesitas una cuenta o has olvidado tu contraseña, contacta al administrador del sistema.
-            </p>
-          </div>
+            <div className="pt-4 text-center">
+              {mode === 'register' ? (
+                <button
+                  type="button"
+                  onClick={() => setMode('login')}
+                  className="text-xs font-bold text-blue-600 hover:text-blue-700 uppercase tracking-widest transition-colors"
+                >
+                  ¿Ya tienes cuenta? Inicia Sesión
+                </button>
+              ) : (
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em]">
+                  Acceso restringido a personal autorizado
+                </p>
+              )}
+            </div>
+          </form>
         </div>
       </div>
     </div>
