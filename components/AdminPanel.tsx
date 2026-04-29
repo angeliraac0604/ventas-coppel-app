@@ -346,58 +346,64 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-slate-50/50">
-                <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Colaborador</th>
-                <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Rol / Nivel</th>
-                <th className="px-8 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Sucursal Asignada</th>
-                <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] text-right">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {/* PENDING INVITES */}
-              {invites.map(invite => (
-                <tr key={invite.id} className="bg-blue-50/20 italic">
-                  <td className="px-10 py-6">
-                    <div className="font-bold text-slate-400 text-sm">{invite.email}</div>
-                    <div className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Pendiente</div>
-                  </td>
-                  <td className="px-8 py-6">
-                    <span className="px-2 py-1 bg-blue-100 text-blue-600 rounded text-[9px] font-black uppercase">{invite.role}</span>
-                  </td>
-                  <td className="px-8 py-6 text-[11px] font-black text-slate-400 uppercase">
-                    {invite.stores?.name || 'GLOBAL'}
-                  </td>
-                  <td className="px-10 py-6 text-right">
-                    <button onClick={() => handleCancelInvite(invite.email)} className="p-3 text-slate-300 hover:text-red-500 rounded-xl transition-all"><Trash2 className="w-5 h-5" /></button>
-                  </td>
-                </tr>
-              ))}
-              
-              {/* FILTERED PROFILES */}
-              {profiles
-                .filter(profile => (storeFilter === 'all' || profile.storeId === storeFilter))
-                .filter(profile => (
-                  profile.fullName?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                  profile.email.toLowerCase().includes(searchQuery.toLowerCase())
-                ))
-                .map(profile => (
-                <tr key={profile.id} className="hover:bg-slate-50/80 group transition-colors">
-                  <td className="px-10 py-6">
+        {/* Table/Cards Container */}
+        <div className="bg-white">
+          {/* Desktop Header (Hidden on Mobile) */}
+          <div className="hidden md:grid md:grid-cols-[2fr_1fr_1.5fr_1fr] bg-slate-50/50 border-b border-slate-50 px-10 py-6">
+            <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Colaborador</div>
+            <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Rol / Nivel</div>
+            <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Sucursal Asignada</div>
+            <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] text-right">Acciones</div>
+          </div>
+
+          <div className="divide-y divide-slate-50">
+            {/* PENDING INVITES */}
+            {invites.map(invite => (
+              <div key={invite.id} className="grid grid-cols-1 md:grid-cols-[2fr_1fr_1.5fr_1fr] bg-blue-50/20 italic px-6 md:px-10 py-6 gap-4 items-center">
+                <div className="flex flex-col">
+                  <div className="font-bold text-slate-400 text-sm">{invite.email}</div>
+                  <div className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Pendiente</div>
+                </div>
+                <div className="flex items-center">
+                  <span className="px-2 py-1 bg-blue-100 text-blue-600 rounded text-[9px] font-black uppercase">{invite.role}</span>
+                </div>
+                <div className="text-[11px] font-black text-slate-400 uppercase">
+                  {invite.stores?.name || 'GLOBAL'}
+                </div>
+                <div className="flex justify-end">
+                  <button onClick={() => handleCancelInvite(invite.email)} className="p-3 text-slate-300 hover:text-red-500 rounded-xl transition-all"><Trash2 className="w-5 h-5" /></button>
+                </div>
+              </div>
+            ))}
+            
+            {/* FILTERED PROFILES */}
+            {profiles
+              .filter(profile => (storeFilter === 'all' || profile.storeId === storeFilter))
+              .filter(profile => (
+                profile.fullName?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                profile.email.toLowerCase().includes(searchQuery.toLowerCase())
+              ))
+              .map(profile => (
+              <div key={profile.id} className="grid grid-cols-1 md:grid-cols-[2fr_1fr_1.5fr_1fr] hover:bg-slate-50/80 group transition-colors px-6 md:px-10 py-6 gap-4 items-center">
+                {/* Colaborador */}
+                <div className="flex flex-col">
+                  <span className="md:hidden text-[9px] font-black text-slate-300 uppercase tracking-widest mb-1">Colaborador</span>
+                  {editingUserId === profile.id ? (
+                    <input type="text" value={targetFullName} onChange={(e) => setTargetFullName(e.target.value.toUpperCase())} className="bg-white border border-indigo-200 rounded-xl px-4 py-2.5 text-sm font-black w-full uppercase outline-none focus:ring-4 focus:ring-indigo-50" />
+                  ) : (
+                    <div>
+                      <div className="font-black text-slate-800 text-sm uppercase tracking-tight">{profile.fullName || 'INCOMPLETO'}</div>
+                      <div className="text-[10px] text-slate-400 font-bold">{profile.email}</div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Rol / Nivel */}
+                <div className="flex flex-col">
+                  <span className="md:hidden text-[9px] font-black text-slate-300 uppercase tracking-widest mb-1">Rol / Nivel</span>
+                  <div className="flex">
                     {editingUserId === profile.id ? (
-                      <input type="text" value={targetFullName} onChange={(e) => setTargetFullName(e.target.value.toUpperCase())} className="bg-white border border-indigo-200 rounded-xl px-4 py-2.5 text-sm font-black w-full uppercase outline-none focus:ring-4 focus:ring-indigo-50" />
-                    ) : (
-                      <div>
-                        <div className="font-black text-slate-800 text-sm uppercase tracking-tight">{profile.fullName || 'INCOMPLETO'}</div>
-                        <div className="text-[10px] text-slate-400 font-bold">{profile.email}</div>
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-8 py-6">
-                    {editingUserId === profile.id ? (
-                      <select value={targetRole} onChange={(e) => setTargetRole(e.target.value as UserRole)} className="bg-white border border-indigo-200 rounded-xl px-4 py-2.5 text-xs font-black uppercase outline-none">
+                      <select value={targetRole} onChange={(e) => setTargetRole(e.target.value as UserRole)} className="bg-white border border-indigo-200 rounded-xl px-4 py-2.5 text-xs font-black uppercase outline-none w-full">
                         <option value="seller">VENDEDOR</option>
                         <option value="supervisor">SUPERVISOR</option>
                         <option value="admin">ADMINISTRADOR</option>
@@ -415,103 +421,108 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
                          profile.role === 'viewer' ? 'LECTOR' : 'VENDEDOR'}
                       </span>
                     )}
-                  </td>
-                  <td className="px-8 py-6">
-                    {editingUserId === profile.id ? (
-                      <div className="space-y-3">
-                        <select value={targetStoreId} onChange={(e) => setTargetStoreId(e.target.value)} className="bg-white border border-indigo-200 rounded-xl px-4 py-2.5 text-xs font-black uppercase outline-none w-full">
-                          <option value="">TIENDA GLOBAL</option>
-                          {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                        </select>
-                        
-                        {(targetRole === 'supervisor' || targetRole === 'viewer') && (
-                          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 px-1">Selección de Tiendas</p>
-                            <p className="text-[8px] text-slate-400 font-bold uppercase mb-3 px-1 leading-tight">Si no seleccionas ninguna, tendrá acceso GLOBAL (todas las actuales y futuras)</p>
-                            <div className="max-h-32 overflow-y-auto space-y-1.5 pr-2 custom-scrollbar">
-                              {stores.map(s => (
-                                <label key={s.id} className="flex items-center gap-3 px-3 py-2 hover:bg-white rounded-xl cursor-pointer transition-all border border-transparent hover:border-slate-100 group">
-                                  <input 
-                                    type="checkbox" 
-                                    checked={targetAssignedStores.includes(s.id)}
-                                    onChange={(e) => {
-                                      if (e.target.checked) setTargetAssignedStores([...targetAssignedStores, s.id]);
-                                      else setTargetAssignedStores(targetAssignedStores.filter(id => id !== s.id));
-                                    }}
-                                    className="w-4 h-4 rounded-lg border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                                  />
-                                  <span className="text-[10px] font-black text-slate-600 uppercase group-hover:text-indigo-600">{s.name}</span>
-                                </label>
-                              ))}
-                            </div>
-                          </div>
-                        )}
+                  </div>
+                </div>
 
-                        {targetRole === 'supervisor' && (
-                          <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100">
-                            <label className="flex items-center gap-3 cursor-pointer group">
-                              <input 
-                                type="checkbox" 
-                                checked={targetCanJustifyAbsences}
-                                onChange={(e) => setTargetCanJustifyAbsences(e.target.checked)}
-                                className="w-4 h-4 rounded-lg border-emerald-300 text-emerald-600 focus:ring-emerald-500"
-                              />
-                              <div className="flex flex-col">
-                                <span className="text-[10px] font-black text-emerald-700 uppercase">Autorizar Justificar Faltas</span>
-                                <span className="text-[8px] text-emerald-600/70 font-bold uppercase">Permite al supervisor marcar faltas como permiso</span>
-                              </div>
-                            </label>
-                          </div>
-                        )}
-                        </div>
-                      ) : (
-                      <div className="space-y-2">
-                        <span className="text-xs font-black text-slate-700 uppercase flex items-center gap-2">
-                          <Building className="w-3.5 h-3.5 text-slate-400" />
-                          {stores.find(s => s.id === profile.storeId)?.name || 'TIENDA GLOBAL'}
-                        </span>
-                        {profile.assignedStores && profile.assignedStores.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5">
-                            {profile.assignedStores.map(sid => (
-                              <span key={sid} className="text-[8px] bg-indigo-50 text-indigo-500 px-2 py-0.5 rounded-full font-black uppercase border border-indigo-100">
-                                {stores.find(s => s.id === sid)?.name || '?'}
-                              </span>
+                {/* Sucursal Asignada */}
+                <div className="flex flex-col">
+                  <span className="md:hidden text-[9px] font-black text-slate-300 uppercase tracking-widest mb-1">Sucursal Asignada</span>
+                  {editingUserId === profile.id ? (
+                    <div className="space-y-3">
+                      <select value={targetStoreId} onChange={(e) => setTargetStoreId(e.target.value)} className="bg-white border border-indigo-200 rounded-xl px-4 py-2.5 text-xs font-black uppercase outline-none w-full">
+                        <option value="">TIENDA GLOBAL</option>
+                        {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                      
+                      {(targetRole === 'supervisor' || targetRole === 'viewer') && (
+                        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 px-1">Selección de Tiendas</p>
+                          <p className="text-[8px] text-slate-400 font-bold uppercase mb-3 px-1 leading-tight">Si no seleccionas ninguna, tendrá acceso GLOBAL (todas las actuales y futuras)</p>
+                          <div className="max-h-32 overflow-y-auto space-y-1.5 pr-2 custom-scrollbar">
+                            {stores.map(s => (
+                              <label key={s.id} className="flex items-center gap-3 px-3 py-2 hover:bg-white rounded-xl cursor-pointer transition-all border border-transparent hover:border-slate-100 group">
+                                <input 
+                                  type="checkbox" 
+                                  checked={targetAssignedStores.includes(s.id)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) setTargetAssignedStores([...targetAssignedStores, s.id]);
+                                    else setTargetAssignedStores(targetAssignedStores.filter(id => id !== s.id));
+                                  }}
+                                  className="w-4 h-4 rounded-lg border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                />
+                                <span className="text-[10px] font-black text-slate-600 uppercase group-hover:text-indigo-600">{s.name}</span>
+                              </label>
                             ))}
                           </div>
-                        )}
-                        {profile.role === 'supervisor' && profile.canJustifyAbsences && (
-                           <div className="flex items-center gap-1.5 mt-1 text-emerald-600">
-                             <CheckCircle className="w-3 h-3" />
-                             <span className="text-[8px] font-black uppercase">Autorizado para justificar</span>
-                           </div>
-                        )}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-10 py-6 text-right">
-                    {editingUserId === profile.id ? (
-                      <div className="flex justify-end gap-2">
-                        <button onClick={() => handleUpdateProfile(profile.id)} className="p-3 bg-emerald-500 text-white rounded-xl shadow-lg shadow-emerald-200 hover:scale-[1.05] active:scale-95 transition-all"><Save className="w-5 h-5" /></button>
-                        <button onClick={() => setEditingUserId(null)} className="p-3 bg-slate-100 text-slate-400 rounded-xl hover:bg-slate-200 transition-all"><X className="w-5 h-5" /></button>
+                        </div>
+                      )}
+
+                      {targetRole === 'supervisor' && (
+                        <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100">
+                          <label className="flex items-center gap-3 cursor-pointer group">
+                            <input 
+                              type="checkbox" 
+                              checked={targetCanJustifyAbsences}
+                              onChange={(e) => setTargetCanJustifyAbsences(e.target.checked)}
+                              className="w-4 h-4 rounded-lg border-emerald-300 text-emerald-600 focus:ring-emerald-500"
+                            />
+                            <div className="flex flex-col">
+                              <span className="text-[10px] font-black text-emerald-700 uppercase">Autorizar Justificar Faltas</span>
+                              <span className="text-[8px] text-emerald-600/70 font-bold uppercase">Permite al supervisor marcar faltas como permiso</span>
+                            </div>
+                          </label>
+                        </div>
+                      )}
                       </div>
                     ) : (
-                      <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                        <button onClick={() => { 
-                          setEditingUserId(profile.id); 
-                          setTargetFullName(profile.fullName || ''); 
-                          setTargetRole(profile.role); 
-                          setTargetStoreId(profile.storeId || ''); 
-                          setTargetAssignedStores(profile.assignedStores || []);
-                          setTargetCanJustifyAbsences(profile.canJustifyAbsences || false);
-                        }} className="p-3 hover:bg-indigo-50 text-slate-300 hover:text-indigo-600 rounded-xl transition-all"><Edit2 className="w-5 h-5" /></button>
-                        <button onClick={() => handleDeleteUser(profile.id)} className="p-3 hover:bg-red-50 text-slate-300 hover:text-red-500 rounded-xl transition-all"><Trash2 className="w-5 h-5" /></button>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    <div className="space-y-2">
+                      <span className="text-xs font-black text-slate-700 uppercase flex items-center gap-2">
+                        <Building className="w-3.5 h-3.5 text-slate-400" />
+                        {stores.find(s => s.id === profile.storeId)?.name || 'TIENDA GLOBAL'}
+                      </span>
+                      {profile.assignedStores && profile.assignedStores.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {profile.assignedStores.map(sid => (
+                            <span key={sid} className="text-[8px] bg-indigo-50 text-indigo-500 px-2 py-0.5 rounded-full font-black uppercase border border-indigo-100">
+                              {stores.find(s => s.id === sid)?.name || '?'}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {profile.role === 'supervisor' && profile.canJustifyAbsences && (
+                         <div className="flex items-center gap-1.5 mt-1 text-emerald-600">
+                           <CheckCircle className="w-3 h-3" />
+                           <span className="text-[8px] font-black uppercase">Autorizado para justificar</span>
+                         </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Acciones */}
+                <div className="flex justify-end items-center">
+                  {editingUserId === profile.id ? (
+                    <div className="flex justify-end gap-2 w-full md:w-auto">
+                      <button onClick={() => handleUpdateProfile(profile.id)} className="flex-1 md:flex-none p-3 bg-emerald-500 text-white rounded-xl shadow-lg shadow-emerald-200 hover:scale-[1.05] active:scale-95 transition-all flex items-center justify-center"><Save className="w-5 h-5" /></button>
+                      <button onClick={() => setEditingUserId(null)} className="flex-1 md:flex-none p-3 bg-slate-100 text-slate-400 rounded-xl hover:bg-slate-200 transition-all flex items-center justify-center"><X className="w-5 h-5" /></button>
+                    </div>
+                  ) : (
+                    <div className="flex justify-end gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all">
+                      <button onClick={() => { 
+                        setEditingUserId(profile.id); 
+                        setTargetFullName(profile.fullName || ''); 
+                        setTargetRole(profile.role); 
+                        setTargetStoreId(profile.storeId || ''); 
+                        setTargetAssignedStores(profile.assignedStores || []);
+                        setTargetCanJustifyAbsences(profile.canJustifyAbsences || false);
+                      }} className="p-3 hover:bg-indigo-50 text-slate-300 hover:text-indigo-600 rounded-xl transition-all"><Edit2 className="w-5 h-5" /></button>
+                      <button onClick={() => handleDeleteUser(profile.id)} className="p-3 hover:bg-red-50 text-slate-300 hover:text-red-500 rounded-xl transition-all"><Trash2 className="w-5 h-5" /></button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 

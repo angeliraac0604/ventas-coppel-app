@@ -677,70 +677,71 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
       </div>
 
       {/* Stats Cards Row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6">
+      <div className="grid grid-cols-2 md:grid-cols-2 xl:grid-cols-5 gap-4 md:gap-6">
 
         {/* TODAY Stats */}
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 hover:shadow-md transition-shadow relative overflow-hidden">
+        <div className="bg-white rounded-2xl p-4 md:p-6 shadow-sm border border-slate-100 hover:shadow-md transition-shadow relative overflow-hidden">
           <div className="absolute top-0 right-0 w-16 h-16 bg-orange-500 rounded-full blur-[40px] opacity-20"></div>
-          <div className="flex items-center gap-3 mb-3 relative z-10">
-            <div className="p-2 bg-orange-50 rounded-lg">
-              <PartyPopper className="w-5 h-5 text-orange-600" />
+          <div className="flex items-center gap-2 md:gap-3 mb-2 md:mb-3 relative z-10">
+            <div className="p-1.5 md:p-2 bg-orange-50 rounded-lg">
+              <PartyPopper className="w-4 h-4 md:w-5 md:h-5 text-orange-600" />
             </div>
-            <p className="text-slate-500 text-sm font-bold">Ventas de Hoy</p>
+            <p className="text-slate-500 text-[10px] md:text-sm font-bold truncate">Ventas Hoy</p>
           </div>
-          <h3 className="text-3xl font-extrabold text-slate-800 relative z-10">{todayCount}</h3>
-          <p className="text-xs text-orange-500 font-medium mt-1 relative z-10">
+          <h3 className="text-xl md:text-3xl font-extrabold text-slate-800 relative z-10">{todayCount}</h3>
+          <p className="text-[9px] md:text-xs text-orange-500 font-medium mt-0.5 md:mt-1 relative z-10 truncate">
             {todayCount > 0 ? "¡Sigue así!" : "Sin ventas aún"}
           </p>
         </div>
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="p-2 bg-indigo-50 rounded-lg">
-              <DollarSign className="w-5 h-5 text-indigo-600" />
+
+        <div className="bg-white rounded-2xl p-4 md:p-6 shadow-sm border border-slate-100 hover:shadow-md transition-shadow relative overflow-hidden">
+          <div className="flex items-center gap-2 md:gap-3 mb-2 md:mb-3">
+            <div className="p-1.5 md:p-2 bg-indigo-50 rounded-lg">
+              <DollarSign className="w-4 h-4 md:w-5 md:h-5 text-indigo-600" />
             </div>
-            <p className="text-slate-500 text-sm font-bold">Venta Bruta (Mes Actual)</p>
+            <p className="text-slate-500 text-[10px] md:text-sm font-bold truncate">Ingreso Bruto</p>
           </div>
-          <h3 className="text-2xl font-bold text-slate-800">${currentMonthRevenue.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</h3>
-          <p className="text-xs text-slate-400 mt-1">IVA Incluido</p>
+          <h3 className="text-lg md:text-2xl font-bold text-slate-800 truncate">${currentMonthRevenue.toLocaleString('es-MX', { maximumFractionDigits: 0 })}</h3>
+          <p className="text-[9px] md:text-xs text-slate-400 mt-0.5 md:mt-1">IVA Incluido</p>
         </div>
 
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="p-2 bg-blue-50 rounded-lg">
-              <TrendingUp className="w-5 h-5 text-blue-600" />
+        <div className="bg-white rounded-2xl p-4 md:p-6 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
+          <div className="flex items-center gap-2 md:gap-3 mb-2 md:mb-3">
+            <div className="p-1.5 md:p-2 bg-blue-50 rounded-lg">
+              <TrendingUp className="w-4 h-4 md:w-5 md:h-5 text-blue-600" />
             </div>
-            <p className="text-slate-500 text-sm font-bold">Equipos (Mes Actual)</p>
+            <p className="text-slate-500 text-[10px] md:text-sm font-bold truncate">Equipos (Mes)</p>
           </div>
-          <h3 className="text-2xl font-bold text-slate-800">{currentMonthCount}</h3>
-          <p className="text-xs text-slate-400 mt-1">Dispositivos móviles</p>
+          <h3 className="text-xl md:text-2xl font-bold text-slate-800">{currentMonthCount}</h3>
+          <p className="text-[9px] md:text-xs text-slate-400 mt-0.5 md:mt-1">Móviles</p>
         </div>
 
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="p-2 bg-emerald-50 rounded-lg">
-              <Trophy className="w-5 h-5 text-emerald-600" />
+        <div className="bg-white rounded-2xl p-4 md:p-6 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
+          <div className="flex items-center gap-2 md:gap-3 mb-2 md:mb-3">
+            <div className="p-1.5 md:p-2 bg-emerald-50 rounded-lg">
+              <Trophy className="w-4 h-4 md:w-5 md:h-5 text-emerald-600" />
             </div>
-            <p className="text-slate-500 text-sm font-bold">Marca Líder (Mes Actual)</p>
+            <p className="text-slate-500 text-[10px] md:text-sm font-bold truncate">Marca Líder</p>
           </div>
-          <h3 className="text-2xl font-bold text-slate-800 truncate">
+          <h3 className="text-lg md:text-2xl font-bold text-slate-800 truncate">
             {[...brandData].sort((a, b) => b.value - a.value)[0]?.name || 'N/A'}
           </h3>
-          <p className="text-xs text-slate-400 mt-1">Mayor volumen de ventas</p>
+          <p className="text-[9px] md:text-xs text-slate-400 mt-0.5 md:mt-1">Volumen</p>
         </div>
 
         {/* TICKET PROMEDIO CARD */}
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 hover:shadow-md transition-shadow relative overflow-hidden">
+        <div className="bg-white rounded-2xl p-4 md:p-6 shadow-sm border border-slate-100 hover:shadow-md transition-shadow relative overflow-hidden">
           <div className="absolute bottom-0 right-0 w-16 h-16 bg-purple-500 rounded-full blur-[40px] opacity-10"></div>
-          <div className="flex items-center gap-3 mb-3">
-            <div className="p-2 bg-purple-50 rounded-lg">
-              <Calculator className="w-5 h-5 text-purple-600" />
+          <div className="flex items-center gap-2 md:gap-3 mb-2 md:mb-3">
+            <div className="p-1.5 md:p-2 bg-purple-50 rounded-lg">
+              <Calculator className="w-4 h-4 md:w-5 md:h-5 text-purple-600" />
             </div>
-            <p className="text-slate-500 text-sm font-bold">Ticket Promedio (Mes)</p>
+            <p className="text-slate-500 text-[10px] md:text-sm font-bold truncate">Ticket Prom.</p>
           </div>
-          <h3 className="text-2xl font-bold text-slate-800">
-            ${(currentMonthCount > 0 ? (currentMonthRevenue / currentMonthCount) : 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          <h3 className="text-lg md:text-2xl font-bold text-slate-800 truncate">
+            ${(currentMonthCount > 0 ? (currentMonthRevenue / currentMonthCount) : 0).toLocaleString('es-MX', { maximumFractionDigits: 0 })}
           </h3>
-          <p className="text-xs text-slate-400 mt-1">Venta promedio por equipo</p>
+          <p className="text-[9px] md:text-xs text-slate-400 mt-0.5 md:mt-1">Promedio</p>
         </div>
       </div>
 
