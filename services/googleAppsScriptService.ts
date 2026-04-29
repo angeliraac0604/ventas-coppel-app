@@ -97,8 +97,9 @@ export const sendInviteEmailScript = async (
     role: string,
     storeName: string
 ): Promise<void> => {
-    // Usamos la URL configurada o la nueva URL confirmada por el usuario como respaldo directo
-    const scriptUrl = import.meta.env.VITE_GOOGLE_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbyx0K1q-t8OIUwXwsUR2smezfR_q4mOTu98Z7_Vm_0ytVpTza2y-svSk1NNBYzzo50/exec';
+    // Forzamos el uso de la nueva URL confirmada para evitar conflictos con variables de entorno viejas en Vercel
+    const scriptUrl = 'https://script.google.com/macros/s/AKfycbyx0K1q-t8OIUwXwsUR2smezfR_q4mOTu98Z7_Vm_0ytVpTza2y-svSk1NNBYzzo50/exec';
+    // const scriptUrl = import.meta.env.VITE_GOOGLE_SCRIPT_URL || '...'; // Comentado temporalmente
     
     console.log("Intentando enviar correo a:", targetEmail);
     console.log("URL de script utilizada:", scriptUrl);
