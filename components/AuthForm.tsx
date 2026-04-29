@@ -96,8 +96,6 @@ const AuthForm: React.FC = () => {
         .delete()
         .eq('email', email.toLowerCase());
 
-        .eq('email', email.toLowerCase());
-      
       const message = signUpData.session 
         ? "¡Cuenta creada y sesión iniciada correctamente!" 
         : "¡Cuenta creada! Ya puedes iniciar sesión con tu nueva contraseña. (Si el sistema no te deja entrar, revisa tu correo para confirmar tu cuenta).";
