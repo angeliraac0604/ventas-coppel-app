@@ -475,6 +475,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
           const topBrand = top ? (top[0] as Brand) : Brand.OTRO;
 
           const newClose = {
+            id: `auto-${date}-${userProfile?.storeId}`,
             date: date,
             total_sales: daySales.length,
             total_revenue: revenue,
