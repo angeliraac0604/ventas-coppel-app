@@ -448,10 +448,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
         const hasClosing = closings.some(c => c.date === date && c.storeId === userProfile?.storeId);
         if (hasClosing) return false;
 
-        // Si es hoy, solo cerrar si es muy tarde (ej: después de las 11 PM)
-        if (date === todayStr) return hour >= 23;
-
-        // Si es un día pasado, cerrar siempre (Recuperación histórica)
+        // SOLO cerrar automáticamente días PASADOS (Esto hace que el reinicio sea a las 00:00)
         return date < todayStr;
       });
 
