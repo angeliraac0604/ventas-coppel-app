@@ -51,14 +51,16 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
   const [editStoreEntry, setEditStoreEntry] = useState('');
   const [editStoreExit, setEditStoreExit] = useState('');
   const [editStoreLunchHours, setEditStoreLunchHours] = useState(1);
-  const [localStores, setLocalStores] = useState<Store[]>(stores);
+  const [localStores, setLocalStores] = useState<Store[]>(stores || []);
   const [localStoreFilter, setLocalStoreFilter] = useState<string>('all');
   const [justifyingAbsence, setJustifyingAbsence] = useState<GroupedAttendance | null>(null);
   const [absenceNotes, setAbsenceNotes] = useState('');
 
   // Sync localStores when props change
   useEffect(() => {
-    setLocalStores(stores);
+    if (Array.isArray(stores)) {
+      setLocalStores(stores);
+    }
   }, [stores]);
 
   const fetchData = async () => {
@@ -66,15 +68,15 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
     try {
       // 1. Fetch Profiles to get names
       const { data: profilesData } = await supabase.from('profiles').select('*');
-      if (profilesData) {
+      if (profilesData && Array.isArray(profilesData)) {
         let filteredProfiles = profilesData.filter((p: any) => 
-          (p.role !== 'supervisor' && p.role !== 'admin') || 
-          p.email === 'angeliraac@gmail.com'
+          (p && p.role !== 'supervisor' && p.role !== 'admin') || 
+          (p && (p.email === 'angeliraac@gmail.com' || p.email === 'jeissonjessy@gmail.com'))
         );
         
         // Filter by assignedStores if the current viewer is a supervisor with limited area
-        if (userProfile?.role === 'supervisor' && userProfile.assignedStores && userProfile.assignedStores.length > 0) {
-          filteredProfiles = filteredProfiles.filter((p: any) => userProfile.assignedStores?.includes(p.store_id));
+        if (userProfile?.role === 'supervisor' && userProfile?.assignedStores && userProfile.assignedStores?.length > 0) {
+          filteredProfiles = filteredProfiles.filter((p: any) => userProfile?.assignedStores?.includes(p.store_id));
         }
 
         setProfiles(filteredProfiles.map((p: any) => ({
@@ -97,8 +99,8 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
 
       if (selectedStoreId !== 'all') {
         query = query.eq('store_id', selectedStoreId);
-      } else if (userProfile?.role === 'supervisor' && userProfile.assignedStores && userProfile.assignedStores.length > 0) {
-        query = query.in('store_id', userProfile.assignedStores);
+      } else if (userProfile?.role === 'supervisor' && userProfile?.assignedStores && userProfile.assignedStores?.length > 0) {
+        query = query.in('store_id', userProfile?.assignedStores);
       }
 
       const { data: attendanceData, error } = await query;
@@ -198,6 +200,18 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
     fetchData();
   }, [selectedStoreId, filterDate]);
 
+  // Sync edit states when selected store changes
+  useEffect(() => {
+    if (selectedStoreId !== 'all') {
+      const store = localStores.find(s => s.id === selectedStoreId);
+      if (store) {
+        setEditStoreEntry(store.entryTime || '09:00');
+        setEditStoreExit(store.exitTime || '19:00');
+        setEditStoreLunchHours(String((store.lunchDurationMinutes || 60) / 60));
+      }
+    }
+  }, [selectedStoreId, localStores]);
+
   // Transform records into a tabular format (one row per user per day)
   const groupedData = React.useMemo(() => {
     const groups: Record<string, GroupedAttendance> = {};
@@ -231,6 +245,12 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
       }
 
       const timestamp = new Date(record.timestamp);
+      // Safety check for invalid dates
+      if (isNaN(timestamp.getTime())) {
+        console.warn(`Invalid timestamp found for record ${record.id}`);
+        return;
+      }
+
       const timeStr = timestamp.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: false });
       
       if (record.type === 'entry') groups[key].entry = timeStr;
@@ -243,7 +263,7 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
       }
 
       // Store evidence for this specific type
-      if (record.type !== 'excused') {
+      if (record.type !== 'excused' && groups[key].images) {
         groups[key].images[record.type as AttendanceType] = {
           selfie: record.imageUrl,
           screenshot: record.screenshotUrl,
@@ -256,8 +276,8 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
     Object.values(groups).forEach(group => {
       // 1. Check Late Entry
       if (group.entry && group.storeConfig?.entryTime) {
-        const [targetH, targetM] = group.storeConfig.entryTime.split(':').map(Number);
-        const [entryH, entryM] = group.entry.split(':').map(Number);
+        const [targetH, targetM] = (group.storeConfig.entryTime || '09:00').split(':').map(Number);
+        const [entryH, entryM] = (group.entry || '00:00').split(':').map(Number);
         
         if (entryH > targetH || (entryH === targetH && entryM > targetM)) {
           group.isLate = true;
@@ -266,8 +286,8 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
 
       // 2. Check Extended Lunch
       if (group.lunchStart && group.lunchEnd && group.storeConfig?.lunchDurationMinutes) {
-        const [sH, sM] = group.lunchStart.split(':').map(Number);
-        const [eH, eM] = group.lunchEnd.split(':').map(Number);
+        const [sH, sM] = (group.lunchStart || '00:00').split(':').map(Number);
+        const [eH, eM] = (group.lunchEnd || '00:00').split(':').map(Number);
         const duration = (eH * 60 + eM) - (sH * 60 + sM);
         if (duration > group.storeConfig.lunchDurationMinutes) {
           group.isLunchOver = true;
@@ -277,13 +297,14 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
 
     // 3. Absence Detection
     if (filterDate) {
-      const dayOfWeek = new Date(filterDate).getDay(); // 0-6
-      profiles.forEach(p => {
-        const key = `${p.id}-${filterDate}`;
-        if (groups[key]) return; // Already has records
+        const dayOfWeek = new Date(filterDate).getDay(); // 0-6
+        (profiles || []).forEach(p => {
+          if (!p) return;
+          const key = `${p.id}-${filterDate}`;
+          if (groups[key]) return; // Already has records
 
-        // Check if user belongs to the selected store (if filtered)
-        if (selectedStoreId !== 'all' && p.storeId !== selectedStoreId) return;
+          // Check if user belongs to the selected store (if filtered)
+          if (selectedStoreId !== 'all' && p.storeId !== selectedStoreId) return;
         
         // Skip admins/viewers usually, or only sellers/supervisors
         if (p.role === 'viewer') return;
@@ -298,7 +319,7 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
         const store = localStores.find(s => s.id === p.storeId);
         groups[key] = {
           userId: p.id,
-          userName: p.fullName || p.email.split('@')[0],
+          userName: p.fullName || p.email?.split('@')[0] || 'Usuario',
           userEmail: p.email,
           storeName: store?.name || 'N/A',
           date: filterDate,
@@ -308,12 +329,13 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
       });
     }
 
-    return Object.values(groups).sort((a, b) => b.date.localeCompare(a.date)).filter(g => 
-      (g.userName.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      g.userEmail.toLowerCase().includes(searchTerm.toLowerCase())) &&
+    return Object.values(groups).sort((a, b) => (b.date || '').localeCompare(a.date || '')).filter(g => 
+      ((g.userName || '').toLowerCase().includes((searchTerm || '').toLowerCase()) || 
+      (g.userEmail || '').toLowerCase().includes((searchTerm || '').toLowerCase())) &&
       (localStoreFilter === 'all' || g.storeConfig?.id === localStoreFilter)
     );
   }, [records, profiles, localStores, searchTerm, filterDate, selectedStoreId, localStoreFilter]);
+
 
   const stats = React.useMemo(() => {
     let expected = 0;
@@ -343,6 +365,15 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
     return { expected, present, absent, inLunch: Math.max(0, inLunch), exited };
   }, [records, profiles, filterDate, selectedStoreId, localStoreFilter]);
 
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-40 animate-pulse">
+        <Loader2 className="w-12 h-12 text-indigo-500 animate-spin mb-4" />
+        <p className="text-slate-400 font-black uppercase tracking-widest text-xs">Cargando Reporte...</p>
+      </div>
+    );
+  }
+
   const getStatusLabel = (type: AttendanceType) => {
     switch (type) {
       case 'entry': return 'Entrada';
@@ -355,78 +386,79 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       {/* Filters Bar */}
-      <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col md:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-4 w-full md:w-auto">
-          <div className="p-3 bg-indigo-50 rounded-2xl text-indigo-600">
+      <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col xl:flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-4 w-full xl:w-auto">
+          <div className="p-3 bg-indigo-50 rounded-2xl text-indigo-600 shrink-0">
             <Clock className="w-6 h-6" />
           </div>
-          <div>
-            <h2 className="text-xl font-black text-slate-800">Reporte de Asistencias</h2>
-            <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Supervisión de personal en tiempo real</p>
+          <div className="min-w-0">
+            <h2 className="text-lg md:text-xl font-black text-slate-800 truncate">Reporte de Asistencias</h2>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider truncate">Supervisión en tiempo real</p>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-          <div className="relative flex-1 md:w-64">
+        <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3 w-full xl:w-auto">
+          <div className="relative flex-1 sm:min-w-[200px]">
              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
              <input 
                type="text" 
                placeholder="Buscar vendedor..." 
                value={searchTerm}
                onChange={(e) => setSearchTerm(e.target.value)}
-               className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+               className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-100 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
              />
           </div>
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-           <div className="flex items-center gap-4">
-              <div className="p-3 bg-white rounded-2xl shadow-sm border border-slate-100 flex items-center gap-3">
-                 <Calendar className="w-5 h-5 text-indigo-600" />
+          
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              <div className="p-2.5 bg-white rounded-xl shadow-sm border border-slate-100 flex items-center gap-3">
+                 <Calendar className="w-4 h-4 text-indigo-600" />
                  <input 
                    type="date" 
                    value={filterDate}
                    onChange={(e) => setFilterDate(e.target.value)}
-                   className="bg-transparent text-sm font-black text-slate-800 outline-none"
+                   className="bg-transparent text-sm font-black text-slate-800 outline-none w-full"
                  />
               </div>
-              <div className="flex gap-2">
-                {activeTab === 'daily' && selectedStoreId === 'all' && (
-                  <select
-                    value={localStoreFilter}
-                    onChange={(e) => setLocalStoreFilter(e.target.value)}
-                    className="bg-white border border-slate-200 text-slate-800 font-black text-xs px-3 py-2 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="all">Todas las Tiendas</option>
-                    {localStores.map(s => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                  </select>
-                )}
+
+              {activeTab === 'daily' && selectedStoreId === 'all' && (
+                <select
+                  value={localStoreFilter}
+                  onChange={(e) => setLocalStoreFilter(e.target.value)}
+                  className="bg-white border border-slate-200 text-slate-800 font-black text-xs px-3 py-2.5 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="all">Todas las Tiendas</option>
+                  {localStores.map(s => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              )}
+
+              <div className="flex bg-slate-100 p-1 rounded-xl gap-1">
                 <button 
                   onClick={() => setActiveTab('daily')}
-                  className={`px-4 py-2 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${
-                    activeTab === 'daily' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                  className={`flex-1 sm:flex-none px-3 py-1.5 rounded-lg font-black text-[10px] uppercase tracking-widest transition-all ${
+                    activeTab === 'daily' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'
                   }`}
                 >
-                  Diario
+                  Día
                 </button>
                 <button 
                   onClick={() => setActiveTab('schedules')}
-                  className={`px-4 py-2 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${
-                    activeTab === 'schedules' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                  className={`flex-1 sm:flex-none px-3 py-1.5 rounded-lg font-black text-[10px] uppercase tracking-widest transition-all ${
+                    activeTab === 'schedules' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'
                   }`}
                 >
-                  Horarios
+                  Horas
                 </button>
                 <button 
                   onClick={() => setActiveTab('summary')}
-                  className={`px-4 py-2 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${
-                    activeTab === 'summary' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                  className={`flex-1 sm:flex-none px-3 py-1.5 rounded-lg font-black text-[10px] uppercase tracking-widest transition-all ${
+                    activeTab === 'summary' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'
                   }`}
                 >
-                  Resumen
+                  Res.
                 </button>
               </div>
-           </div>
           </div>
         </div>
       </div>
@@ -557,8 +589,8 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
               </div>
             )}
 
-            <div className="bg-white rounded-[2.5rem] shadow-xl shadow-slate-200/60 overflow-hidden border border-slate-50">
-            <table className="w-full text-left">
+            <div className="bg-white rounded-[2.5rem] shadow-xl shadow-slate-200/60 overflow-x-auto border border-slate-50">
+            <table className="w-full text-left min-w-[700px]">
               <thead>
                 <tr className="bg-slate-50/50 border-b border-slate-100">
                   <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Colaborador</th>
@@ -575,7 +607,7 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
                   .map(profile => (
                   <tr key={profile.id} className="hover:bg-slate-50/50 transition-colors group">
                     <td className="px-8 py-6">
-                       <div className="font-black text-slate-800 text-sm uppercase">{profile.fullName || profile.email.split('@')[0]}</div>
+                       <div className="font-black text-slate-800 text-sm uppercase">{profile.fullName || profile.email?.split('@')[0] || 'Usuario'}</div>
                        <div className="text-[10px] text-slate-400 font-bold">{profile.email}</div>
                     </td>
                     <td className="px-8 py-6">
@@ -666,7 +698,7 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
                                setTargetVacationEnd('');
                              }
                            }}
-                           className="p-3 bg-white text-slate-300 hover:text-indigo-600 rounded-xl border border-slate-100 shadow-sm opacity-0 group-hover:opacity-100 transition-all"
+                           className="p-3 bg-white text-slate-300 hover:text-indigo-600 rounded-xl border border-slate-100 shadow-sm opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all"
                          >
                            <Clock className="w-5 h-5" />
                          </button>
@@ -679,8 +711,8 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
             </div>
           </div>
         ) : activeTab === 'daily' ? (
-          <div className="bg-white rounded-[2.5rem] shadow-xl shadow-slate-200/60 overflow-hidden border border-slate-50">
-            <table className="w-full text-left">
+          <div className="bg-white rounded-[2.5rem] shadow-xl shadow-slate-200/60 overflow-x-auto border border-slate-50">
+            <table className="w-full text-left min-w-[800px]">
               <thead>
                 <tr className="bg-slate-50/50 border-b border-slate-100">
                   <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Colaborador</th>
@@ -746,14 +778,14 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
                           <button 
                             onClick={(e) => { 
                               e.stopPropagation(); 
-                              if (userProfile?.role === 'supervisor' && !userProfile.canJustifyAbsences) {
+                              if (userProfile?.role === 'supervisor' && !userProfile?.canJustifyAbsences) {
                                 alert("No tienes autorización para justificar faltas. Solicita el permiso al administrador.");
                                 return;
                               }
                               setJustifyingAbsence(row); 
                             }}
                             className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-tighter shadow-lg transition-colors ${
-                              (userProfile?.role === 'supervisor' && !userProfile.canJustifyAbsences)
+                              (userProfile?.role === 'supervisor' && !userProfile?.canJustifyAbsences)
                                 ? 'bg-slate-100 text-slate-400 cursor-not-allowed shadow-none'
                                 : 'bg-red-600 text-white shadow-red-200 hover:bg-red-700'
                             }`}
@@ -767,7 +799,7 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 text-slate-600 rounded-full text-[9px] font-black uppercase tracking-tighter">
-                            Jornada Completa
+                            <CheckCircle className="w-3 h-3" /> Terminado
                           </span>
                         )}
                       </td>
@@ -775,8 +807,11 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={6} className="px-6 py-20 text-center text-slate-400 italic text-sm">
-                      No se encontraron registros para esta fecha.
+                    <td colSpan={6} className="px-8 py-20 text-center">
+                       <div className="flex flex-col items-center gap-2 opacity-30">
+                         <User className="w-12 h-12" />
+                         <p className="font-black uppercase tracking-widest text-xs">No hay registros para este día</p>
+                       </div>
                     </td>
                   </tr>
                 )}

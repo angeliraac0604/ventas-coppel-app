@@ -176,7 +176,7 @@ const AttendanceSummary: React.FC<AttendanceSummaryProps> = ({ stores, profiles,
                 summaryData.map(({ profile, worked, excused, absences, absenceDates, restDays, vacations }) => (
                   <tr key={profile.id} className="hover:bg-slate-50/50 transition-colors">
                     <td className="px-8 py-6">
-                      <div className="font-black text-slate-800 text-sm uppercase tracking-tight">{profile.fullName || profile.email.split('@')[0]}</div>
+                      <div className="font-black text-slate-800 text-sm uppercase tracking-tight">{profile.fullName || profile.email?.split('@')[0] || 'Usuario'}</div>
                       <div className="text-[10px] text-slate-400 font-bold uppercase mt-1">{stores.find(s => s.id === profile.storeId)?.name || 'GLOBAL'}</div>
                     </td>
                     <td className="px-6 py-6 text-center">
