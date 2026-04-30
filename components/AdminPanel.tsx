@@ -669,7 +669,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
             ))}
             </div>
           </div>
-        )}
+        </div>
+      )}
 
       {/* MODALS */}
       {activeModal !== 'none' && (
