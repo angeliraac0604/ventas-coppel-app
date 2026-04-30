@@ -27,6 +27,7 @@ export interface Sale {
   createdByEmail?: string;
   createdByName?: string;
   storeId?: string; // UUID of store
+  transactionFolio?: string; // System generated unique folio (e.g. VNT-20240501-ABCD)
 }
 
 export interface BrandConfig {

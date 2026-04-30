@@ -75,7 +75,8 @@ const SalesList: React.FC<SalesListProps> = ({ sales, onDelete, onEdit, onAdd, r
     // 1. Text Search
     const matchesSearch =
       sale.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      sale.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase());
+      sale.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (sale.transactionFolio?.toLowerCase() || '').includes(searchTerm.toLowerCase());
 
     // 2. Brand Filter
     const matchesBrand = filterBrand === 'ALL' || sale.brand === filterBrand;
@@ -90,7 +91,6 @@ const SalesList: React.FC<SalesListProps> = ({ sales, onDelete, onEdit, onAdd, r
     }
     // if 'all', matchesDate remains true
 
-    return matchesSearch && matchesBrand && matchesDate;
     return matchesSearch && matchesBrand && matchesDate;
   }).sort((a, b) => {
     // 1. Sort by Date Descending first (most recent)
@@ -317,7 +317,14 @@ const SalesList: React.FC<SalesListProps> = ({ sales, onDelete, onEdit, onAdd, r
                   </div>
 
                   <div>
-                    <h3 className="font-bold text-slate-800 text-lg leading-tight mb-1">{sale.customerName.toUpperCase()}</h3>
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="font-bold text-slate-800 text-lg leading-tight">{sale.customerName.toUpperCase()}</h3>
+                      {sale.transactionFolio && (
+                        <span className="text-[9px] bg-indigo-50 text-indigo-500 px-1.5 py-0.5 rounded font-black border border-indigo-100/50" title="Folio Único de Operación">
+                          {sale.transactionFolio}
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-4 text-xs text-slate-500 font-medium">
                       <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {sale.date}</span>
                       <span className="flex items-center gap-1 bg-slate-50 px-2 py-0.5 rounded text-slate-600">
