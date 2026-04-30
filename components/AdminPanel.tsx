@@ -30,6 +30,7 @@ interface AdminPanelProps {
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
   const [activeModal, setActiveModal] = useState<'none' | 'store' | 'invite' | 'direct' | 'stores-list'>('none');
+  const [activeTab, setActiveTab] = useState<'personnel' | 'attendance' | 'performance'>('personnel');
   const [isLoading, setIsLoading] = useState(false);
   const [isDirectLoading, setIsDirectLoading] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
@@ -76,10 +77,21 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
   // Filter State
   const [searchQuery, setSearchQuery] = useState('');
   const [storeFilter, setStoreFilter] = useState('all');
+  const [attendanceStoreFilter, setAttendanceStoreFilter] = useState('all');
+  const [performanceStoreFilter, setPerformanceStoreFilter] = useState('all');
 
   useEffect(() => {
     fetchAllData();
   }, []);
+
+  const getAvailableStores = () => {
+    const user = profiles.find(p => p.id === (supabase.auth.getUser() as any).data?.user?.id);
+    if (!user || user.role === 'admin') return stores;
+    if (user.assignedStores && user.assignedStores.length > 0) {
+      return stores.filter(s => user.assignedStores.includes(s.id));
+    }
+    return stores; // Global supervisor fallback
+  };
 
   const fetchAllData = async () => {
     setDataLoading(true);
@@ -355,9 +367,89 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
         </button>
       </div>
 
-      {/* Main Management Area */}
-      <div className="bg-white rounded-[3.5rem] shadow-2xl shadow-slate-200/60 overflow-hidden border border-slate-50">
-        <div className="p-10 border-b border-slate-50 flex flex-col md:flex-row items-center justify-between gap-6 bg-slate-50/30">
+      {/* TABS SWITCHER */}
+      <div className="flex bg-slate-200/50 p-2 rounded-3xl gap-2 mb-8 max-w-2xl mx-auto">
+        <button 
+          onClick={() => setActiveTab('personnel')}
+          className={`flex-1 py-4 px-6 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'personnel' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+        >
+          <div className="flex items-center justify-center gap-2">
+            <Users className="w-4 h-4" /> Personal
+          </div>
+        </button>
+        <button 
+          onClick={() => setActiveTab('attendance')}
+          className={`flex-1 py-4 px-6 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'attendance' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+        >
+          <div className="flex items-center justify-center gap-2">
+            <Clock className="w-4 h-4" /> Asistencias
+          </div>
+        </button>
+        <button 
+          onClick={() => setActiveTab('performance')}
+          className={`flex-1 py-4 px-6 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'performance' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+        >
+          <div className="flex items-center justify-center gap-2">
+            <TrendingUp className="w-4 h-4" /> Rendimiento
+          </div>
+        </button>
+      </div>
+
+        {/* RENDIMIENTO (STATS) */}
+        {activeTab === 'performance' && (
+          <div className="p-6 md:p-10 space-y-8">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50 p-6 rounded-3xl border border-slate-100">
+               <div>
+                  <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight">
+                    Rendimiento: {performanceStoreFilter === 'all' ? 'Todas las Tiendas' : stores.find(s => s.id === performanceStoreFilter)?.name}
+                  </h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Análisis de ventas y metas por sucursal</p>
+               </div>
+               <select 
+                value={performanceStoreFilter}
+                onChange={(e) => setPerformanceStoreFilter(e.target.value)}
+                className="bg-white border border-slate-200 rounded-2xl px-6 py-4 text-xs font-black uppercase outline-none shadow-sm focus:ring-4 focus:ring-indigo-50 transition-all"
+               >
+                 <option value="all">📊 CONSOLIDADO GLOBAL</option>
+                 {getAvailableStores().map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+               </select>
+            </div>
+            {/* Aquí iría el componente de Stats filtrado por performanceStoreFilter */}
+          </div>
+        )}
+
+        {/* ASISTENCIAS */}
+        {activeTab === 'attendance' && (
+          <div className="p-6 md:p-10 space-y-8">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-indigo-50/50 p-6 rounded-3xl border border-indigo-100/50">
+               <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-white rounded-2xl shadow-sm flex items-center justify-center text-indigo-600 border border-indigo-100">
+                    <Calendar className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-black text-indigo-900 uppercase tracking-tight">
+                      Asistencias: {attendanceStoreFilter === 'all' ? 'Global' : stores.find(s => s.id === attendanceStoreFilter)?.name}
+                    </h3>
+                    <p className="text-[10px] text-indigo-400 font-bold uppercase tracking-widest">Control de puntualidad y faltas</p>
+                  </div>
+               </div>
+               <select 
+                value={attendanceStoreFilter}
+                onChange={(e) => setAttendanceStoreFilter(e.target.value)}
+                className="bg-white border border-indigo-200 rounded-2xl px-6 py-4 text-xs font-black uppercase outline-none shadow-sm focus:ring-4 focus:ring-indigo-50 transition-all text-indigo-600"
+               >
+                 <option value="all">📅 TODAS LAS SUCURSALES</option>
+                 {getAvailableStores().map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+               </select>
+            </div>
+            {/* Aquí iría el componente de Asistencias filtrado por attendanceStoreFilter */}
+          </div>
+        )}
+
+        {/* Main Management Area (Personnel Tab) */}
+        {activeTab === 'personnel' && (
+          <div className="bg-white rounded-[3.5rem] shadow-2xl shadow-slate-200/60 overflow-hidden border border-slate-50">
+            <div className="p-10 border-b border-slate-50 flex flex-col md:flex-row items-center justify-between gap-6 bg-slate-50/30">
           <div className="flex items-center gap-6 w-full md:w-auto">
              <div className="w-14 h-14 bg-white rounded-2xl shadow-sm flex items-center justify-center text-indigo-600 border border-slate-100">
                 <Users className="w-7 h-7" />
@@ -575,9 +667,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
                 </div>
               </div>
             ))}
+            </div>
           </div>
-        </div>
-      </div>
+        )}
 
       {/* MODALS */}
       {activeModal !== 'none' && (
@@ -816,7 +908,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
            </div>
         </div>
       )}
-
     </div>
   );
 };
