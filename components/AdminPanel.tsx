@@ -18,7 +18,11 @@ import {
   Edit2,
   Building,
   Plus,
-  ArrowRight
+  ArrowRight,
+  Clock,
+  TrendingUp,
+  Calendar,
+  Loader2
 } from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
 import { Store, UserProfile, UserRole } from '../types';
@@ -132,12 +136,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
         const activeEmails = new Set(profilesData?.map(p => p.email.toLowerCase()));
         const filteredInvites = invitesData.filter(inv => !activeEmails.has(inv.email.toLowerCase()));
         
-        // Auto-delete redundant invites from DB asynchronously
+        // Auto-delete redundant invites from DB asynchronously (Safely check for ID)
         const redundantInvites = invitesData.filter(inv => activeEmails.has(inv.email.toLowerCase()));
         if (redundantInvites.length > 0) {
-          Promise.all(redundantInvites.map(inv => 
-            supabase.from('pending_invitations').delete().eq('id', inv.id)
-          )).catch(err => console.error("Error cleaning up invites:", err));
+          Promise.all(redundantInvites.map(inv => {
+            if (inv.id) return supabase.from('pending_invitations').delete().eq('id', inv.id);
+            return Promise.resolve();
+          })).catch(err => console.error("Error cleaning up invites:", err));
         }
 
         setInvites(filteredInvites);
