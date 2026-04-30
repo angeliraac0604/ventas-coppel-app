@@ -37,16 +37,17 @@ const AuthForm: React.FC = () => {
 
     try {
       const { error } = await supabase.auth.signInWithPassword({
-        email,
+        email: email.toLowerCase().trim(),
         password,
       });
       if (error) throw error;
     } catch (err: any) {
+      console.error("Error de login:", err);
       let msg = err.message;
       if (err.message === 'Invalid login credentials') {
-        msg = 'Correo o contraseña incorrectos.';
+        msg = 'Correo o contraseña incorrectos. Verifica que no tengas activas las mayúsculas.';
       } else if (err.message.includes('Email not confirmed')) {
-        msg = 'Debes confirmar tu correo electrónico antes de entrar. Revisa tu bandeja de entrada.';
+        msg = 'Tu cuenta aún no ha sido confirmada. Revisa tu correo o contacta al administrador para que la active manualmente.';
       }
       setError(msg);
     } finally {
