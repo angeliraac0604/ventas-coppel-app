@@ -35,36 +35,33 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
   // Helper to determine the current store prefix
   const getCurrentPrefix = () => {
     const store = stores?.find(s => s.id === activeStoreId);
-    return store?.prefix || '1053';
+    return store?.prefix || ''; // Default to empty instead of 1053
   };
 
   // Helper to ensure branch-specific prefix format (Strict)
   const formatInvoice = (val: string) => {
     const prefix = getCurrentPrefix();
-    if (!val) return `#${prefix}-`;
+    if (!prefix) return val.replace(/[^0-9]/g, '');
 
-    // Clean to alphanumeric/dash only, removing existing hashes to normalize
-    let clean = val.replace(/#/g, '').trim();
+    if (!val) return `${prefix}-`;
 
-    clean = clean.replace(/[^0-9-]/g, ''); // Keep dash
+    let clean = val.replace(/[^0-9-]/g, ''); 
 
-    // If user typed 'prefix-' manually
     if (clean.startsWith(`${prefix}-`)) {
-      return '#' + clean;
+      return clean;
     }
 
-    // If just digits
     const digits = clean.replace(/\D/g, '');
     if (digits.startsWith(prefix) && digits.length > prefix.length) {
-      return `#${prefix}-` + digits.substring(prefix.length);
+      return `${prefix}-` + digits.substring(prefix.length);
     }
 
-    return `#${prefix}-` + digits;
+    return `${prefix}-` + digits;
   };
 
   // Common fields for the whole ticket
   const [commonData, setCommonData] = useState({
-    invoiceNumber: initialData?.invoiceNumber ? formatInvoice(initialData.invoiceNumber) : `#${getCurrentPrefix()}-`,
+    invoiceNumber: initialData?.invoiceNumber ? initialData.invoiceNumber : (getCurrentPrefix() ? `${getCurrentPrefix()}-` : ''),
     customerName: initialData?.customerName || '',
     date: initialData?.date || defaultDateStr,
   });
@@ -666,7 +663,6 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
                         handleAnalyzeTicket(ticketImage);
                       } else {
                         alert("📸 Primero debes tomar una foto del ticket para poder escanearlo.");
-                        // Optional: fileInputRef.current?.click(); // We don't do this to strictly follow "No abra la cámara"
                       }
                     }}
                     disabled={isAnalyzing}
@@ -712,6 +708,7 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
             </div>
 
             <div className="flex flex-col gap-2">
+
               <p className="text-xs text-slate-500 max-w-xs leading-relaxed">
                 Toma una foto clara del ticket. La imagen se guardará de forma segura en la nube.
               </p>
