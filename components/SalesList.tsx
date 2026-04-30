@@ -300,12 +300,7 @@ const SalesList: React.FC<SalesListProps> = ({ sales, onDelete, onEdit, onAdd, r
                       {BRAND_CONFIGS[sale.brand].label}
                     </span>
                     <span className="text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded text-xs font-mono font-bold tracking-wide">
-                      #{(() => {
-                        const clean = String(sale.invoiceNumber).replace(/[^0-9]/g, '');
-                        return clean.startsWith('1053') && clean.length > 4
-                          ? clean.slice(-4)
-                          : clean;
-                      })()}
+                      {sale.invoiceNumber}
                     </span>
 
                     {/* ETIQUETA DE SUCURSAL */}
@@ -319,11 +314,6 @@ const SalesList: React.FC<SalesListProps> = ({ sales, onDelete, onEdit, onAdd, r
                   <div>
                     <div className="flex items-center gap-2 mb-1">
                       <h3 className="font-bold text-slate-800 text-lg leading-tight">{sale.customerName.toUpperCase()}</h3>
-                      {sale.transactionFolio && (
-                        <span className="text-[9px] bg-indigo-50 text-indigo-500 px-1.5 py-0.5 rounded font-black border border-indigo-100/50" title="Folio Único de Operación">
-                          {sale.transactionFolio}
-                        </span>
-                      )}
                     </div>
                     <div className="flex items-center gap-4 text-xs text-slate-500 font-medium">
                       <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {sale.date}</span>
