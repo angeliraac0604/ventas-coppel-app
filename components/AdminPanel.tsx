@@ -278,27 +278,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
     } catch (err: any) {
       alert('Error: ' + err.message);
     }
+  };
+
   const handleCancelInvite = async (email: string) => {
     try {
       await supabase.from('pending_invitations').delete().eq('email', email);
       fetchAllData();
     } catch (err) {
       console.error(err);
-    }
-  };
-
-  const handleUpdateStore = async (storeId: string) => {
-    try {
-      const { error } = await supabase.from('stores').update({
-        name: editStoreName.toUpperCase(),
-        location: editStoreLocation.toUpperCase()
-      }).eq('id', storeId);
-      if (error) throw error;
-      setEditingStoreId(null);
-      fetchAllData();
-      if (onRefresh) onRefresh();
-    } catch (err: any) {
-      alert('Error: ' + err.message);
     }
   };
 
