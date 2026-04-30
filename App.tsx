@@ -575,7 +575,8 @@ create policy "Users insert store warranties" on public.warranties for insert to
         createdAt: row.created_at,
         createdByEmail: row.profiles?.email,
         createdByName: row.profiles?.full_name,
-        storeId: row.store_id
+        storeId: row.store_id,
+        transactionFolio: row.transaction_folio
       }));
 
       setSales(formattedSales);
@@ -778,7 +779,8 @@ create policy "Users insert store warranties" on public.warranties for insert to
         date: newSaleData.date,
         ticket_image: newSaleData.ticketImage || null,
         created_by: session.user.id,
-        store_id: finalStoreId
+        store_id: finalStoreId,
+        transaction_folio: `VNT-${newSaleData.date.replace(/-/g, '')}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`
       };
 
       const { data, error } = await supabase
@@ -799,7 +801,8 @@ create policy "Users insert store warranties" on public.warranties for insert to
           date: row.date,
           ticketImage: row.ticket_image,
           createdBy: row.created_by,
-          storeId: row.store_id // FIXED: Added storeId
+          storeId: row.store_id,
+          transactionFolio: row.transaction_folio
         };
         // Update local state ONLY if not already added by realtime subscription
         setSales(prev => {
