@@ -41,6 +41,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
   // Store Form
   const [newStoreName, setNewStoreName] = useState('');
   const [newStoreLocation, setNewStoreLocation] = useState('');
+  const [newStoreType, setNewStoreType] = useState('Coppel');
+  const [newStorePrefix, setNewStorePrefix] = useState('');
 
   // Invite Form
   const [inviteEmail, setInviteEmail] = useState('');
@@ -68,6 +70,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
   const [editingStoreId, setEditingStoreId] = useState<string | null>(null);
   const [editStoreName, setEditStoreName] = useState('');
   const [editStoreLocation, setEditStoreLocation] = useState('');
+  const [editStoreType, setEditStoreType] = useState('Coppel');
+  const [editStorePrefix, setEditStorePrefix] = useState('');
 
   // Filter State
   const [searchQuery, setSearchQuery] = useState('');
@@ -89,7 +93,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
           location: s.location,
           entryTime: s.entry_time,
           exitTime: s.exit_time,
-          lunchDurationMinutes: s.lunch_duration_minutes
+          lunchDurationMinutes: s.lunch_duration_minutes,
+          type: s.type,
+          prefix: s.prefix
         })));
       }
 
@@ -122,12 +128,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
     e.preventDefault();
     setIsLoading(true);
     try {
-      const { error } = await supabase.from('stores').insert([
-        { name: newStoreName.toUpperCase(), location: newStoreLocation.toUpperCase() }
-      ]);
+      const dbPayload = { 
+        name: newStoreName.toUpperCase(), 
+        location: newStoreLocation.toUpperCase(),
+        type: newStoreType,
+        prefix: newStorePrefix
+      };
+      
+      const { error } = await supabase.from('stores').insert([dbPayload]);
       if (error) throw error;
       setNewStoreName('');
       setNewStoreLocation('');
+      setNewStoreType('Coppel');
+      setNewStorePrefix('');
       setActiveModal('none');
       fetchAllData();
       if (onRefresh) onRefresh();
@@ -236,7 +249,35 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
       alert('Error: ' + err.message);
     }
   };
+  
+  const handleUpdateStore = async (storeId: string) => {
+    try {
+      const { error } = await supabase.from('stores').update({
+        name: editStoreName.toUpperCase(),
+        location: editStoreLocation.toUpperCase(),
+        type: editStoreType,
+        prefix: editStorePrefix
+      }).eq('id', storeId);
 
+      if (error) throw error;
+      setEditingStoreId(null);
+      fetchAllData();
+      if (onRefresh) onRefresh();
+    } catch (err: any) {
+      alert('Error: ' + err.message);
+    }
+  };
+
+  const handleDeleteStore = async (storeId: string) => {
+    if (!confirm('¿Estás seguro de eliminar esta sucursal?')) return;
+    try {
+      const { error } = await supabase.from('stores').delete().eq('id', storeId);
+      if (error) throw error;
+      fetchAllData();
+      if (onRefresh) onRefresh();
+    } catch (err: any) {
+      alert('Error: ' + err.message);
+    }
   const handleCancelInvite = async (email: string) => {
     try {
       await supabase.from('pending_invitations').delete().eq('email', email);
@@ -559,6 +600,24 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Ubicación / Ciudad</label>
                         <input type="text" value={newStoreLocation} onChange={(e) => setNewStoreLocation(e.target.value.toUpperCase())} placeholder="EJ. VILLAHERMOSA, TABASCO" className="w-full bg-slate-50 border border-slate-200 rounded-[1.5rem] px-8 py-6 text-sm font-bold uppercase outline-none focus:ring-8 focus:ring-indigo-50 transition-all" />
                       </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Tipo de Comercio</label>
+                          <select value={newStoreType} onChange={(e) => setNewStoreType(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-[1.2rem] px-6 py-5 text-sm font-black uppercase outline-none">
+                            <option value="Coppel">Coppel</option>
+                            <option value="Elektra">Elektra</option>
+                            <option value="Salinas y Rocha">Salinas y Rocha</option>
+                            <option value="Chedraui">Chedraui</option>
+                            <option value="Bodega Aurrera">Bodega Aurrera</option>
+                            <option value="Sam's Club">Sam's Club</option>
+                            <option value="Otro">Otro</option>
+                          </select>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Prefijo Folio (Opcional)</label>
+                          <input type="text" value={newStorePrefix} onChange={(e) => setNewStorePrefix(e.target.value)} placeholder="Ej. 1053" className="w-full bg-slate-50 border border-slate-200 rounded-[1.2rem] px-6 py-5 text-sm font-bold outline-none" />
+                        </div>
+                      </div>
                       <button type="submit" disabled={isLoading} className="w-full bg-indigo-600 text-white font-black py-7 rounded-[1.5rem] shadow-2xl shadow-indigo-200 uppercase tracking-[0.2em] text-xs hover:scale-[1.02] active:scale-95 transition-all">Crear Sucursal Ahora</button>
                    </form>
                  )}
@@ -693,27 +752,56 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
                     <div className="space-y-4 max-h-[500px] overflow-y-auto pr-4 custom-scrollbar">
                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 px-2">Sucursales del Sistema</p>
                        {stores.map(store => (
-                          <div key={store.id} className="p-8 rounded-[2.5rem] bg-slate-50 border border-slate-100 flex justify-between items-center group transition-all hover:bg-white hover:shadow-xl hover:shadow-slate-100">
+                          <div key={store.id} className="p-8 rounded-[2.5rem] bg-slate-50 border border-slate-100 flex flex-col gap-6 group transition-all hover:bg-white hover:shadow-xl hover:shadow-slate-100">
                              {editingStoreId === store.id ? (
-                               <div className="flex-1 flex gap-3">
-                                 <input type="text" value={editStoreName} onChange={(e) => setEditStoreName(e.target.value.toUpperCase())} className="flex-1 bg-white border border-indigo-200 rounded-xl px-5 py-3 text-sm font-black uppercase outline-none" />
-                                 <button onClick={() => handleUpdateStore(store.id)} className="bg-emerald-500 text-white p-3.5 rounded-2xl shadow-lg shadow-emerald-100 hover:scale-105 active:scale-95 transition-all"><Save className="w-6 h-6" /></button>
-                                 <button onClick={() => setEditingStoreId(null)} className="p-3.5 bg-slate-200 text-slate-500 rounded-2xl hover:bg-slate-300 transition-all"><X className="w-6 h-6" /></button>
+                               <div className="space-y-4">
+                                 <input type="text" value={editStoreName} onChange={(e) => setEditStoreName(e.target.value.toUpperCase())} className="w-full bg-white border border-indigo-200 rounded-xl px-4 py-3 text-sm font-black uppercase outline-none" placeholder="Nombre" />
+                                 <input type="text" value={editStoreLocation} onChange={(e) => setEditStoreLocation(e.target.value.toUpperCase())} className="w-full bg-white border border-indigo-200 rounded-xl px-4 py-3 text-xs font-bold uppercase outline-none" placeholder="Ubicación" />
+                                 <div className="grid grid-cols-2 gap-2">
+                                   <select value={editStoreType} onChange={(e) => setEditStoreType(e.target.value)} className="bg-white border border-indigo-200 rounded-xl px-4 py-3 text-xs font-black uppercase outline-none">
+                                      <option value="Coppel">Coppel</option>
+                                      <option value="Elektra">Elektra</option>
+                                      <option value="Salinas y Rocha">Salinas y Rocha</option>
+                                      <option value="Chedraui">Chedraui</option>
+                                      <option value="Bodega Aurrera">Bodega Aurrera</option>
+                                      <option value="Sam's Club">Sam's Club</option>
+                                      <option value="Otro">Otro</option>
+                                   </select>
+                                   <input type="text" value={editStorePrefix} onChange={(e) => setEditStorePrefix(e.target.value)} className="bg-white border border-indigo-200 rounded-xl px-4 py-3 text-xs font-bold outline-none" placeholder="Prefijo" />
+                                 </div>
+                                 <div className="flex gap-2">
+                                   <button onClick={() => handleUpdateStore(store.id)} className="flex-1 bg-emerald-500 text-white p-3 rounded-xl font-black uppercase text-[10px]">Guardar</button>
+                                   <button onClick={() => setEditingStoreId(null)} className="flex-1 bg-slate-200 text-slate-500 p-3 rounded-xl font-black uppercase text-[10px]">Cancelar</button>
+                                 </div>
                                </div>
                              ) : (
-                               <>
+                               <div className="flex justify-between items-center">
                                  <div>
-                                   <div className="font-black text-slate-800 uppercase text-xl tracking-tight leading-none mb-2">{store.name}</div>
-                                   <div className="flex items-center gap-2">
-                                      <Building className="w-3.5 h-3.5 text-slate-400" />
-                                      <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest">{store.location || 'UBICACIÓN NO ESPECIFICADA'}</span>
+                                   <div className="flex items-center gap-2 mb-1">
+                                      <h4 className="font-black text-slate-800 uppercase tracking-tight">{store.name}</h4>
+                                      <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-md text-[8px] font-black uppercase border border-indigo-100">
+                                        {store.type || 'Coppel'}
+                                      </span>
                                    </div>
+                                   <p className="text-[10px] text-slate-400 font-bold uppercase flex items-center gap-2">
+                                     <Building className="w-3 h-3" /> {store.location || 'SIN UBICACIÓN'}
+                                     {store.prefix && <span className="ml-2 text-slate-300">| PREFIJO: {store.prefix}</span>}
+                                   </p>
                                  </div>
-                                 <button onClick={() => { setEditingStoreId(store.id); setEditStoreName(store.name); setEditStoreLocation(store.location || ''); }} className="p-4 bg-white text-slate-300 hover:text-indigo-600 rounded-2xl border border-slate-100 shadow-sm opacity-0 group-hover:opacity-100 transition-all hover:scale-110"><Edit2 className="w-5 h-5" /></button>
-                               </>
+                                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                                   <button onClick={() => {
+                                      setEditingStoreId(store.id);
+                                      setEditStoreName(store.name);
+                                      setEditStoreLocation(store.location || '');
+                                      setEditStoreType(store.type || 'Coppel');
+                                      setEditStorePrefix(store.prefix || '');
+                                   }} className="p-3 text-slate-300 hover:text-indigo-600 rounded-xl transition-all"><Edit2 className="w-5 h-5" /></button>
+                                   <button onClick={() => handleDeleteStore(store.id)} className="p-3 text-slate-300 hover:text-red-500 rounded-xl transition-all"><Trash2 className="w-5 h-5" /></button>
+                                 </div>
+                               </div>
                              )}
                           </div>
-                        ))}
+                       ))}
                     </div>
                  )}
               </div>
