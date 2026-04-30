@@ -22,7 +22,8 @@ import {
   Clock,
   TrendingUp,
   Calendar,
-  Loader2
+  Loader2,
+  LayoutDashboard
 } from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
 import { Store, UserProfile, UserRole } from '../types';
