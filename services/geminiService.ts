@@ -24,15 +24,21 @@ const parseSpanishDate = (dateStr: string | undefined): string | undefined => {
   };
 
   try {
-    // Buscar patrones: 02-Jun-25, 02/Jun/25, 02 Jun 2025
-    const parts = dateStr.match(/(\d{1,2})[-/ ]([a-zA-Z]{3,})[-/ ](\d{2,4})/);
+    // Buscar patrones: 02-Jun-25, 02/Jun/25, 02 Jun 2025, 26/4/2026
+    const parts = dateStr.match(/(\d{1,2})[-/ ]([a-zA-Z]{1,}| \d{1,2})[-/ ](\d{2,4})/);
     if (parts) {
       const day = parts[1].padStart(2, '0');
-      const monthStr = parts[2].toLowerCase().substring(0, 3);
-      const yearRaw = parts[3];
+      const monthPart = parts[2].trim().toLowerCase();
+      const yearRaw = parts[3].trim();
       const year = yearRaw.length === 2 ? `20${yearRaw}` : yearRaw;
 
-      const month = monthMap[monthStr];
+      let month = '';
+      if (/^\d+$/.test(monthPart)) {
+        month = monthPart.padStart(2, '0');
+      } else {
+        month = monthMap[monthPart.substring(0, 3)] || monthMap[monthPart];
+      }
+
       if (month) {
         return `${year}-${month}-${day}`;
       }
@@ -53,8 +59,6 @@ export const analyzeTicketImage = async (base64Image: string): Promise<TicketAna
 
   // Configuramos modelos (De más reciente/potente a más antiguo/estable)
   const candidateModels = [
-    "gemini-3-flash-preview",
-    "gemini-3-flash",
     "gemini-2.0-flash",
     "gemini-1.5-flash-latest",
     "gemini-1.5-flash",
@@ -65,31 +69,33 @@ export const analyzeTicketImage = async (base64Image: string): Promise<TicketAna
   const now = new Date();
   const currentDateContext = `Hoy es ${now.toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })}.`;
 
-  const prompt = `Analiza esta imagen de ticket. Tu misión es extraer datos para un registro de ventas de celulares.
+  const prompt = `Analiza esta imagen de ticket de venta o nota de entrega. 
   ${currentDateContext}
-  Responde ÚNICAMENTE con un objeto JSON válido. No uses Markdown (\`\`\`json).
+  Tu misión es extraer datos precisos para un registro de ventas. El ticket puede ser de Coppel, Elektra, Salinas y Rocha, Chedraui, Aurrera, Sam's Club u otros.
+
+  Responde ÚNICAMENTE con un objeto JSON válido. No uses Markdown.
 
   Estructura deseada:
   {
-    "invoiceNumber": "Folio o Ticket",
-    "date": "Fecha encontrada (ej: 12-Dic-${now.getFullYear()})",
-    "customerName": "Nombre del cliente detectado",
+    "store": "Nombre de la tienda detectada (ej. Coppel, Elektra)",
+    "invoiceNumber": "Folio, Ticket o Pedido",
+    "date": "Fecha textual (ej: 26-Abr-26 o 26/04/2026)",
+    "customerName": "Nombre completo del cliente",
     "items": [{ "brand": "Marca", "price": 0 }]
   }
 
-  Instrucciones de Extracción:
-  1. invoiceNumber: Busca "Folio", "Doc", "Ticket". Si ves "1053" seguido de espacio y números, los números son el folio.
-  2. date: Busca "Fecha:" o patrones de fecha (DD-MMM-YY). Devuelve lo que encuentres TEXTUALMENTE.
-  3. customerName: Busca "Cliente:", "Nombre:" o "Receptor:". Si ves un nombre propio en mayúsculas (ej: "JUAN PEREZ") cerca de la cabecera, úsalo. NO uses "Coppel".
-  4. items: Lista de SOLAMENTE celulares/teléfonos. IGNORA chips, garantías, fundas, tiempo aire u otros accesorios.
-     - brand: MARCA (SAMSUNG, APPLE, MOTOROLA, XIAOMI, OPPO, HONOR, HUAWEI, ZTE, REALME, VIVO, SENWA, NUBIA).
-     - price: El precio FINAL del equipo (con descuento aplicado).
-       CÁLCULO DE PRECIO INTELIGENTE:
-       - 1. Encuentra la línea del celular y su precio base a la derecha (ej: 4,499.00).
-       - 2. Mira INMEDIATAMENTE debajo de esa línea. Si dice "DESCTO PROMOCION", "REBAJA", o similar y hay un valor negativo (ej: -300.00), RESTALO.
-       - 3. El precio final = Precio Base - Descuento. (Ej: 4499 - 300 = 4199).
-       - 4. Si NO hay descuento justo debajo del celular, respeta el precio base.
-       - 5. IMPORTANTE: NO apliques descuentos de OTROS artículos (como chips que dicen "DESCUENTO CHIP"). Solo aplica el descuento si pertenece al bloque del celular.`;
+  Instrucciones de Extracción Críticas:
+  1. invoiceNumber: 
+     - Si es Coppel: Busca "Factura No." (ej: 6624 14537) o "Folio".
+     - Si es Elektra/Salinas y Rocha: Busca "No. Pedido" (ej: 419633) o "No. Control".
+     - Otros: Busca "Folio", "Ticket", "Ticket No.", "Nota".
+  2. date: Busca "Fecha:", "Fecha de surtimiento:" o patrones DD-MMM-YY / DD/MM/YYYY.
+  3. customerName: Busca "Nombre:", "Cliente:", "Nombre del Cliente:". Extrae el nombre completo en MAYÚSCULAS.
+  4. items (CELULARES SOLAMENTE):
+     - IGNORA chips, garantías (GP), fundas, seguros o tiempo aire.
+     - brand: Clasifica en (SAMSUNG, APPLE, MOTOROLA, XIAOMI, OPPO, HONOR, HUAWEI, ZTE, REALME, VIVO, SENWA, NUBIA).
+     - price: El precio neto del equipo tras descuentos.
+     - Lógica de Precios (Coppel/Salinas): Si ves un precio y debajo dice "DESCTO PROMOCION" o "REBAJA", réstalo al precio original. Solo suma artículos que sean teléfonos.`;
 
   const imagePart = {
     inlineData: {

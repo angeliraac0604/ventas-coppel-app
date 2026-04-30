@@ -66,6 +66,8 @@ export interface Store {
   entryTime?: string;
   exitTime?: string;
   lunchDurationMinutes?: number;
+  type?: string;
+  prefix?: string;
 }
 
 export interface UserProfile {
