@@ -113,9 +113,23 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
         })));
       }
 
-      // 3. Fetch Invites
+      // 3. Fetch Pending Invites (Filter out those who already have a profile)
       const { data: invitesData } = await supabase.from('pending_invitations').select('*, stores(name)');
-      if (invitesData) setInvites(invitesData);
+      if (invitesData) {
+        // Clean up invites for emails that already have a profile
+        const activeEmails = new Set(profilesData?.map(p => p.email.toLowerCase()));
+        const filteredInvites = invitesData.filter(inv => !activeEmails.has(inv.email.toLowerCase()));
+        
+        // Auto-delete redundant invites from DB asynchronously
+        const redundantInvites = invitesData.filter(inv => activeEmails.has(inv.email.toLowerCase()));
+        if (redundantInvites.length > 0) {
+          Promise.all(redundantInvites.map(inv => 
+            supabase.from('pending_invitations').delete().eq('id', inv.id)
+          )).catch(err => console.error("Error cleaning up invites:", err));
+        }
+
+        setInvites(filteredInvites);
+      }
 
     } catch (err) {
       console.error('Error fetching admin data:', err);
@@ -268,7 +282,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
     }
   };
 
-  const handleDeleteStore = async (storeId: string) => {
+  const handleDeleteStore = async (storeId: string, storeName: string) => {
+    if (storeName.includes('CÁRDENAS') && storeName.includes('1053')) {
+      alert('⚠️ Esta sucursal es crítica para el sistema y no puede ser eliminada.');
+      return;
+    }
     if (!confirm('¿Estás seguro de eliminar esta sucursal?')) return;
     try {
       const { error } = await supabase.from('stores').delete().eq('id', storeId);
@@ -783,7 +801,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
                                       setEditStoreType(store.type || 'Coppel');
                                       setEditStorePrefix(store.prefix || '');
                                    }} className="p-3 text-slate-300 hover:text-indigo-600 rounded-xl transition-all"><Edit2 className="w-5 h-5" /></button>
-                                   <button onClick={() => handleDeleteStore(store.id)} className="p-3 text-slate-300 hover:text-red-500 rounded-xl transition-all"><Trash2 className="w-5 h-5" /></button>
+                                   
+                                   {!(store.name.includes('CÁRDENAS') && store.name.includes('1053')) && (
+                                     <button onClick={() => handleDeleteStore(store.id, store.name)} className="p-3 text-slate-300 hover:text-red-500 rounded-xl transition-all"><Trash2 className="w-5 h-5" /></button>
+                                   )}
                                  </div>
                                </div>
                              )}
