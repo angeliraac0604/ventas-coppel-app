@@ -6,6 +6,7 @@ import { supabase } from '../services/supabaseClient';
 import { uploadImageToDriveScript, deleteImageFromDriveScript } from '../services/googleAppsScriptService';
 import { uploadToSupabaseStorage, smartImageUpload } from '../services/storageService';
 import { analyzeTicketImage } from '../services/geminiService';
+import PWAInstallBanner from './PWAInstallBanner';
 
 interface SalesFormProps {
   onAddSale: (sale: Omit<Sale, 'id'>) => Promise<void>;
@@ -437,7 +438,11 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-lg p-6 max-w-3xl mx-auto border border-slate-100">
+    <div className="space-y-6 max-w-3xl mx-auto">
+      {/* BANNER DE INSTALACIÓN */}
+      <PWAInstallBanner />
+      
+      <div className="bg-white rounded-xl shadow-lg p-6 border border-slate-100">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
           {initialData ? <Edit2 className="w-6 h-6 text-blue-600" /> : <Plus className="w-6 h-6 text-blue-600" />}

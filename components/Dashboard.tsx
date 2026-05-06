@@ -7,7 +7,6 @@ import { jsPDF } from 'jspdf';
 import { Sale, Brand, DailyClose } from '../types';
 import { BRAND_CONFIGS } from '../constants';
 import { supabase } from '../services/supabaseClient';
-import PWAInstallBanner from './PWAInstallBanner';
 
 interface DashboardProps {
   sales: Sale[];
@@ -447,8 +446,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
 
   return (
     <div className="space-y-6">
-      {/* INTELIGENTE: PWA BANNER (Solo aparece en navegador y es discreto) */}
-      <PWAInstallBanner />
+
 
       {/* PERSONALIZED WELCOME BANNER */}
       <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col md:flex-row items-center justify-between gap-4 overflow-hidden relative group transition-all hover:bg-slate-50">
