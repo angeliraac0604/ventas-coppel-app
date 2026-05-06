@@ -77,12 +77,12 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
             setMonthlyGoal(goalData.reduce((sum, g) => sum + Number(g.revenue_goal || 0), 0));
             setDevicesGoal(goalData.reduce((sum, g) => sum + Number(g.devices_goal || 0), 0));
           } else {
-            setMonthlyGoal(Number(goalData[0].revenue_goal) || 100000);
-            setDevicesGoal(Number(goalData[0].devices_goal) || 50);
+            setMonthlyGoal(goalData[0].revenue_goal !== null ? Number(goalData[0].revenue_goal) : 100000);
+            setDevicesGoal(goalData[0].devices_goal !== null ? Number(goalData[0].devices_goal) : 0);
           }
         } else {
           setMonthlyGoal(100000);
-          setDevicesGoal(50);
+          setDevicesGoal(0);
         }
 
         // 2. Fetch Sales for specifically this month to bypass row limits
@@ -651,60 +651,56 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
         </div>
       )}
 
-      {/* --- TARGET PER DAY CARD (NEW) --- */}
-      <div className="bg-gradient-to-r from-indigo-900 to-blue-900 rounded-2xl p-6 shadow-xl border border-blue-800 relative overflow-hidden">
-        <div className="absolute right-0 top-0 p-4 opacity-5">
-          <Trophy className="w-48 h-48" />
-        </div>
-        <div className="flex flex-col md:flex-row justify-between items-center gap-6 relative z-10">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-blue-500/20 rounded-xl backdrop-blur-sm border border-blue-400/30">
-              <TrendingUp className="w-8 h-8 text-blue-300" />
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-white">Objetivo Diario Dinámico</h3>
-              <p className="text-blue-200 text-sm max-w-md">
-                Calculado en tiempo real según lo que falta para cumplir la meta de ingresos.
-              </p>
-            </div>
+      {/* --- TARGET PER DAY CARD (NEW) - Only if monthlyGoal is set --- */}
+      {monthlyGoal > 0 && (
+        <div className="bg-gradient-to-r from-indigo-900 to-blue-900 rounded-2xl p-6 shadow-xl border border-blue-800 relative overflow-hidden">
+          <div className="absolute right-0 top-0 p-4 opacity-5">
+            <Trophy className="w-48 h-48" />
           </div>
+          <div className="flex flex-col md:flex-row justify-between items-center gap-6 relative z-10">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-blue-500/20 rounded-xl backdrop-blur-sm border border-blue-400/30">
+                <TrendingUp className="w-8 h-8 text-blue-300" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white">Objetivo Diario Dinámico</h3>
+                <p className="text-blue-200 text-sm max-w-md">
+                  Calculado en tiempo real según lo que falta para cumplir la meta de ingresos.
+                </p>
+              </div>
+            </div>
 
-          <div className="flex items-center gap-6">
-            <div className="text-right">
-              {(() => {
-                const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
-                const currentDay = new Date().getDate();
-                const remainingDays = Math.max(daysInMonth - currentDay, 0); // Days remaining AFTER today? Or including today if sale not made? Usually "remaining working days". Let's assume inclusive of today if early, or simply days left in month logic.
-                // Precise logic: "How much to sell PER REMAINING DAY" implies we divide gap by remaining days.
-                // If today is 15th, and month has 30 days. 15 days passed. 15 days remain (16,17...30).
-                // Actually usually includes today. Let's use (daysInMonth - currentDay + 1) if we want to include today as a chance.
-                // But simpler: "Days Left" = daysInMonth - currentDay.
-                // If 0 days left, avoid division by zero.
+            <div className="flex items-center gap-6">
+              <div className="text-right">
+                {(() => {
+                  const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
+                  const currentDay = new Date().getDate();
+                  const remainingDays = Math.max(daysInMonth - currentDay, 0); 
+                  const safeRemainingDays = Math.max(daysInMonth - currentDay, 1);
+                  const netGap = Math.max(monthlyGoal - currentMonthNet, 0);
+                  const dailyTarget = netGap / safeRemainingDays;
 
-                const safeRemainingDays = Math.max(daysInMonth - currentDay, 1);
-                const netGap = Math.max(monthlyGoal - currentMonthNet, 0);
-                const dailyTarget = netGap / safeRemainingDays;
+                  if (netGap <= 0) {
+                    return (
+                      <>
+                        <p className="text-3xl font-extrabold text-green-400">¡META CUMPLIDA!</p>
+                        <p className="text-xs text-green-200">Ya no necesitas vender más para llegar al mínimo.</p>
+                      </>
+                    );
+                  }
 
-                if (netGap <= 0) {
                   return (
                     <>
-                      <p className="text-3xl font-extrabold text-green-400">¡MENTA CUMPLIDA!</p>
-                      <p className="text-xs text-green-200">Ya no necesitas vender más para llegar al mínimo.</p>
+                      <p className="text-3xl font-extrabold text-white">${dailyTarget.toLocaleString('es-MX', { maximumFractionDigits: 0 })}</p>
+                      <p className="text-xs text-blue-200">Venta diaria necesaria (Sin IVA) x {safeRemainingDays} días</p>
                     </>
                   );
-                }
-
-                return (
-                  <>
-                    <p className="text-3xl font-extrabold text-white">${dailyTarget.toLocaleString('es-MX', { maximumFractionDigits: 0 })}</p>
-                    <p className="text-xs text-blue-200">Venta diaria necesaria (Sin IVA) x {safeRemainingDays} días</p>
-                  </>
-                );
-              })()}
+                })()}
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Stats Cards Row */}
       <div className="grid grid-cols-2 md:grid-cols-2 xl:grid-cols-5 gap-4 md:gap-6">
