@@ -428,7 +428,7 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
       </div>
 
       {/* Controls: Filter & Tabs */}
-      <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-white p-2 rounded-2xl border border-slate-100 shadow-sm">
+      <div className="flex flex-col lg:flex-row gap-4 items-center justify-between bg-white p-2 rounded-2xl border border-slate-100 shadow-sm flex-wrap">
         {/* Tabs */}
         <div className="flex bg-slate-100 p-1 rounded-xl w-full md:w-auto">
           <button
@@ -454,7 +454,7 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
         </div>
 
         {/* Filters */}
-        <div className="flex flex-col md:flex-row items-center gap-4 w-full md:w-auto p-2 md:p-0">
+        <div className="flex flex-col md:flex-row flex-wrap items-center gap-4 w-full lg:w-auto p-2 lg:p-0">
           <div className="flex flex-col md:flex-row items-center gap-3 w-full md:w-auto">
             {/* Month Picker */}
             <div className="flex items-center gap-2 w-full md:w-auto px-3 py-1 bg-blue-50/50 border border-blue-100 rounded-xl">
@@ -495,7 +495,7 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
 
           {/* Sync Button (Only for 1053) */}
           {isSpecialStore && (role === 'admin' || role === 'supervisor') && (
-            <div className="flex gap-2 w-full md:w-auto">
+            <div className="flex flex-wrap gap-2 w-full md:w-auto justify-center md:justify-start">
               <button 
                 onClick={handleSyncToSheets}
                 disabled={isSyncing || filteredClosings.length === 0}
