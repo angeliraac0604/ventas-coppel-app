@@ -54,6 +54,7 @@ export interface DailyClose {
   closedAt: string;
   topBrand: Brand | 'N/A';
   storeId?: string;
+  attSales?: number;
 }
 
 export type UserRole = 'admin' | 'supervisor' | 'seller' | 'viewer';
@@ -68,6 +69,7 @@ export interface Store {
   lunchDurationMinutes?: number;
   type?: string;
   prefix?: string;
+  daySchedules?: Record<number, { entryTime: string; exitTime: string; lunchDurationMinutes: number }>;
 }
 
 export interface UserProfile {

@@ -25,7 +25,10 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
 
   // Goal Form State
   const [isSavingGoal, setIsSavingGoal] = useState(false);
-  const [targetMonth, setTargetMonth] = useState(new Date().toISOString().substring(0, 7)); // YYYY-MM
+  const [targetMonth, setTargetMonth] = useState(() => {
+    const now = new Date();
+    return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  }); // YYYY-MM
   const [revenueGoal, setRevenueGoal] = useState('');
   const [devicesGoal, setDevicesGoal] = useState('');
 

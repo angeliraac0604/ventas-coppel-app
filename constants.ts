@@ -21,6 +21,6 @@ export const DEFAULT_SALE_FORM = {
   customerName: '',
   price: '',
   brand: Brand.SAMSUNG,
-  date: new Date().toISOString().split('T')[0],
+  date: new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0') + '-' + String(new Date().getDate()).padStart(2, '0'),
   ticketImage: null as string | null
 };

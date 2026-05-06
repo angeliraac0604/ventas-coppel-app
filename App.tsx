@@ -355,7 +355,8 @@ create policy "Users insert store warranties" on public.warranties for insert to
           id: user.id,
           email: user.email,
           role: invite?.role || metadata.role || 'seller',
-          store_id: invite?.store_id || metadata.store_id || null
+          store_id: invite?.store_id || metadata.store_id || null,
+          assigned_stores: invite?.assigned_stores || metadata.assigned_stores || []
         };
 
         const { error: insertError } = await supabase.from('profiles').insert([newProfile]);
@@ -372,7 +373,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
             role: newProfile.role as UserRole,
             fullName: null,
             storeId: newProfile.store_id,
-            assignedStores: []
+            assignedStores: newProfile.assigned_stores
           });
         }
       }
@@ -602,7 +603,8 @@ create policy "Users insert store warranties" on public.warranties for insert to
         totalRevenue: row.total_revenue,
         closedAt: row.closed_at,
         topBrand: row.top_brand,
-        storeId: row.store_id
+        storeId: row.store_id,
+        attSales: row.att_sales
       }));
 
       setClosings(formattedClosings);
@@ -657,7 +659,8 @@ create policy "Users insert store warranties" on public.warranties for insert to
           prefix: s.prefix,
           entryTime: s.entry_time,
           exitTime: s.exit_time,
-          lunchDurationMinutes: s.lunch_duration_minutes
+          lunchDurationMinutes: s.lunch_duration_minutes,
+          daySchedules: s.day_schedules || {}
         })));
       }
 
@@ -905,7 +908,8 @@ create policy "Users insert store warranties" on public.warranties for insert to
         total_revenue: newClose.totalRevenue,
         closed_at: newClose.closedAt,
         top_brand: newClose.topBrand,
-        store_id: finalStoreId
+        store_id: finalStoreId,
+        att_sales: newClose.attSales || 0
       };
 
       const { error } = await supabase
@@ -1432,6 +1436,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
                   ? (selectedStoreId === 'all' ? 'Todas las Tiendas' : stores.find(s => s.id === selectedStoreId)?.name) 
                   : stores.find(s => s.id === userProfile?.storeId)?.name}
                 activeStoreId={userProfile?.role === 'admin' ? selectedStoreId : userProfile?.storeId}
+                stores={stores}
               />
             )}
             {currentView === 'warranties' && userProfile?.role !== 'supervisor' && (

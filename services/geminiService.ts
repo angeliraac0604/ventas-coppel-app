@@ -11,10 +11,13 @@ const API_KEYS = [
 
 const parseSpanishDate = (dateStr: string | undefined): string | undefined => {
   if (!dateStr) return undefined;
+  
+  // Limpiar strings basura que a veces mete la IA
+  let cleanStr = dateStr.toLowerCase().trim().replace(/fecha[:.]?\s*/, '');
+  
   // Intento 1: Ya está en formato YYYY-MM-DD
-  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(cleanStr)) return cleanStr;
 
-  // Intento 2: Formato DD-MMM-YY o DD-MMM-YYYY (común en tickets)
   // Mapeo de meses español a número
   const monthMap: { [key: string]: string } = {
     'ene': '01', 'feb': '02', 'mar': '03', 'abr': '04', 'may': '05', 'jun': '06',
@@ -24,11 +27,11 @@ const parseSpanishDate = (dateStr: string | undefined): string | undefined => {
   };
 
   try {
-    // Buscar patrones: 02-Jun-25, 02/Jun/25, 02 Jun 2025, 26/4/2026
-    const parts = dateStr.match(/(\d{1,2})[-/ ]([a-zA-Z]{1,}| \d{1,2})[-/ ](\d{2,4})/);
+    // Buscar patrones: 02-Jun-25, 02/06/2025, 02 Jun 2025, 26/4/26
+    const parts = cleanStr.match(/(\d{1,2})[-/ ]([a-z0-9]{1,})[-/ ](\d{2,4})/);
     if (parts) {
       const day = parts[1].padStart(2, '0');
-      const monthPart = parts[2].trim().toLowerCase();
+      const monthPart = parts[2].trim();
       const yearRaw = parts[3].trim();
       const year = yearRaw.length === 2 ? `20${yearRaw}` : yearRaw;
 
@@ -39,63 +42,45 @@ const parseSpanishDate = (dateStr: string | undefined): string | undefined => {
         month = monthMap[monthPart.substring(0, 3)] || monthMap[monthPart];
       }
 
-      if (month) {
+      if (month && parseInt(month) >= 1 && parseInt(month) <= 12) {
         return `${year}-${month}-${day}`;
       }
     }
   } catch (e) {
     console.warn("Error parsing date:", dateStr, e);
   }
-  return undefined; // Fallback
+  return undefined; 
 };
 
 export const analyzeTicketImage = async (base64Image: string): Promise<TicketAnalysisResult | null> => {
   const apiKeys = API_KEYS;
 
   if (apiKeys.length === 0) {
-    console.error("❌ No se encontraron claves API de Gemini.");
     throw new Error("Faltan las API Keys de Gemini.");
   }
 
-  // Configuramos modelos (De más reciente/potente a más antiguo/estable)
   const candidateModels = [
     "gemini-2.0-flash",
-    "gemini-1.5-flash-latest",
     "gemini-1.5-flash",
   ];
 
   const base64Data = base64Image.split(',')[1] || base64Image;
-
   const now = new Date();
   const currentDateContext = `Hoy es ${now.toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })}.`;
 
-  const prompt = `Analiza esta imagen de ticket de venta o nota de entrega. 
+  const prompt = `Analiza este ticket de Coppel o nota de entrega. 
   ${currentDateContext}
-  Tu misión es extraer datos precisos para un registro de ventas. El ticket puede ser de Coppel, Elektra, Salinas y Rocha, Chedraui, Aurrera, Sam's Club u otros.
+  
+  Extrae los siguientes datos en formato JSON estricto:
+  1. invoiceNumber: Busca "Factura No." o "Ticket". En Coppel suele ser un número como "6624 14537" (únelos como "662414537").
+  2. date: Busca la fecha del ticket.
+  3. customerName: El nombre del cliente en MAYÚSCULAS.
+  4. items: Lista de CELULARES vendidos. 
+     - IGNORA: Seguros, Garantías, Chips, Fundas.
+     - brand: Debe ser una de estas: (SAMSUNG, APPLE, MOTOROLA, XIAOMI, OPPO, HONOR, HUAWEI, ZTE, REALME, VIVO, SENWA, NUBIA).
+     - price: El precio final (después de descuentos si los hay).
 
-  Responde ÚNICAMENTE con un objeto JSON válido. No uses Markdown.
-
-  Estructura deseada:
-  {
-    "store": "Nombre de la tienda detectada (ej. Coppel, Elektra)",
-    "invoiceNumber": "Folio, Ticket o Pedido",
-    "date": "Fecha textual (ej: 26-Abr-26 o 26/04/2026)",
-    "customerName": "Nombre completo del cliente",
-    "items": [{ "brand": "Marca", "price": 0 }]
-  }
-
-  Instrucciones de Extracción Críticas:
-  1. invoiceNumber: 
-     - Si es Coppel: Busca "Factura No." (ej: 6624 14537) o "Folio".
-     - Si es Elektra/Salinas y Rocha: Busca "No. Pedido" (ej: 419633) o "No. Control".
-     - Otros: Busca "Folio", "Ticket", "Ticket No.", "Nota".
-  2. date: Busca "Fecha:", "Fecha de surtimiento:" o patrones DD-MMM-YY / DD/MM/YYYY.
-  3. customerName: Busca "Nombre:", "Cliente:", "Nombre del Cliente:". Extrae el nombre completo en MAYÚSCULAS.
-  4. items (CELULARES SOLAMENTE):
-     - IGNORA chips, garantías (GP), fundas, seguros o tiempo aire.
-     - brand: Clasifica en (SAMSUNG, APPLE, MOTOROLA, XIAOMI, OPPO, HONOR, HUAWEI, ZTE, REALME, VIVO, SENWA, NUBIA).
-     - price: El precio neto del equipo tras descuentos.
-     - Lógica de Precios (Coppel/Salinas): Si ves un precio y debajo dice "DESCTO PROMOCION" o "REBAJA", réstalo al precio original. Solo suma artículos que sean teléfonos.`;
+  RESPONDE SOLO CON EL JSON.`;
 
   const imagePart = {
     inlineData: {
@@ -104,61 +89,81 @@ export const analyzeTicketImage = async (base64Image: string): Promise<TicketAna
     },
   };
 
-  // Rotación de Claves API
+  // Schema para forzar respuesta JSON
+  const schema = {
+    description: "Ticket data extraction",
+    type: SchemaType.OBJECT,
+    properties: {
+      invoiceNumber: { type: SchemaType.STRING },
+      date: { type: SchemaType.STRING },
+      customerName: { type: SchemaType.STRING },
+      items: {
+        type: SchemaType.ARRAY,
+        items: {
+          type: SchemaType.OBJECT,
+          properties: {
+            brand: { type: SchemaType.STRING },
+            price: { type: SchemaType.NUMBER }
+          },
+          required: ["brand", "price"]
+        }
+      }
+    },
+    required: ["invoiceNumber", "date", "customerName", "items"]
+  };
+
   for (const [keyIndex, currentApiKey] of apiKeys.entries()) {
-    console.log(`🔄 Intentando con API Key #${keyIndex + 1}...`);
     const genAI = new GoogleGenerativeAI(currentApiKey);
 
     for (const modelName of candidateModels) {
       try {
-        console.log(`  ➡️ Modelo: ${modelName}`);
-        // USAMOS EL MODELO SIN SCHEMA CONFIG (Modo Libre)
-        const model = genAI.getGenerativeModel({ model: modelName });
+        const model = genAI.getGenerativeModel({ 
+          model: modelName,
+          generationConfig: {
+            responseMimeType: "application/json",
+            responseSchema: schema,
+          }
+        });
 
         const result = await model.generateContent([prompt, imagePart]);
         const response = await result.response;
         const text = response.text();
 
         if (text) {
-          // SANITIZACIÓN: Quitar ```json y ``` sila IA los pone
-          let cleanText = text;
-          const firstBrace = cleanText.indexOf('{');
-          const lastBrace = cleanText.lastIndexOf('}');
-          if (firstBrace !== -1 && lastBrace !== -1) {
-            cleanText = cleanText.substring(firstBrace, lastBrace + 1);
-          }
-
-          const data = JSON.parse(cleanText);
-          console.log(`✅ ÉXITO con Key #${keyIndex + 1}`, data);
-
-          // LIMPIEZA DE DATOS (Date & Name Cleaners)
+          const data = JSON.parse(text);
+          
+          // Limpieza de datos extraídos
           const cleanDate = parseSpanishDate(data.date);
-
-          let cleanName = (data.customerName || '').trim();
-          // Limpieza Extra: Quitar "Nombre:" si la IA lo incluyó
-          cleanName = cleanName.replace(/^(nombre|cliente|nom|cli)\s*[:.]?\s*/i, '');
+          let cleanName = (data.customerName || '').trim().replace(/^(nombre|cliente|nom|cli)\s*[:.]?\s*/i, '');
+          
+          // Formatear Folio de Coppel (Quitar espacios)
+          let cleanInvoice = (data.invoiceNumber || '').replace(/\s/g, '');
 
           return {
-            invoiceNumber: data.invoiceNumber,
-            price: 0, // No usamos precio global
+            invoiceNumber: cleanInvoice,
+            price: 0,
             date: cleanDate,
-            customerName: cleanName,
+            customerName: cleanName.toUpperCase(),
             items: data.items?.map((item: any) => {
+              // Mapeo inteligente de marca
+              const brandText = item.brand?.toUpperCase() || '';
               let b = Brand.OTRO;
-              const normalizedBrand = item.brand ? item.brand.toString().toUpperCase().trim() : '';
-              if (Object.values(Brand).includes(normalizedBrand as Brand)) {
-                b = normalizedBrand as Brand;
+              for (const brandKey of Object.values(Brand)) {
+                if (brandText.includes(brandKey)) {
+                  b = brandKey;
+                  break;
+                }
               }
               return { brand: b, price: item.price };
             })
           };
         }
       } catch (error: any) {
-        console.error("Error en intento Gemini:", error);
+        console.error(`Error con ${modelName} y Key #${keyIndex + 1}:`, error);
+        // Continuar al siguiente modelo o llave
       }
     }
   }
 
   return null;
 };
-

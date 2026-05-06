@@ -1,7 +1,10 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { CalendarCheck, DollarSign, ShoppingBag, Clock, ChevronDown, ChevronUp, Lock, Receipt, X, User, Tag, Calendar, Image as ImageIcon, CalendarRange, Layers, Filter, XCircle, ArrowRight, Share2, Trash2 } from 'lucide-react';
-import { Sale, DailyClose, Brand } from '../types';
+import { CalendarCheck, DollarSign, ShoppingBag, Clock, ChevronDown, ChevronUp, Lock, Receipt, X, User, Tag, Calendar, Image as ImageIcon, CalendarRange, Layers, Filter, XCircle, ArrowRight, Share2, Trash2, Edit2, Save, Send, RefreshCw, Smartphone, ExternalLink, FileSpreadsheet } from 'lucide-react';
+import { Sale, DailyClose, Brand, Store } from '../types';
 import { BRAND_CONFIGS } from '../constants';
+import { syncMarketParticipationScript } from '../services/googleAppsScriptService';
+
+const MARKET_SHARE_SHEET_ID = '1nnfe2f5M7sDaVwTs7smnDo5mXjSlNljy3J_5hxCz-x0';
 
 interface DailyClosingsProps {
   sales: Sale[];
@@ -11,9 +14,10 @@ interface DailyClosingsProps {
   role?: string;
   storeName?: string;
   activeStoreId?: string;
+  stores: Store[];
 }
 
-const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseDay, onDeleteClosing, role, storeName, activeStoreId }) => {
+const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseDay, onDeleteClosing, role, storeName, activeStoreId, stores }) => {
   const [activeTab, setActiveTab] = useState<'daily' | 'monthly'>('daily');
   const dateInputRef = useRef<HTMLInputElement>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -29,6 +33,17 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
 
   // MANUAL DATE SELECTION FOR RETROACTIVE CLOSING
   const [manualDate, setManualDate] = useState('');
+  const [attSalesInput, setAttSalesInput] = useState<number>(0);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [editingAttSalesId, setEditingAttSalesId] = useState<string | null>(null);
+  const [editingAttSalesValue, setEditingAttSalesValue] = useState<number>(0);
+
+  // Identify if this is the "Coppel Cárdenas 1053" store
+  const isSpecialStore = useMemo(() => {
+    if (!activeStoreId || activeStoreId === 'all') return false;
+    const store = stores.find(s => s.id === activeStoreId);
+    return store?.prefix === '1053' || store?.name.toLowerCase().includes('1053');
+  }, [activeStoreId, stores]);
 
   // Construct YYYY-MM-DD in local time manually
   const localDate = new Date();
@@ -174,16 +189,79 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
 
     if (window.confirm(`¿Estás seguro de que deseas realizar el corte del día ${targetDateStr} para la sucursal ${storeName}?`)) {
       const newClose: DailyClose = {
-        id: `close-${targetDateStr}-${activeStoreId}`, // Use the same ID format as DB
+        id: `close-${targetDateStr}-${activeStoreId}`, 
         date: targetDateStr,
         totalSales: targetCount,
         totalRevenue: targetRevenue,
         closedAt: new Date().toISOString(),
         topBrand: topBrandToday || 'N/A' as any,
-        storeId: activeStoreId
+        storeId: activeStoreId,
+        attSales: isSpecialStore ? attSalesInput : 0
       };
       onCloseDay(newClose);
       setManualDate(''); // Reset after close
+      setAttSalesInput(0); // Reset competition sales
+
+      // AUTOMATIC SYNC for Special Store
+      if (isSpecialStore) {
+        console.log("Iniciando sincronización automática para tienda 1053...");
+        // Pequeño delay para asegurar que los props de closings se actualicen o usar el nuevo objeto directamente
+        setTimeout(() => {
+          handleSyncToSheets();
+        }, 1500);
+      }
+    }
+  };
+
+  const handleUpdateAttSales = async (id: string) => {
+    if (editingAttSalesValue < 0) return;
+    
+    // Find the closing to update locally first for responsiveness (handled by props update usually)
+    // Here we just notify the parent or handle it if we have a way. 
+    // Since DailyClosings only has onCloseDay, we'll need to use onCloseDay with the same ID to "update" 
+    // if the parent's onCloseDay handles upserts. Assuming it does because of Supabase.
+    
+    const existing = closings.find(c => c.id === id);
+    if (!existing) return;
+
+    const updatedClose: DailyClose = {
+      ...existing,
+      attSales: editingAttSalesValue
+    };
+
+    onCloseDay(updatedClose);
+    setEditingAttSalesId(null);
+  };
+
+  const handleSyncToSheets = async () => {
+    if (!isSpecialStore) return;
+    
+    setIsSyncing(true);
+    try {
+      // Prepare the data for the current month or filtered range
+      const dataToSync = filteredClosings.map(c => ({
+        date: c.date,
+        telcel: c.totalSales,
+        att: c.attSales || 0
+      }));
+
+      if (dataToSync.length === 0) {
+        alert("No hay cierres para sincronizar.");
+        return;
+      }
+
+      const result = await syncMarketParticipationScript(MARKET_SHARE_SHEET_ID, dataToSync);
+      
+      if (result.status === 'success') {
+        alert("✅ Sincronización exitosa con Google Sheets.");
+      } else {
+        alert(`❌ Error al sincronizar: ${result.message}`);
+      }
+    } catch (error) {
+      console.error("Sync error:", error);
+      alert("Ocurrió un error inesperado al sincronizar.");
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -292,6 +370,45 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
             </div>
           </div>
 
+          {/* COMPETITION SALES PANEL (Only for 1053) */}
+          {isSpecialStore && role !== 'viewer' && (
+            <div className="mb-8 p-6 bg-blue-600/10 border border-blue-500/20 rounded-[2rem] backdrop-blur-sm">
+               <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+                  <div className="flex items-center gap-4">
+                     <div className="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-900/40">
+                        <Smartphone className="w-7 h-7 text-white" />
+                     </div>
+                     <div>
+                        <h4 className="text-lg font-black uppercase tracking-tight">Participación de Mercado</h4>
+                        <p className="text-xs text-blue-300 font-bold uppercase tracking-widest">Ingresa las ventas de la competencia (AT&T)</p>
+                     </div>
+                  </div>
+                  <div className="flex items-center gap-4 w-full md:w-auto">
+                     <div className="flex-1 md:w-40">
+                        <label className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1 block px-2">Ventas AT&T</label>
+                        <input 
+                          type="number" 
+                          value={attSalesInput === 0 ? '' : attSalesInput} 
+                          onChange={(e) => setAttSalesInput(e.target.value === '' ? 0 : Number(e.target.value))}
+                          onFocus={(e) => e.target.select()}
+                          placeholder="0"
+                          className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-xl font-black outline-none focus:ring-4 focus:ring-blue-500/30 transition-all text-white placeholder:text-white/20"
+                        />
+                     </div>
+                     <div className="flex-1 md:w-40 opacity-50 grayscale">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 block px-2">Ventas Movistar</label>
+                        <input 
+                          type="number" 
+                          value={0}
+                          disabled
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xl font-black outline-none text-white/30 cursor-not-allowed"
+                        />
+                     </div>
+                  </div>
+               </div>
+            </div>
+          )}
+
           {role !== 'viewer' && (
             <button
               onClick={handlePerformClose}
@@ -375,6 +492,43 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
               <XCircle className="w-4 h-4" />
             </button>
           )}
+
+          {/* Sync Button (Only for 1053) */}
+          {isSpecialStore && (role === 'admin' || role === 'supervisor') && (
+            <div className="flex gap-2 w-full md:w-auto">
+              <button 
+                onClick={handleSyncToSheets}
+                disabled={isSyncing || filteredClosings.length === 0}
+                className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-all ${
+                  isSyncing 
+                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed' 
+                    : 'bg-green-600 text-white hover:bg-green-700 shadow-sm hover:shadow-md active:scale-95'
+                }`}
+              >
+                {isSyncing ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Sincronizando...
+                  </>
+                ) : (
+                  <>
+                    <FileSpreadsheet className="w-4 h-4" />
+                    Sincronizar Excel
+                  </>
+                )}
+              </button>
+
+              <a 
+                href={`https://docs.google.com/spreadsheets/d/${MARKET_SHARE_SHEET_ID}/edit`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-bold text-sm bg-blue-600 text-white hover:bg-blue-700 shadow-sm hover:shadow-md active:scale-95 transition-all"
+              >
+                <ExternalLink className="w-4 h-4" />
+                Ver Reporte Completo
+              </a>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -444,19 +598,48 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
                           </div>
                         </div>
 
-                        {/* Right Side: Money */}
-                        <div className="flex flex-col items-end gap-0.5">
-                          <span className="font-bold text-slate-900 text-base">
-                            ${close.totalRevenue.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </span>
-                          <span className="text-[10px] text-slate-400 font-medium">
-                            Neto: ${(close.totalRevenue / 1.16).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </span>
+                        {/* Right Side: Money & Competition (if 1053) */}
+                        <div className="flex items-center gap-6">
+                           {/* Competition Stats Mini-Badges */}
+                           {isSpecialStore && (
+                             <div className="hidden sm:flex items-center gap-2">
+                               <div className="flex flex-col items-center px-2 py-1 bg-blue-50 border border-blue-100 rounded-lg">
+                                  <span className="text-[8px] font-black text-blue-400 uppercase leading-none mb-0.5">AT&T</span>
+                                  <span className="text-xs font-black text-blue-700">{close.attSales || 0}</span>
+                               </div>
+                               <div className="flex flex-col items-center px-2 py-1 bg-slate-50 border border-slate-100 rounded-lg opacity-40">
+                                  <span className="text-[8px] font-black text-slate-400 uppercase leading-none mb-0.5">MOV</span>
+                                  <span className="text-xs font-black text-slate-700">0</span>
+                               </div>
+                             </div>
+                           )}
+
+                          <div className="flex flex-col items-end gap-0.5">
+                            <span className="font-bold text-slate-900 text-base">
+                              ${close.totalRevenue.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-medium">
+                              Neto: ${(close.totalRevenue / 1.16).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                          </div>
                         </div>
                       </div>
 
                       {/* Actions */}
                       <div className="flex items-center gap-1 md:ml-2">
+                        {isSpecialStore && (role === 'admin' || role === 'supervisor') && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingAttSalesId(close.id);
+                              setEditingAttSalesValue(close.attSales || 0);
+                            }}
+                            className="p-1.5 hover:bg-blue-50 text-slate-300 hover:text-blue-600 rounded-lg transition-colors"
+                            title="Editar Ventas AT&T"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                        )}
                         {role === 'admin' && onDeleteClosing && (
                           <button
                             onClick={(e) => {
@@ -912,6 +1095,47 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
               </table>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* EDIT AT&T SALES MODAL */}
+      {editingAttSalesId && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-300">
+           <div className="absolute inset-0" onClick={() => setEditingAttSalesId(null)}></div>
+           <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-sm relative z-10 animate-in zoom-in-95 duration-300 overflow-hidden">
+              <div className="p-8 border-b border-slate-50 flex justify-between items-center bg-blue-50/30">
+                 <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-200">
+                       <Smartphone className="w-5 h-5" />
+                    </div>
+                    <div>
+                       <h3 className="font-black text-slate-800 uppercase tracking-tight">Editar AT&T</h3>
+                       <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Ajustar cifra de competencia</p>
+                    </div>
+                 </div>
+                 <button onClick={() => setEditingAttSalesId(null)} className="p-2 hover:bg-slate-200 rounded-xl transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
+              </div>
+              <div className="p-8 space-y-6">
+                 <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Unidades Vendidas</label>
+                    <input 
+                      type="number" 
+                      autoFocus
+                      value={editingAttSalesValue === 0 ? '' : editingAttSalesValue} 
+                      onChange={(e) => setEditingAttSalesValue(e.target.value === '' ? 0 : Number(e.target.value))}
+                      onFocus={(e) => e.target.select()}
+                      placeholder="0"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-6 py-5 text-2xl font-black outline-none focus:ring-8 focus:ring-blue-50 transition-all text-slate-800"
+                    />
+                 </div>
+                 <button 
+                  onClick={() => handleUpdateAttSales(editingAttSalesId)}
+                  className="w-full bg-blue-600 text-white font-black py-5 rounded-2xl shadow-xl shadow-blue-100 uppercase tracking-widest text-xs hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2"
+                 >
+                   <Save className="w-4 h-4" /> Guardar Cambios
+                 </button>
+              </div>
+           </div>
         </div>
       )}
     </div>

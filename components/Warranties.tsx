@@ -63,7 +63,7 @@ const Warranties: React.FC<WarrantiesProps> = ({
 
     // Form State
     const [formData, setFormData] = useState<Omit<Warranty, 'id' | 'status'>>({
-        receptionDate: new Date().toISOString().split('T')[0],
+        receptionDate: new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0') + '-' + String(new Date().getDate()).padStart(2, '0'),
         invoiceNumber: '',
         possibleEntryDate: '', // Nuevo estado
         brand: Brand.SAMSUNG,
@@ -182,7 +182,7 @@ const Warranties: React.FC<WarrantiesProps> = ({
 
             setIsAdding(false);
             setFormData({
-                receptionDate: new Date().toISOString().split('T')[0],
+                receptionDate: new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0') + '-' + String(new Date().getDate()).padStart(2, '0'),
                 invoiceNumber: '',
                 possibleEntryDate: '',
                 brand: Brand.SAMSUNG,

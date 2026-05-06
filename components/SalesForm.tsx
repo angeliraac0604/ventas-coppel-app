@@ -367,7 +367,9 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
     if (ticketImage && ticketImage.startsWith('data:')) {
       try {
         const storeIdToUse = activeStoreId || userProfile?.storeId;
-        const storeName = stores?.find((s: any) => s.id === storeIdToUse)?.name || 'Sucursal Desconocida';
+        const storeData = stores?.find((s: any) => s.id === storeIdToUse);
+        const storeName = storeData?.name || 'Sucursal Desconocida';
+        const chainName = storeData?.type || 'Coppel';
         const filename = `Ticket Factura #${commonData.invoiceNumber} - ${commonData.customerName.toUpperCase()}`;
         
         // Month Formatting: Only Name (e.g. "Abril")
@@ -379,7 +381,7 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
         // Set global hint for background sync
         (window as any)._customMonthName = formattedMonth;
 
-        finalImageUrl = await smartImageUpload(ticketImage, filename, commonData.date, storeName, 'sales');
+        finalImageUrl = await smartImageUpload(ticketImage, filename, commonData.date, storeName, 'sales', userProfile?.fullName || 'Vendedor', chainName);
       } catch (error) {
         console.error("Error crítico en guardado de foto:", error);
         alert("⚠️ No se pudo guardar la foto en el servidor. Verifica tu conexión.");
@@ -555,6 +557,7 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
                       type="number"
                       value={item.price}
                       onChange={(e) => handleItemChange(item.tempId, 'price', e.target.value)}
+                      onFocus={(e) => e.target.select()}
                       className={`w-full pl-7 pr-3 py-2 border rounded-lg focus:ring-2 outline-none text-sm transition-all bg-white text-slate-900 placeholder:text-slate-400 ${item.error
                         ? 'border-red-500 bg-red-50 focus:ring-red-200'
                         : 'border-slate-300 focus:ring-blue-500'

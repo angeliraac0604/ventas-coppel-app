@@ -73,6 +73,17 @@
       scrollbar-color: #cbd5e1 transparent;
     }
 
+    /* REMOVE ARROWS FROM NUMBER INPUTS */
+    input::-webkit-outer-spin-button,
+    input::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+
+    input[type=number] {
+      -moz-appearance: textfield;
+    }
+
     .mirror {
       transform: scaleX(-1);
     }
