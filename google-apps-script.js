@@ -212,56 +212,75 @@ function handleSyncMarketParticipation(data) {
       const sheetName = monthName + " " + year;
 
       let sheet = ss.getSheetByName(sheetName);
+      const daysInMonth = new Date(year, month, 0).getDate();
 
       // 1. Si la hoja no existe, COPIAMOS LA PLANTILLA
       if (!sheet) {
         const template = ss.getSheetByName("PLANTILLA");
         if (template) {
           sheet = template.copyTo(ss).setName(sheetName);
-
-          // --- DINAMISMO DE FECHAS ---
-          const daysInMonth = new Date(year, month, 0).getDate();
-
-          for (let d = 1; d <= 31; d++) {
-            const row = d + 2; // Los datos empiezan en la fila 3
-            if (d <= daysInMonth) {
-              // Actualizar fecha en Columna A
-              const dateObj = new Date(year, month - 1, d);
-              const formattedDate = Utilities.formatDate(dateObj, "GMT", "dd/MMM/yy").toLowerCase();
-              sheet.getRange(row, 1).setValue(formattedDate);
-
-              // Limpiar celdas de ventas para el nuevo mes (D, E, F)
-              sheet.getRange(row, 4, 1, 3).clearContent();
-            } else {
-              // Si el mes tiene menos de 31 días, limpiamos las filas sobrantes
-              sheet.getRange(row, 1, 1, 11).clearContent().setBorder(false, false, false, false, false, false);
-            }
-          }
-          // Aseguramos que la fila de TOTALES (Fila 34 usualmente) se mantenga con sus fórmulas
         } else {
-          // Si no hay plantilla, creamos una básica de emergencia
           sheet = ss.insertSheet(sheetName);
           sheet.appendRow(["DÍA", "TELCEL", "MOVISTAR", "ATT", "TOTAL"]);
         }
       }
 
-      // 2. Llenado de datos (Día 1 = Fila 3)
+      // --- DINAMISMO Y LIMPIEZA DE LA HOJA ---
+      // Siempre nos aseguramos que los días del mes estén correctos (Columna A)
+      // Los datos empiezan en la fila 3
+      for (let d = 1; d <= daysInMonth; d++) {
+        const row = d + 2;
+        const dateObj = new Date(year, month - 1, d);
+        const formattedDate = Utilities.formatDate(dateObj, "GMT", "dd/MMM/yy").toLowerCase();
+        sheet.getRange(row, 1).setValue(formattedDate);
+      }
+
+      // --- AJUSTE DE FILA DE TOTALES Y ELIMINACIÓN DE HUECOS ---
+      // Buscamos dónde está la fila de "TOTALES" (normalmente fila 34 en la plantilla para 31 días)
+      // Queremos que esté en la fila: daysInMonth + 3
+      const targetTotalsRow = daysInMonth + 3;
+      
+      // Buscamos la fila que contiene la palabra "TOTALES" en la columna A o B
+      let currentTotalsRow = -1;
+      const colBValues = sheet.getRange("B1:B40").getValues();
+      for (let i = 0; i < colBValues.length; i++) {
+        if (colBValues[i][0].toString().includes("TOTALES")) {
+          currentTotalsRow = i + 1;
+          break;
+        }
+      }
+
+      // Si la fila de totales existe y no está en la posición correcta, la movemos o eliminamos lo de en medio
+      if (currentTotalsRow !== -1 && currentTotalsRow > targetTotalsRow) {
+        // Borramos las filas sobrantes entre el último día y el total para evitar huecos
+        const rowsToDelete = currentTotalsRow - targetTotalsRow;
+        sheet.deleteRows(targetTotalsRow, rowsToDelete);
+      } else if (currentTotalsRow === -1) {
+        // Si no se encontró (no debería pasar con plantilla), la agregamos
+        sheet.getRange(targetTotalsRow, 1, 1, 11).setBackground("#002060").setFontColor("white").setFontWeight("bold");
+        sheet.getRange(targetTotalsRow, 2).setValue("TOTALES");
+      }
+
+      // --- LLENADO DE DATOS ---
       const targetRow = day + 2;
       const telcel = parseFloat(close.telcel) || 0;
       const att = parseFloat(close.att) || 0;
 
-      // Columna B: CADENA, C: TIENDA, D: Telcel, E: Movistar (0), F: ATT
       sheet.getRange(targetRow, 2).setValue("COPPEL");
       sheet.getRange(targetRow, 3).setValue("1053");
       sheet.getRange(targetRow, 4).setValue(telcel);
       sheet.getRange(targetRow, 5).setValue(0);
       sheet.getRange(targetRow, 6).setValue(att);
 
-      // La columna G (Total) debería tener su fórmula traída de la plantilla
-      // pero la reforzamos por si acaso
-      if (sheet.getRange(targetRow, 7).getFormula() === "") {
-        sheet.getRange(targetRow, 7).setFormula(`=SUM(D${targetRow}:F${targetRow})`);
-      }
+      // Reforzamos fórmulas de suma en el día y en el total
+      sheet.getRange(targetRow, 7).setFormula(`=SUM(D${targetRow}:F${targetRow})`);
+      
+      // Actualizar fórmulas de la fila de totales (que ahora está en targetTotalsRow)
+      const lastDataRow = daysInMonth + 2;
+      sheet.getRange(targetTotalsRow, 4).setFormula(`=SUM(D3:D${lastDataRow})`);
+      sheet.getRange(targetTotalsRow, 5).setFormula(`=SUM(E3:E${lastDataRow})`);
+      sheet.getRange(targetTotalsRow, 6).setFormula(`=SUM(F3:F${lastDataRow})`);
+      sheet.getRange(targetTotalsRow, 7).setFormula(`=SUM(G3:G${lastDataRow})`);
     });
 
     return { status: 'success' };

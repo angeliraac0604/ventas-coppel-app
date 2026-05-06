@@ -205,10 +205,8 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
       // AUTOMATIC SYNC for Special Store
       if (isSpecialStore) {
         console.log("Iniciando sincronización automática para tienda 1053...");
-        // Pequeño delay para asegurar que los props de closings se actualicen o usar el nuevo objeto directamente
-        setTimeout(() => {
-          handleSyncToSheets();
-        }, 1500);
+        // Incluimos el nuevo cierre directamente para asegurar que se suba a Excel hoy mismo
+        handleSyncToSheets([newClose, ...closings]);
       }
     }
   };
@@ -233,13 +231,15 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
     setEditingAttSalesId(null);
   };
 
-  const handleSyncToSheets = async () => {
+  const handleSyncToSheets = async (manualData?: DailyClose[]) => {
     if (!isSpecialStore) return;
     
     setIsSyncing(true);
     try {
+      const sourceData = manualData || filteredClosings;
+      
       // Prepare the data for the current month or filtered range
-      const dataToSync = filteredClosings.map(c => ({
+      const dataToSync = sourceData.map(c => ({
         date: c.date,
         telcel: c.totalSales,
         att: c.attSales || 0
