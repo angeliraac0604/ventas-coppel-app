@@ -44,7 +44,8 @@ export const smartImageUpload = async (
   date: string, 
   storeName: string, 
   folderType: 'sales' | 'warranties' | 'attendance' = 'sales',
-  userName: string = 'Usuario'
+  userName: string = 'Usuario',
+  chainName: string = 'Coppel'
 ): Promise<string> => {
   // 1. UPLOAD TO SUPABASE (Immediate & Reliable)
   const dateObj = date ? new Date(date + "T12:00:00") : new Date();
@@ -69,9 +70,10 @@ export const smartImageUpload = async (
   // 2. BACKGROUND SYNC TO GOOGLE DRIVE (Async, non-blocking)
   import('./googleAppsScriptService').then(({ uploadImageToDriveScript }) => {
     (window as any)._activeStoreName = storeName;
+    (window as any)._activeStoreChain = chainName;
     (window as any)._customMonthName = m; // Pass month name as hint
     
-    uploadImageToDriveScript(base64Image, filename, date, folderType as any, userName)
+    uploadImageToDriveScript(base64Image, filename, date, folderType as any, userName, chainName)
       .then(driveUrl => {
         console.log(`✅ [Background Sync] Successfully moved photo to Drive: ${driveUrl}`);
       })

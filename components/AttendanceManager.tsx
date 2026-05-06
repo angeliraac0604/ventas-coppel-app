@@ -88,7 +88,8 @@ const AttendanceManager: React.FC<AttendanceManagerProps> = ({ user, storeName }
           todayStr, 
           storeName, 
           'attendance',
-          user.fullName || user.email
+          user.fullName || user.email,
+          storeConfig?.type || 'Coppel'
         );
       }
 
@@ -100,7 +101,8 @@ const AttendanceManager: React.FC<AttendanceManagerProps> = ({ user, storeName }
           todayStr, 
           storeName, 
           'attendance',
-          user.fullName || user.email
+          user.fullName || user.email,
+          storeConfig?.type || 'Coppel'
         );
       }
 
@@ -120,9 +122,15 @@ const AttendanceManager: React.FC<AttendanceManagerProps> = ({ user, storeName }
       // --- SMART ALERT LOGIC ---
       const now = new Date();
       const timeStr = now.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: false });
+      const dayOfWeek = now.getDay();
+      
+      // Get config for today (day-specific or global)
+      const dayConfig = storeConfig?.day_schedules?.[dayOfWeek];
+      const targetEntryTime = dayConfig?.entryTime || storeConfig?.entry_time;
+      const targetLunchMins = dayConfig?.lunchDurationMinutes || storeConfig?.lunch_duration_minutes;
 
-      if (type === 'entry' && storeConfig?.entry_time) {
-        const [targetH, targetM] = storeConfig.entry_time.split(':').map(Number);
+      if (type === 'entry' && targetEntryTime) {
+        const [targetH, targetM] = targetEntryTime.split(':').map(Number);
         const entryH = now.getHours();
         const entryM = now.getMinutes();
         
@@ -132,24 +140,24 @@ const AttendanceManager: React.FC<AttendanceManagerProps> = ({ user, storeName }
             store_id: user.storeId,
             date: todayStr,
             type: 'late_entry',
-            details: `Llegada tarde registrada a las ${timeStr} (Horario esperado: ${storeConfig.entry_time})`
+            details: `Llegada tarde registrada a las ${timeStr} (Horario esperado: ${targetEntryTime})`
           });
         }
       }
 
-      if (type === 'lunch_end' && storeConfig?.lunch_duration_minutes) {
+      if (type === 'lunch_end' && targetLunchMins) {
         const startRecord = history.find(r => r.date === todayStr && r.type === 'lunch_start');
         if (startRecord) {
           const startTime = new Date(startRecord.timestamp);
           const durationMins = Math.round((now.getTime() - startTime.getTime()) / 60000);
           
-          if (durationMins > storeConfig.lunch_duration_minutes) {
+          if (durationMins > targetLunchMins) {
             await supabase.from('attendance_alerts').insert({
               user_id: user.id,
               store_id: user.storeId,
               date: todayStr,
               type: 'extended_lunch',
-              details: `Tiempo de comida excedido: ${durationMins} min (Máximo: ${storeConfig.lunch_duration_minutes} min)`
+              details: `Tiempo de comida excedido: ${durationMins} min (Máximo: ${targetLunchMins} min)`
             });
           }
         }

@@ -4,7 +4,8 @@ export const uploadImageToDriveScript = async (
     filename: string, 
     date?: string, 
     folderType: 'sales' | 'warranties' | 'attendance' = 'sales',
-    userName: string = 'Usuario'
+    userName: string = 'Usuario',
+    chainName: string = 'Coppel'
 ): Promise<string> => {
     const scriptUrl = import.meta.env.VITE_GOOGLE_SCRIPT_URL;
 
@@ -29,6 +30,7 @@ export const uploadImageToDriveScript = async (
                 folderType: folderType,
                 userName: userName,
                 storeName: (window as any)._activeStoreName || 'Sucursal Desconocida',
+                chainName: chainName || (window as any)._activeStoreChain || 'Coppel',
                 monthName: (window as any)._customMonthName // New hint
             }),
             headers: {
@@ -131,5 +133,35 @@ export const sendInviteEmailScript = async (
         console.log("Respuesta del servidor de correo:", result);
     } catch (error) {
         console.error("❌ Error enviando correo de invitación:", error);
+    }
+};
+
+/**
+ * Sincroniza las ventas de Telcel y AT&T con Google Sheets (Participación de Mercado)
+ */
+export const syncMarketParticipationScript = async (
+    sheetId: string,
+    closings: Array<{ date: string, telcel: number, att: number }>
+): Promise<{ status: 'success' | 'error', message?: string }> => {
+    const scriptUrl = 'https://script.google.com/macros/s/AKfycbyx0K1q-t8OIUwXwsUR2smezfR_q4mOTu98Z7_Vm_0ytVpTza2y-svSk1NNBYzzo50/exec';
+    
+    try {
+        const response = await fetch(scriptUrl, {
+            method: 'POST',
+            body: JSON.stringify({
+                action: 'syncMarketParticipation',
+                sheetId: sheetId,
+                closings: closings
+            }),
+            headers: {
+                'Content-Type': 'text/plain;charset=utf-8',
+            }
+        });
+
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error("Error en syncMarketParticipationScript:", error);
+        return { status: 'error', message: String(error) };
     }
 };

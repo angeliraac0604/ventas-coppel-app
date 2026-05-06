@@ -17,17 +17,11 @@ interface GroupedAttendance {
   userEmail: string;
   storeName: string;
   date: string;
-  // Event times
-  entry?: string;
-  lunchStart?: string;
-  lunchEnd?: string;
-  exit?: string;
-  // Event images and locations
-  images: Record<AttendanceType, { selfie?: string, screenshot?: string, location?: string }>;
-  // Alerts
   isLate?: boolean;
   isLunchOver?: boolean;
   isAbsence?: boolean;
+  isRestDay?: boolean;
+  isVacation?: boolean;
   isExcused?: boolean;
   excusedNotes?: string;
   storeConfig?: Store;
@@ -38,7 +32,10 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterDate, setFilterDate] = useState(new Date().toISOString().split('T')[0]);
+  const [filterDate, setFilterDate] = useState(() => {
+    const now = new Date();
+    return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+  });
   const [selectedUser, setSelectedUser] = useState<GroupedAttendance | null>(null);
   const [activeEventType, setActiveEventType] = useState<AttendanceType>('entry');
   const [zoomedImage, setZoomedImage] = useState<{ url: string, title: string } | null>(null);
@@ -55,6 +52,16 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
   const [localStoreFilter, setLocalStoreFilter] = useState<string>('all');
   const [justifyingAbsence, setJustifyingAbsence] = useState<GroupedAttendance | null>(null);
   const [absenceNotes, setAbsenceNotes] = useState('');
+  const [month, setMonth] = useState(() => {
+    const now = new Date();
+    return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  });
+  const [configDayOfWeek, setConfigDayOfWeek] = useState<number>(new Date(filterDate + 'T12:00:00').getDay());
+
+  // Update configDayOfWeek when filterDate changes
+  useEffect(() => {
+    setConfigDayOfWeek(new Date(filterDate + 'T12:00:00').getDay());
+  }, [filterDate]);
 
   // Sync localStores when props change
   useEffect(() => {
@@ -91,11 +98,16 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
           })));
       }
 
-      // 2. Fetch Attendance Records for the selected date
-      let query = supabase.from('attendance')
-        .select('*')
-        .eq('date', filterDate)
-        .order('timestamp', { ascending: true });
+      // 2. Fetch Attendance Records
+      let query = supabase.from('attendance').select('*');
+      
+      if (activeTab === 'summary') {
+        const startDate = `${month}-01`;
+        const endDate = `${month}-31`; // Postgres handles this fine
+        query = query.gte('date', startDate).lte('date', endDate);
+      } else {
+        query = query.eq('date', filterDate);
+      }
 
       if (selectedStoreId !== 'all') {
         query = query.eq('store_id', selectedStoreId);
@@ -103,23 +115,36 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
         query = query.in('store_id', userProfile?.assignedStores);
       }
 
-      const { data: attendanceData, error } = await query;
-      if (error) throw error;
-      
-      const formatted: AttendanceRecord[] = (attendanceData || []).map(r => ({
-        id: r.id,
-        userId: r.user_id,
-        storeId: r.store_id,
-        type: r.type as AttendanceType,
-        timestamp: r.timestamp,
-        date: r.date,
-        imageUrl: r.image_url,
-        screenshotUrl: r.screenshot_url,
-        locationCoords: r.location_coords,
-        notes: r.notes
-      }));
+      const { data: attendanceData } = await query;
+      if (attendanceData) {
+        setRecords(attendanceData.map((r: any) => ({
+          id: r.id,
+          userId: r.user_id,
+          storeId: r.store_id,
+          type: r.type as AttendanceType,
+          timestamp: r.timestamp,
+          date: r.date,
+          imageUrl: r.image_url,
+          locationCoords: r.location_coords,
+          screenshotUrl: r.screenshot_url,
+          notes: r.notes
+        })));
+      }
 
-      setRecords(formatted);
+      // 3. Update localStores with day_schedules from database if needed
+      // (This is handled by the stores prop from Parent, but we should make sure we use the latest from DB)
+      const { data: storesData } = await supabase.from('stores').select('*');
+      if (storesData) {
+        setLocalStores(storesData.map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          location: s.location,
+          entryTime: s.entry_time,
+          exitTime: s.exit_time,
+          lunchDurationMinutes: s.lunch_duration_minutes,
+          daySchedules: s.day_schedules || {}
+        })));
+      }
     } catch (err) {
       console.error('Error fetching attendance report:', err);
     } finally {
@@ -176,15 +201,22 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
   const handleUpdateStoreSchedule = async (storeId: string) => {
     try {
       const lunchMins = Math.round(editStoreLunchHours * 60);
+      const store = localStores.find(s => s.id === storeId);
+      
+      const newDaySchedules = { ...(store?.daySchedules || {}) };
+      newDaySchedules[configDayOfWeek] = {
+        entryTime: editStoreEntry,
+        exitTime: editStoreExit,
+        lunchDurationMinutes: lunchMins
+      };
+
       const { error } = await supabase.from('stores').update({
-        entry_time: editStoreEntry,
-        exit_time: editStoreExit,
-        lunch_duration_minutes: lunchMins
+        day_schedules: newDaySchedules
       }).eq('id', storeId);
       
       if (error) throw error;
       setEditingStoreId(null);
-      setLocalStores(prev => prev.map(s => s.id === storeId ? { ...s, entryTime: editStoreEntry, exitTime: editStoreExit, lunchDurationMinutes: lunchMins } : s));
+      setLocalStores(prev => prev.map(s => s.id === storeId ? { ...s, daySchedules: newDaySchedules } : s));
       if (onRefreshStores) onRefreshStores();
       fetchData();
     } catch (err: any) {
@@ -198,19 +230,21 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
 
   useEffect(() => {
     fetchData();
-  }, [selectedStoreId, filterDate]);
+  }, [filterDate, selectedStoreId, activeTab, month]);
 
   // Sync edit states when selected store changes
   useEffect(() => {
     if (selectedStoreId !== 'all') {
       const store = localStores.find(s => s.id === selectedStoreId);
       if (store) {
-        setEditStoreEntry(store.entryTime || '09:00');
-        setEditStoreExit(store.exitTime || '19:00');
-        setEditStoreLunchHours(String((store.lunchDurationMinutes || 60) / 60));
+        const dayConfig = store.daySchedules?.[configDayOfWeek];
+        
+        setEditStoreEntry(dayConfig?.entryTime || store.entryTime || '09:00');
+        setEditStoreExit(dayConfig?.exitTime || store.exitTime || '19:00');
+        setEditStoreLunchHours(String((dayConfig?.lunchDurationMinutes || store.lunchDurationMinutes || 60) / 60));
       }
     }
-  }, [selectedStoreId, localStores]);
+  }, [selectedStoreId, localStores, configDayOfWeek]);
 
   // Transform records into a tabular format (one row per user per day)
   const groupedData = React.useMemo(() => {
@@ -274,9 +308,14 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
 
     // --- SMART VIGILANCE LOGIC ---
     Object.values(groups).forEach(group => {
+      const dayOfWeek = new Date(group.date + 'T12:00:00').getDay();
+      const dayConfig = group.storeConfig?.daySchedules?.[dayOfWeek];
+      const targetEntryTime = dayConfig?.entryTime || group.storeConfig?.entryTime || '09:00';
+      const targetLunchMins = dayConfig?.lunchDurationMinutes || group.storeConfig?.lunchDurationMinutes || 60;
+
       // 1. Check Late Entry
-      if (group.entry && group.storeConfig?.entryTime) {
-        const [targetH, targetM] = (group.storeConfig.entryTime || '09:00').split(':').map(Number);
+      if (group.entry) {
+        const [targetH, targetM] = targetEntryTime.split(':').map(Number);
         const [entryH, entryM] = (group.entry || '00:00').split(':').map(Number);
         
         if (entryH > targetH || (entryH === targetH && entryM > targetM)) {
@@ -285,46 +324,42 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
       }
 
       // 2. Check Extended Lunch
-      if (group.lunchStart && group.lunchEnd && group.storeConfig?.lunchDurationMinutes) {
+      if (group.lunchStart && group.lunchEnd) {
         const [sH, sM] = (group.lunchStart || '00:00').split(':').map(Number);
         const [eH, eM] = (group.lunchEnd || '00:00').split(':').map(Number);
         const duration = (eH * 60 + eM) - (sH * 60 + sM);
-        if (duration > group.storeConfig.lunchDurationMinutes) {
+        if (duration > targetLunchMins) {
           group.isLunchOver = true;
         }
       }
     });
 
-    // 3. Absence Detection
+    // 3. Smart Absence & Rest Day Detection
     if (filterDate) {
-        const dayOfWeek = new Date(filterDate).getDay(); // 0-6
-        (profiles || []).forEach(p => {
-          if (!p) return;
-          const key = `${p.id}-${filterDate}`;
-          if (groups[key]) return; // Already has records
-
-          // Check if user belongs to the selected store (if filtered)
-          if (selectedStoreId !== 'all' && p.storeId !== selectedStoreId) return;
+      const dayOfWeek = new Date(filterDate + 'T12:00:00').getDay();
+      
+      profiles.forEach(p => {
+        if (!p || p.role === 'viewer') return;
+        if (selectedStoreId !== 'all' && p.storeId !== selectedStoreId) return;
         
-        // Skip admins/viewers usually, or only sellers/supervisors
-        if (p.role === 'viewer') return;
+        const key = `${p.id}-${filterDate}`;
+        if (groups[key]) return; // Already has clock-in/out records
 
-        // Check Rest Day
-        if (p.restDays?.includes(dayOfWeek)) return;
-
-        // Check Vacation
-        if (p.vacationDates?.includes(filterDate)) return;
-
-        // It's an absence!
+        const isRestDay = p.restDays?.includes(dayOfWeek);
+        const isVacation = p.vacationDates?.includes(filterDate);
         const store = localStores.find(s => s.id === p.storeId);
+
         groups[key] = {
           userId: p.id,
           userName: p.fullName || p.email?.split('@')[0] || 'Usuario',
           userEmail: p.email,
           storeName: store?.name || 'N/A',
           date: filterDate,
-          images: { entry: {}, lunch_start: {}, lunch_end: {}, exit: {}, excused: {} },
-          isAbsence: true
+          images: { entry: {}, lunch_start: {}, lunch_end: {}, exit: {}, excused: {}, rest_day: {} },
+          isAbsence: !isRestDay && !isVacation,
+          isRestDay: isRestDay,
+          isVacation: isVacation,
+          storeConfig: store
         };
       });
     }
@@ -340,7 +375,7 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
   const stats = React.useMemo(() => {
     let expected = 0;
     if (filterDate) {
-      const dayOfWeek = new Date(filterDate).getDay(); // 0-6
+      const dayOfWeek = new Date(filterDate + 'T12:00:00').getDay(); // 0-6
       expected = profiles.filter(p => {
         if (p.role === 'viewer') return false;
         if (selectedStoreId !== 'all' && p.storeId !== selectedStoreId) return false;
@@ -505,9 +540,25 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
                  <div className="flex items-center justify-between mb-6">
                     <div>
                        <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">
-                         Configuración: {localStores.find(s => s.id === selectedStoreId)?.name || 'Tienda'}
+                         Horario para {['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'][configDayOfWeek]} en {localStores.find(s => s.id === selectedStoreId)?.name || 'Tienda'}
                        </h3>
-                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Establece el horario de entrada y comida para esta sucursal</p>
+                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Establece el horario específico para este día de la semana</p>
+
+                       <div className="flex flex-wrap gap-1 mt-4">
+                         {['D', 'L', 'M', 'M', 'J', 'V', 'S'].map((day, idx) => (
+                           <button
+                             key={idx}
+                             onClick={() => setConfigDayOfWeek(idx)}
+                             className={`w-8 h-8 rounded-lg font-black text-[10px] border transition-all ${
+                               configDayOfWeek === idx 
+                                 ? 'bg-indigo-600 text-white border-indigo-700 shadow-md scale-110' 
+                                 : 'bg-white text-slate-400 border-slate-100 hover:border-indigo-200'
+                             }`}
+                           >
+                             {day}
+                           </button>
+                         ))}
+                       </div>
                     </div>
                     <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600">
                        <Building className="w-6 h-6" />
@@ -556,29 +607,32 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
                          <div className="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center text-indigo-600"><Clock className="w-5 h-5" /></div>
                          <div>
                             <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Entrada</p>
-                            <p className="text-sm font-black text-slate-700 uppercase">{localStores.find(s => s.id === selectedStoreId)?.entryTime || '09:00'}</p>
+                            <p className="text-sm font-black text-slate-700 uppercase">{localStores.find(s => s.id === selectedStoreId)?.daySchedules?.[configDayOfWeek]?.entryTime || localStores.find(s => s.id === selectedStoreId)?.entryTime || '09:00'}</p>
                          </div>
                       </div>
                       <div className="p-5 bg-slate-50/50 rounded-[1.5rem] border border-slate-100 flex items-center gap-4">
                          <div className="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center text-rose-600"><Clock className="w-5 h-5" /></div>
                          <div>
                             <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Salida</p>
-                            <p className="text-sm font-black text-slate-700 uppercase">{localStores.find(s => s.id === selectedStoreId)?.exitTime || '18:00'}</p>
+                            <p className="text-sm font-black text-slate-700 uppercase">{localStores.find(s => s.id === selectedStoreId)?.daySchedules?.[configDayOfWeek]?.exitTime || localStores.find(s => s.id === selectedStoreId)?.exitTime || '18:00'}</p>
                          </div>
                       </div>
                       <div className="p-5 bg-slate-50/50 rounded-[1.5rem] border border-slate-100 flex items-center gap-4">
                          <div className="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center text-amber-600"><Coffee className="w-5 h-5" /></div>
                          <div>
                             <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Comida</p>
-                            <p className="text-sm font-black text-slate-700 uppercase">{localStores.find(s => s.id === selectedStoreId)?.lunchDurationMinutes || 60} Min</p>
+                            <p className="text-sm font-black text-slate-700 uppercase">{localStores.find(s => s.id === selectedStoreId)?.daySchedules?.[configDayOfWeek]?.lunchDurationMinutes || localStores.find(s => s.id === selectedStoreId)?.lunchDurationMinutes || 60} Min</p>
                          </div>
                       </div>
                       <button 
                         onClick={() => {
                           setEditingStoreId(selectedStoreId);
-                          setEditStoreEntry(localStores.find(s => s.id === selectedStoreId)?.entryTime || '09:00');
-                          setEditStoreExit(localStores.find(s => s.id === selectedStoreId)?.exitTime || '18:00');
-                          setEditStoreLunchHours((localStores.find(s => s.id === selectedStoreId)?.lunchDurationMinutes || 60) / 60);
+                          const store = localStores.find(s => s.id === selectedStoreId);
+                          const dayConfig = store?.daySchedules?.[configDayOfWeek];
+                          
+                          setEditStoreEntry(dayConfig?.entryTime || store?.entryTime || '09:00');
+                          setEditStoreExit(dayConfig?.exitTime || store?.exitTime || '18:00');
+                          setEditStoreLunchHours((dayConfig?.lunchDurationMinutes || store?.lunchDurationMinutes || 60) / 60);
                         }}
                         className="p-5 bg-white border-2 border-dashed border-slate-200 rounded-[1.5rem] text-slate-400 font-black text-xs uppercase tracking-widest hover:border-indigo-300 hover:text-indigo-600 transition-all flex items-center justify-center gap-2"
                       >
@@ -774,6 +828,14 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-600 text-white rounded-full text-[9px] font-black uppercase tracking-tighter shadow-lg shadow-emerald-200" title={row.excusedNotes}>
                             <CheckCircle className="w-3 h-3" /> PERMISO
                           </span>
+                        ) : row.isRestDay ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 text-slate-500 rounded-full text-[9px] font-black uppercase tracking-tighter">
+                            <Coffee className="w-3 h-3" /> Día de Descanso
+                          </span>
+                        ) : row.isVacation ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 text-amber-600 rounded-full text-[9px] font-black uppercase tracking-tighter ring-1 ring-amber-100">
+                            <Calendar className="w-3 h-3" /> Vacaciones
+                          </span>
                         ) : row.isAbsence ? (
                           <button 
                             onClick={(e) => { 
@@ -819,7 +881,33 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
             </table>
           </div>
         ) : activeTab === 'summary' ? (
-          <AttendanceSummary stores={stores} profiles={profiles} selectedStoreId={selectedStoreId} />
+          <div className="space-y-6">
+            <div className="flex items-center justify-between bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600">
+                  <Calendar className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">Resumen General</h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Control mensual de asistencias</p>
+                </div>
+              </div>
+              <input 
+                type="month" 
+                value={month}
+                onChange={(e) => setMonth(e.target.value)}
+                className="bg-slate-50 border border-slate-200 text-slate-800 font-black text-sm px-4 py-3 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <AttendanceSummary 
+              stores={localStores} 
+              profiles={profiles} 
+              records={records}
+              month={month}
+              selectedStoreId={selectedStoreId} 
+              onRefresh={fetchData}
+            />
+          </div>
         ) : null}
 
         {/* Modal Justificar Falta */}
