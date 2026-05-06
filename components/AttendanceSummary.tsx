@@ -18,16 +18,21 @@ interface AttendanceSummaryProps {
   records: AttendanceRecord[];
   month: string;
   selectedStoreId: string;
+  userProfile: UserProfile | null;
   onRefresh?: () => void;
 }
 
-const AttendanceSummary: React.FC<AttendanceSummaryProps> = ({ stores, profiles, records, month, selectedStoreId, onRefresh }) => {
+const AttendanceSummary: React.FC<AttendanceSummaryProps> = ({ stores, profiles, records, month, selectedStoreId, userProfile, onRefresh }) => {
   const [viewingAbsences, setViewingAbsences] = useState<any>(null);
   const [selectedDay, setSelectedDay] = useState<{ day: number, date: string, status: any, records?: AttendanceRecord[] } | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
 
   const handleMarkRestDay = async (userId: string, storeId: string, dateStr: string) => {
+    if (userProfile?.role === 'supervisor' && !userProfile?.canManageRestDays) {
+      alert("No tienes permiso para autorizar descansos.");
+      return;
+    }
     setIsUpdating(true);
     try {
       const { error } = await supabase.from('attendance').insert({
@@ -36,7 +41,7 @@ const AttendanceSummary: React.FC<AttendanceSummaryProps> = ({ stores, profiles,
         type: 'rest_day',
         date: dateStr,
         timestamp: new Date().toISOString(),
-        notes: 'Cambio de descanso autorizado por supervisor'
+        notes: 'Cambio de descanso autorizado por ' + (userProfile?.role === 'admin' ? 'Administrador' : 'Supervisor')
       });
 
       if (error) throw error;
@@ -44,6 +49,32 @@ const AttendanceSummary: React.FC<AttendanceSummaryProps> = ({ stores, profiles,
       setSelectedDay(null);
     } catch (err: any) {
       alert('Error al marcar descanso: ' + err.message);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleMarkExcusedDay = async (userId: string, storeId: string, dateStr: string) => {
+    if (userProfile?.role === 'supervisor' && !userProfile?.canJustifyAbsences) {
+      alert("No tienes permiso para asignar permisos.");
+      return;
+    }
+    setIsUpdating(true);
+    try {
+      const { error } = await supabase.from('attendance').insert({
+        user_id: userId,
+        store_id: storeId,
+        type: 'excused',
+        date: dateStr,
+        timestamp: new Date().toISOString(),
+        notes: 'Permiso autorizado por ' + (userProfile?.role === 'admin' ? 'Administrador' : 'Supervisor')
+      });
+
+      if (error) throw error;
+      if (onRefresh) onRefresh();
+      setSelectedDay(null);
+    } catch (err: any) {
+      alert('Error al asignar permiso: ' + err.message);
     } finally {
       setIsUpdating(false);
     }
@@ -308,14 +339,23 @@ const AttendanceSummary: React.FC<AttendanceSummaryProps> = ({ stores, profiles,
                          </p>
 
                          {selectedDay.status.type === 'absence' && (
-                           <div className="pt-4 px-2">
+                           <div className="pt-4 px-2 space-y-3">
                              <button 
                                onClick={() => handleMarkRestDay(viewingAbsences.profile.id, viewingAbsences.profile.storeId, selectedDay.date)}
-                               disabled={isUpdating}
+                               disabled={isUpdating || (userProfile?.role === 'supervisor' && !userProfile?.canManageRestDays)}
                                className="w-full flex items-center justify-center gap-2 py-3 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all shadow-xl shadow-slate-200 disabled:opacity-50"
                              >
                                {isUpdating ? <RotateCcw className="w-4 h-4 animate-spin" /> : <Clock className="w-4 h-4" />}
-                               Autorizar Cambio de Descanso
+                               Autorizar Descanso
+                             </button>
+
+                             <button 
+                               onClick={() => handleMarkExcusedDay(viewingAbsences.profile.id, viewingAbsences.profile.storeId, selectedDay.date)}
+                               disabled={isUpdating || (userProfile?.role === 'supervisor' && !userProfile?.canJustifyAbsences)}
+                               className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 disabled:opacity-50"
+                             >
+                               {isUpdating ? <RotateCcw className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                               Asignar Permiso
                              </button>
                            </div>
                          )}

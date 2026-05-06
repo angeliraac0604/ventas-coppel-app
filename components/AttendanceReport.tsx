@@ -905,6 +905,7 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
               records={records}
               month={month}
               selectedStoreId={selectedStoreId} 
+              userProfile={userProfile}
               onRefresh={fetchData}
             />
           </div>
