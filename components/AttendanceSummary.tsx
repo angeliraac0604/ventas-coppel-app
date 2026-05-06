@@ -19,10 +19,11 @@ interface AttendanceSummaryProps {
   month: string;
   selectedStoreId: string;
   userProfile: UserProfile | null;
+  onMonthChange?: (newMonth: string) => void;
   onRefresh?: () => void;
 }
 
-const AttendanceSummary: React.FC<AttendanceSummaryProps> = ({ stores, profiles, records, month, selectedStoreId, userProfile, onRefresh }) => {
+const AttendanceSummary: React.FC<AttendanceSummaryProps> = ({ stores, profiles, records, month, selectedStoreId, userProfile, onMonthChange, onRefresh }) => {
   const [viewingAbsences, setViewingAbsences] = useState<any>(null);
   const [selectedDay, setSelectedDay] = useState<{ day: number, date: string, status: any, records?: AttendanceRecord[] } | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -228,6 +229,25 @@ const AttendanceSummary: React.FC<AttendanceSummaryProps> = ({ stores, profiles,
           return { color: 'bg-slate-50 text-slate-400 font-bold', label: 'Sin registro', type: 'none' };
         };
 
+        const handleMonthNav = (direction: 'prev' | 'next') => {
+          const [y, mNum] = month.split('-').map(Number);
+          const date = new Date(y, mNum - 1);
+          if (direction === 'prev') date.setMonth(date.getMonth() - 1);
+          else date.setMonth(date.getMonth() + 1);
+          
+          const newMonthStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+          if (onMonthChange) onMonthChange(newMonthStr);
+        };
+
+        // Calendar Fill Logic
+        const firstDayOfMonth = new Date(year, m, 1).getDay();
+        const prevMonthLastDay = new Date(year, m, 0).getDate();
+        const prevMonthDays = Array.from({ length: firstDayOfMonth }, (_, i) => prevMonthLastDay - firstDayOfMonth + i + 1);
+        
+        const totalDaysShown = 42; // 6 rows * 7 days
+        const nextMonthDaysCount = totalDaysShown - (firstDayOfMonth + daysInMonth);
+        const nextMonthDays = Array.from({ length: nextMonthDaysCount }, (_, i) => i + 1);
+
         return (
           <div className="fixed inset-0 z-[60] bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
              <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 my-auto">
@@ -242,14 +262,31 @@ const AttendanceSummary: React.FC<AttendanceSummaryProps> = ({ stores, profiles,
                 <div className="p-8">
                    <div className="bg-white border border-[#B38C52]/20 rounded-3xl overflow-hidden shadow-sm">
                       <div className="bg-[#6B2032] px-5 py-3 flex justify-between items-center">
-                        <span className="text-white font-black tracking-widest text-xs">{monthName}</span>
-                        <span className="text-white font-black text-xs">{year}</span>
+                        <button onClick={() => handleMonthNav('prev')} className="p-1 hover:bg-white/10 rounded-lg text-white transition-colors">
+                           <X className="w-4 h-4 rotate-90" style={{ transform: 'rotate(180deg)' }} /> 
+                           {/* Using X as arrow placeholder or similar, but better use real icons */}
+                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7" /></svg>
+                        </button>
+                        <div className="text-center">
+                           <span className="text-white font-black tracking-widest text-xs block leading-none">{monthName}</span>
+                           <span className="text-white/60 font-bold text-[9px] uppercase tracking-tighter">{year}</span>
+                        </div>
+                        <button onClick={() => handleMonthNav('next')} className="p-1 hover:bg-white/10 rounded-lg text-white transition-colors">
+                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M9 5l7 7-7 7" /></svg>
+                        </button>
                       </div>
                       <div className="grid grid-cols-7 bg-[#B38C52]">
                         {['D', 'L', 'M', 'M', 'J', 'V', 'S'].map((d, i) => (<div key={i} className="py-2 text-center text-white font-black text-[10px]">{d}</div>))}
                       </div>
                       <div className="grid grid-cols-7 p-3 gap-1.5">
-                        {Array.from({ length: new Date(year, m, 1).getDay() }).map((_, i) => (<div key={`empty-${i}`} className="p-2"></div>))}
+                        {/* Prev Month Days */}
+                        {prevMonthDays.map((day) => (
+                          <div key={`prev-${day}`} className="aspect-square flex items-center justify-center rounded-xl text-[10px] font-bold text-slate-200">
+                            {day}
+                          </div>
+                        ))}
+
+                        {/* Current Month Days */}
                         {Array.from({ length: daysInMonth }).map((_, i) => {
                           const day = i + 1;
                           const dateStr = `${year}-${String(m + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -261,6 +298,13 @@ const AttendanceSummary: React.FC<AttendanceSummaryProps> = ({ stores, profiles,
                             </button>
                           );
                         })}
+
+                        {/* Next Month Days */}
+                        {nextMonthDays.map((day) => (
+                          <div key={`next-${day}`} className="aspect-square flex items-center justify-center rounded-xl text-[10px] font-bold text-slate-200">
+                            {day}
+                          </div>
+                        ))}
                       </div>
                    </div>
                    <div className="mt-6 grid grid-cols-2 gap-y-3 gap-x-4 px-1">
