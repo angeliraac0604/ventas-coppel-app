@@ -487,22 +487,22 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
       )}
 
 
-      {/* SUCCESS NOTIFICATION BANNER (Unified) */}
-      {(isRevenueGoalMet || isDevicesGoalMet) && (
-        <div className="bg-gradient-to-r from-yellow-400 via-orange-500 to-red-500 text-white p-6 rounded-2xl shadow-lg transform transition-all hover:scale-[1.01] animate-in fade-in slide-in-from-top-4 duration-700 relative overflow-hidden border border-orange-400/50">
-          <div className="absolute top-0 right-0 p-4 opacity-20 pointer-events-none">
-            <PartyPopper className="w-40 h-40 transform rotate-12" />
+      {/* SUCCESS BANNER - Only if active goals are met */}
+      {((monthlyGoal > 0 && isRevenueGoalMet) || (devicesGoal > 0 && isDevicesGoalMet)) && (
+        <div className="relative overflow-hidden bg-gradient-to-r from-orange-500 via-rose-500 to-pink-600 rounded-3xl p-6 text-white shadow-2xl shadow-rose-500/20 animate-in fade-in slide-in-from-top-4 duration-700">
+          <div className="absolute top-0 right-0 p-8 opacity-20 transform translate-x-4 -translate-y-4">
+             <Trophy className="w-32 h-32 rotate-12" />
           </div>
-          <div className="relative z-10 flex flex-col md:flex-row items-center md:items-start gap-6 text-center md:text-left">
-            <div className="bg-white/20 p-4 rounded-full backdrop-blur-sm shadow-inner shrink-0">
-              <Trophy className="w-12 h-12 text-yellow-100" />
+          <div className="relative z-10 flex items-center gap-6">
+            <div className="hidden md:flex p-4 bg-white/20 backdrop-blur-md rounded-2xl border border-white/30 shadow-inner">
+               <PartyPopper className="w-10 h-10 text-white animate-bounce" />
             </div>
             <div>
               <h2 className="text-2xl font-extrabold mb-1 drop-shadow-sm">¡Objetivo Cumplido! 🎉</h2>
               <p className="text-orange-50 font-medium text-lg leading-snug">
-                {isRevenueGoalMet && isDevicesGoalMet
+                {monthlyGoal > 0 && isRevenueGoalMet && devicesGoal > 0 && isDevicesGoalMet
                   ? "¡Increíble! Has superado AMBAS metas mensuales. Tu rendimiento es excepcional."
-                  : isRevenueGoalMet
+                  : monthlyGoal > 0 && isRevenueGoalMet
                     ? `Has superado tu meta de ingresos de $${monthlyGoal.toLocaleString('es-MX')}.`
                     : `Has vendido más de ${devicesGoal} equipos este mes.`
                 }
@@ -511,116 +511,145 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
           </div>
         </div>
       )}
+
       {/* GOALS GRID */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className={`grid grid-cols-1 gap-6 ${monthlyGoal > 0 && devicesGoal > 0 ? 'lg:grid-cols-2' : ''}`}>
 
-        {/* CARD 1: REVENUE GOAL */}
-        <div id="revenue-goal-card" className="bg-slate-900 rounded-3xl p-6 shadow-xl relative overflow-hidden text-white group flex flex-col justify-between">
-          <div className="absolute top-0 right-0 w-48 h-48 bg-blue-600 rounded-full blur-[80px] opacity-20 group-hover:opacity-30 transition-opacity"></div>
-          <div className="absolute bottom-0 left-0 w-48 h-48 bg-purple-600 rounded-full blur-[80px] opacity-10 group-hover:opacity-20 transition-opacity"></div>
+        {/* CARD 1: REVENUE (Active if monthlyGoal > 0 or if admin wants to set it) */}
+        {(monthlyGoal > 0 || role === 'admin') && (
+          <div id="revenue-goal-card" className="bg-slate-900 rounded-3xl p-6 shadow-xl relative overflow-hidden text-white group flex flex-col justify-between">
+            <div className="absolute top-0 right-0 w-48 h-48 bg-blue-600 rounded-full blur-[80px] opacity-20 group-hover:opacity-30 transition-opacity"></div>
+            <div className="absolute bottom-0 left-0 w-48 h-48 bg-purple-600 rounded-full blur-[80px] opacity-10 group-hover:opacity-20 transition-opacity"></div>
 
-          <div className="relative z-10 flex justify-between items-start mb-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-slate-800 rounded-lg border border-slate-700">
-                <Target className="w-6 h-6 text-blue-400" />
-              </div>
-              <div>
-                <h2 className="text-lg font-bold text-slate-100">Meta de Ingresos</h2>
-                <p className="text-xs text-slate-400 font-medium">Venta neta Mensual (Sin IVA)</p>
-              </div>
-            </div>
-            {role === 'admin' && !isEditingGoal && (
-              <button onClick={() => { setTempGoal(monthlyGoal.toString()); setIsEditingGoal(true); }} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-colors"><Edit2 className="w-4 h-4" /></button>
-            )}
-          </div>
-
-          <div className="relative z-10 flex items-end justify-between gap-4">
-            <div className="space-y-2 flex-1">
-              {isEditingGoal ? (
-                <div className="flex items-center gap-2">
-                  <input type="number" value={tempGoal} onChange={(e) => setTempGoal(e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-lg text-white font-bold p-2 outline-none" autoFocus />
-                  <button onClick={handleSaveGoal} className="p-2 bg-blue-600 rounded-lg"><Check className="w-4 h-4" /></button>
+            <div className="relative z-10 flex justify-between items-start mb-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-slate-800 rounded-lg border border-slate-700">
+                  <Target className="w-6 h-6 text-blue-400" />
                 </div>
-              ) : (
-                <div className="flex flex-col gap-4">
-                  <span className="text-4xl font-black text-white leading-none" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>
-                     ${currentMonthNet.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                   </span>
-                  <span className="text-xs text-slate-400 font-bold tracking-wide">Meta: ${monthlyGoal.toLocaleString('es-MX')}</span>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-100">Meta de Ingresos</h2>
+                  <p className="text-xs text-slate-400 font-medium">Venta neta Mensual (Sin IVA)</p>
+                </div>
+              </div>
+              {role === 'admin' && !isEditingGoal && (
+                <button onClick={() => { setTempGoal(monthlyGoal.toString()); setIsEditingGoal(true); }} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-colors"><Edit2 className="w-4 h-4" /></button>
+              )}
+            </div>
+
+            <div className="relative z-10 flex items-end justify-between gap-4">
+              <div className="space-y-2 flex-1">
+                {isEditingGoal ? (
+                  <div className="flex items-center gap-2">
+                    <input type="number" value={tempGoal} placeholder="0 para desactivar" onChange={(e) => setTempGoal(e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-lg text-white font-bold p-2 outline-none" autoFocus />
+                    <button onClick={handleSaveGoal} className="p-2 bg-blue-600 rounded-lg"><Check className="w-4 h-4" /></button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-4">
+                    <span className="text-4xl font-black text-white leading-none" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>
+                       ${currentMonthNet.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                     </span>
+                    <span className="text-xs text-slate-400 font-bold tracking-wide">
+                      {monthlyGoal > 0 ? `Meta: $${monthlyGoal.toLocaleString('es-MX')}` : 'Sin meta asignada'}
+                    </span>
+                  </div>
+                )}
+
+                {monthlyGoal > 0 && (
+                  <>
+                    <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden mt-3">
+                      <div className={`h-full rounded-full transition-all duration-1000 ${isRevenueGoalMet ? 'bg-gradient-to-r from-green-400 to-emerald-500' : 'bg-gradient-to-r from-blue-500 to-indigo-500'}`} style={{ width: `${Math.min(revenueProgress, 100)}%` }}></div>
+                    </div>
+                    <p className="text-xs text-slate-400 pt-1">{revenueRemaining > 0 ? `Faltan $${revenueRemaining.toLocaleString('es-MX', { maximumFractionDigits: 0 })}` : '¡Meta Superada!'}</p>
+                  </>
+                )}
+              </div>
+
+              {/* Circular Indicator (Only if Goal > 0) */}
+              {monthlyGoal > 0 && (
+                <div className="relative w-20 h-20 shrink-0">
+                  <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                    <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" className="text-slate-800" />
+                    <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" strokeDasharray={circumference} strokeDashoffset={isNaN(strokeDashoffsetRevenue) ? circumference : strokeDashoffsetRevenue} strokeLinecap="round" className={`transition-all duration-1000 ${isRevenueGoalMet ? 'text-green-500' : 'text-blue-500'}`} />
+                  </svg>
+                  <div className="absolute inset-0 flex items-center justify-center text-xs font-bold">{isFinite(revenueProgress) ? revenueProgress.toFixed(0) : 0}%</div>
                 </div>
               )}
-
-              <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden mt-3">
-                <div className={`h-full rounded-full transition-all duration-1000 ${isRevenueGoalMet ? 'bg-gradient-to-r from-green-400 to-emerald-500' : 'bg-gradient-to-r from-blue-500 to-indigo-500'}`} style={{ width: `${Math.min(revenueProgress, 100)}%` }}></div>
-              </div>
-              <p className="text-xs text-slate-400 pt-1">{revenueRemaining > 0 ? `Faltan $${revenueRemaining.toLocaleString('es-MX', { maximumFractionDigits: 0 })}` : '¡Meta Superada!'}</p>
-            </div>
-
-            {/* Circular Indicator */}
-            <div className="relative w-20 h-20 shrink-0">
-              <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-                <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" className="text-slate-800" />
-                <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" strokeDasharray={circumference} strokeDashoffset={isNaN(strokeDashoffsetRevenue) ? circumference : strokeDashoffsetRevenue} strokeLinecap="round" className={`transition-all duration-1000 ${isRevenueGoalMet ? 'text-green-500' : 'text-blue-500'}`} />
-              </svg>
-              <div className="absolute inset-0 flex items-center justify-center text-xs font-bold">{isFinite(revenueProgress) ? revenueProgress.toFixed(0) : 0}%</div>
             </div>
           </div>
-        </div>
+        )}
 
-        {/* CARD 2: DEVICES GOAL */}
-        <div id="devices-goal-card" className="bg-slate-900 rounded-3xl p-6 shadow-xl relative overflow-hidden text-white group flex flex-col justify-between">
-          <div className="absolute top-0 right-0 w-48 h-48 bg-emerald-600 rounded-full blur-[80px] opacity-20 group-hover:opacity-30 transition-opacity"></div>
-          <div className="absolute bottom-0 left-0 w-48 h-48 bg-cyan-600 rounded-full blur-[80px] opacity-10 group-hover:opacity-20 transition-opacity"></div>
+        {/* CARD 2: DEVICES (Active if devicesGoal > 0 or if admin wants to set it) */}
+        {(devicesGoal > 0 || role === 'admin') && (
+          <div id="devices-goal-card" className="bg-slate-900 rounded-3xl p-6 shadow-xl relative overflow-hidden text-white group flex flex-col justify-between">
+            <div className="absolute top-0 right-0 w-48 h-48 bg-emerald-600 rounded-full blur-[80px] opacity-20 group-hover:opacity-30 transition-opacity"></div>
+            <div className="absolute bottom-0 left-0 w-48 h-48 bg-cyan-600 rounded-full blur-[80px] opacity-10 group-hover:opacity-20 transition-opacity"></div>
 
-          <div className="relative z-10 flex justify-between items-start mb-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-slate-800 rounded-lg border border-slate-700">
-                <Smartphone className="w-6 h-6 text-emerald-400" />
-              </div>
-              <div>
-                <h2 className="text-lg font-bold text-slate-100">Meta de Equipos</h2>
-                <p className="text-xs text-slate-400 font-medium">Unidades vendidas Mensual</p>
-              </div>
-            </div>
-            {role === 'admin' && !isEditingDevices && (
-              <button onClick={() => { setTempDevicesGoal(devicesGoal.toString()); setIsEditingDevices(true); }} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-colors"><Edit2 className="w-4 h-4" /></button>
-            )}
-          </div>
-
-          <div className="relative z-10 flex items-end justify-between gap-4">
-            <div className="space-y-2 flex-1">
-              {isEditingDevices ? (
-                <div className="flex items-center gap-2">
-                  <input type="number" value={tempDevicesGoal} onChange={(e) => setTempDevicesGoal(e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-lg text-white font-bold p-2 outline-none" autoFocus />
-                  <button onClick={handleSaveDevicesGoal} className="p-2 bg-emerald-600 rounded-lg"><Check className="w-4 h-4" /></button>
+            <div className="relative z-10 flex justify-between items-start mb-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-slate-800 rounded-lg border border-slate-700">
+                  <Smartphone className="w-6 h-6 text-emerald-400" />
                 </div>
-              ) : (
-                <div className="flex flex-col gap-4">
-                  <span className="text-4xl font-black text-white leading-none" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>
-                     {currentMonthCount} <span className="text-lg font-medium text-slate-400">unidades</span>
-                   </span>
-                  <span className="text-xs text-slate-400 font-bold tracking-wide">Meta: {devicesGoal} equipos</span>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-100">Meta de Equipos</h2>
+                  <p className="text-xs text-slate-400 font-medium">Unidades vendidas Mensual</p>
+                </div>
+              </div>
+              {role === 'admin' && !isEditingDevices && (
+                <button onClick={() => { setTempDevicesGoal(devicesGoal.toString()); setIsEditingDevices(true); }} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-colors"><Edit2 className="w-4 h-4" /></button>
+              )}
+            </div>
+
+            <div className="relative z-10 flex items-end justify-between gap-4">
+              <div className="space-y-2 flex-1">
+                {isEditingDevices ? (
+                  <div className="flex items-center gap-2">
+                    <input type="number" value={tempDevicesGoal} placeholder="0 para desactivar" onChange={(e) => setTempDevicesGoal(e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-lg text-white font-bold p-2 outline-none" autoFocus />
+                    <button onClick={handleSaveDevicesGoal} className="p-2 bg-emerald-600 rounded-lg"><Check className="w-4 h-4" /></button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-4">
+                    <span className="text-4xl font-black text-white leading-none" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>
+                       {currentMonthCount} <span className="text-lg font-medium text-slate-400">unidades</span>
+                     </span>
+                    <span className="text-xs text-slate-400 font-bold tracking-wide">
+                      {devicesGoal > 0 ? `Meta: ${devicesGoal} equipos` : 'Sin meta asignada'}
+                    </span>
+                  </div>
+                )}
+
+                {devicesGoal > 0 && (
+                  <>
+                    <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden mt-3">
+                      <div className={`h-full rounded-full transition-all duration-1000 ${isDevicesGoalMet ? 'bg-gradient-to-r from-emerald-400 to-cyan-500' : 'bg-gradient-to-r from-emerald-500 to-teal-500'}`} style={{ width: `${Math.min(devicesProgress, 100)}%` }}></div>
+                    </div>
+                    <p className="text-xs text-slate-400 pt-1">{devicesRemaining > 0 ? `Faltan ${devicesRemaining} equipos` : '¡Meta Superada!'}</p>
+                  </>
+                )}
+              </div>
+
+              {/* Circular Indicator (Only if Goal > 0) */}
+              {devicesGoal > 0 && (
+                <div className="relative w-20 h-20 shrink-0">
+                  <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                    <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" className="text-slate-800" />
+                    <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" strokeDasharray={circumference} strokeDashoffset={isNaN(strokeDashoffsetDevices) ? circumference : strokeDashoffsetDevices} strokeLinecap="round" className={`transition-all duration-1000 ${isDevicesGoalMet ? 'text-emerald-500' : 'text-cyan-500'}`} />
+                  </svg>
+                  <div className="absolute inset-0 flex items-center justify-center text-xs font-bold">{isFinite(devicesProgress) ? devicesProgress.toFixed(0) : 0}%</div>
                 </div>
               )}
-
-              <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden mt-3">
-                <div className={`h-full rounded-full transition-all duration-1000 ${isDevicesGoalMet ? 'bg-gradient-to-r from-green-400 to-emerald-500' : 'bg-gradient-to-r from-emerald-500 to-cyan-500'}`} style={{ width: `${Math.min(devicesProgress, 100)}%` }}></div>
-              </div>
-              <p className="text-xs text-slate-400 pt-1">{devicesRemaining > 0 ? `Faltan ${devicesRemaining} equipos` : '¡Meta Superada!'}</p>
-            </div>
-
-            {/* Circular Indicator */}
-            <div className="relative w-20 h-20 shrink-0">
-              <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-                <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" className="text-slate-800" />
-                <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" strokeDasharray={circumference} strokeDashoffset={isNaN(strokeDashoffsetDevices) ? circumference : strokeDashoffsetDevices} strokeLinecap="round" className={`transition-all duration-1000 ${isDevicesGoalMet ? 'text-green-500' : 'text-emerald-500'}`} />
-              </svg>
-              <div className="absolute inset-0 flex items-center justify-center text-xs font-bold">{isFinite(devicesProgress) ? devicesProgress.toFixed(0) : 0}%</div>
             </div>
           </div>
-        </div>
-
+        )}
       </div>
+
+      {/* NO GOALS PLACEHOLDER - Only for stores with no goals at all */}
+      {role !== 'admin' && monthlyGoal <= 0 && devicesGoal <= 0 && (
+        <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl p-12 text-center">
+           <Calculator className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+           <h3 className="text-lg font-bold text-slate-600">No hay metas asignadas</h3>
+           <p className="text-slate-400 text-sm max-w-xs mx-auto">Esta sucursal solo lleva el control de totales. Consulta con tu supervisor para asignar objetivos.</p>
+        </div>
+      )}
 
       {/* --- TARGET PER DAY CARD (NEW) --- */}
       <div className="bg-gradient-to-r from-indigo-900 to-blue-900 rounded-2xl p-6 shadow-xl border border-blue-800 relative overflow-hidden">
