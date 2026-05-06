@@ -4,24 +4,39 @@ import { Mail, Lock, Loader2, ArrowRight, ShieldCheck } from 'lucide-react';
 
 const AuthForm: React.FC = () => {
   const [mode, setMode] = useState<'login' | 'register'>('login');
-  const [email, setEmail] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState(''); // Nuevo
-  const [fullName, setFullName] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   // Efecto para detectar invitación por URL
   React.useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const modeParam = params.get('mode');
-    const emailParam = params.get('email');
+    const checkInvite = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const modeParam = params.get('mode');
+      const emailParam = params.get('email');
 
-    if (modeParam === 'register') {
-      setMode('register');
-      if (emailParam) setEmail(emailParam);
-    }
+      if (emailParam) {
+        setEmail(emailParam);
+        
+        // Si hay un email en la URL, verificamos si tiene una invitación pendiente
+        // para poner automáticamente el modo 'registro'
+        const { data: invite } = await supabase
+          .from('pending_invitations')
+          .select('*')
+          .eq('email', emailParam.toLowerCase())
+          .maybeSingle();
+        
+        if (invite || modeParam === 'register') {
+          setMode('register');
+        }
+      }
+    };
+
+    checkInvite();
   }, []);
 
   const toggleMode = () => {
@@ -61,16 +76,18 @@ const AuthForm: React.FC = () => {
     setError(null);
 
     try {
-      if (!fullName) throw new Error("Por favor ingresa tu nombre completo.");
+      if (!firstName || !lastName) throw new Error("Por favor ingresa tu nombre y apellidos.");
       if (password !== confirmPassword) throw new Error("Las contraseñas no coinciden.");
       if (password.length < 6) throw new Error("La contraseña debe tener al menos 6 caracteres.");
+
+      const full_name = `${firstName.trim()} ${lastName.trim()}`.toUpperCase();
 
       // 1. Validar invitación por correo en pending_invitations
       const { data: inviteData, error: inviteError } = await supabase
         .from('pending_invitations')
         .select('*')
         .eq('email', email.toLowerCase())
-        .single();
+        .maybeSingle();
 
       if (inviteError || !inviteData) {
         throw new Error("No tienes una invitación pendiente para este correo. Contacta al administrador.");
@@ -82,7 +99,7 @@ const AuthForm: React.FC = () => {
         password,
         options: {
           data: {
-            full_name: fullName.toUpperCase(),
+            full_name: full_name,
             role: inviteData.role,
             store_id: inviteData.store_id
           }
@@ -103,7 +120,8 @@ const AuthForm: React.FC = () => {
 
       setSuccess(message);
       setMode('login');
-      setFullName('');
+      setFirstName('');
+      setLastName('');
     } catch (err: any) {
       setError(err.message || "Error al registrar");
     } finally {
@@ -134,18 +152,34 @@ const AuthForm: React.FC = () => {
 
           <form onSubmit={mode === 'login' ? handleLogin : handleRegister} className="space-y-5">
             {mode === 'register' && (
-              <div className="animate-in fade-in slide-in-from-left-2">
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Nombre Completo</label>
-                <div className="relative">
-                  <ShieldCheck className="absolute left-3 top-2.5 w-5 h-5 text-slate-400" />
-                  <input
-                    type="text"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value.toUpperCase())}
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-slate-900 text-sm font-medium placeholder:text-slate-300 uppercase"
-                    placeholder="NOMBRE Y APELLIDOS"
-                    required={mode === 'register'}
-                  />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-in fade-in slide-in-from-left-2">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Nombre</label>
+                  <div className="relative">
+                    <ShieldCheck className="absolute left-3 top-2.5 w-5 h-5 text-slate-400" />
+                    <input
+                      type="text"
+                      value={firstName}
+                      onChange={(e) => setFirstName(e.target.value.toUpperCase())}
+                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-slate-900 text-sm font-medium placeholder:text-slate-300 uppercase"
+                      placeholder="NOMBRE"
+                      required={mode === 'register'}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Apellidos</label>
+                  <div className="relative">
+                    <ShieldCheck className="absolute left-3 top-2.5 w-5 h-5 text-slate-400" />
+                    <input
+                      type="text"
+                      value={lastName}
+                      onChange={(e) => setLastName(e.target.value.toUpperCase())}
+                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-slate-900 text-sm font-medium placeholder:text-slate-300 uppercase"
+                      placeholder="APELLIDOS"
+                      required={mode === 'register'}
+                    />
+                  </div>
                 </div>
               </div>
             )}

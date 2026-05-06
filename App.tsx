@@ -312,73 +312,98 @@ create policy "Users insert store warranties" on public.warranties for insert to
 
   const fetchUserProfile = async (userId: string) => {
     try {
-      const { data, error } = await supabase
+      // 1. Obtener el perfil actual
+      const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .maybeSingle();
 
-      if (data) {
-        setUserProfile({
-          id: data.id,
-          email: data.email,
-          role: data.role as UserRole,
-          fullName: data.full_name,
-          storeId: data.store_id,
-          assignedStores: data.assigned_stores || [],
-          restDays: data.rest_days || [],
-          vacationDates: data.vacation_dates || []
-        });
-        
-        // Ensure supervisors start on their allowed default view
-        if (data.role === 'supervisor') {
-          setCurrentView('supervision');
-        } else if (data.role === 'viewer') {
-          setCurrentView('dashboard');
-        }
-        
-        return;
-      }
-
-      // SI NO EXISTE EL PERFIL: Intentamos obtenerlo de Invitaciones Pendientes
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        // Buscamos si hay una invitación pendiente para este correo
-        const { data: invite } = await supabase
-          .from('pending_invitations')
-          .select('*')
-          .eq('email', user.email)
-          .maybeSingle();
+      if (!user) return;
 
+      // 2. Buscar si hay una invitación pendiente para este correo
+      const { data: invite } = await supabase
+        .from('pending_invitations')
+        .select('*')
+        .eq('email', user.email?.toLowerCase())
+        .maybeSingle();
+
+      let finalProfile = profileData;
+
+      if (!profileData) {
+        // SI NO EXISTE EL PERFIL: Lo creamos con datos de invitación o metadata
         const metadata = user.user_metadata || {};
         const newProfile = {
           id: user.id,
           email: user.email,
           role: invite?.role || metadata.role || 'seller',
           store_id: invite?.store_id || metadata.store_id || null,
-          assigned_stores: invite?.assigned_stores || metadata.assigned_stores || []
+          assigned_stores: invite?.assigned_stores || metadata.assigned_stores || [],
+          full_name: metadata.full_name || null
         };
 
-        const { error: insertError } = await supabase.from('profiles').insert([newProfile]);
+        const { data: inserted, error: insertError } = await supabase
+          .from('profiles')
+          .insert([newProfile])
+          .select()
+          .maybeSingle();
         
-        if (!insertError) {
-          // Si pudimos crear el perfil, borramos la invitación pendiente
+        if (!insertError && inserted) {
+          finalProfile = inserted;
+          // Borrar invitación ya usada
           if (invite) {
             await supabase.from('pending_invitations').delete().eq('email', user.email);
           }
-
-          setUserProfile({
-            id: newProfile.id,
-            email: newProfile.email || '',
-            role: newProfile.role as UserRole,
-            fullName: null,
-            storeId: newProfile.store_id,
-            assignedStores: newProfile.assigned_stores
-          });
         }
+      } else if (invite) {
+        // SI EL PERFIL YA EXISTE PERO HAY UNA INVITACIÓN: Sincronizamos el rol y la tienda
+        // Esto corrige el error cuando el trigger crea el perfil como 'seller' por defecto
+        if (profileData.role !== invite.role || profileData.store_id !== invite.store_id) {
+          const { data: updated, error: updateError } = await supabase
+            .from('profiles')
+            .update({
+              role: invite.role,
+              store_id: invite.store_id,
+              assigned_stores: invite.assigned_stores || profileData.assigned_stores
+            })
+            .eq('id', userId)
+            .select()
+            .maybeSingle();
+          
+          if (!updateError && updated) {
+            finalProfile = updated;
+          }
+        }
+        // Borrar invitación ya usada
+        await supabase.from('pending_invitations').delete().eq('email', user.email);
       }
-    } catch (error) {
+
+      if (finalProfile) {
+        setUserProfile({
+          id: finalProfile.id,
+          email: finalProfile.email,
+          role: finalProfile.role as UserRole,
+          fullName: finalProfile.full_name,
+          storeId: finalProfile.store_id,
+          assignedStores: finalProfile.assigned_stores || [],
+          restDays: finalProfile.rest_days || [],
+          vacationDates: finalProfile.vacation_dates || []
+        });
+        
+        // Redirección inicial según el rol
+        if (finalProfile.role === 'supervisor') {
+          setCurrentView('supervision');
+        } else if (finalProfile.role === 'viewer') {
+          setCurrentView('dashboard');
+        }
+      } else {
+        // Si después de todo no hay perfil, mostramos error
+        setConnectionError("No se pudo cargar o crear tu perfil de usuario. Contacta al administrador.");
+      }
+    } catch (error: any) {
       console.error("Error fetching profile:", error);
+      setConnectionError(`Error de servidor: ${error.message || '403 Forbidden'}`);
     }
   };
 

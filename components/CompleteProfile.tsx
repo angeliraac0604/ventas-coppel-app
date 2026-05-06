@@ -10,7 +10,8 @@ interface CompleteProfileProps {
 }
 
 const CompleteProfile: React.FC<CompleteProfileProps> = ({ profile, storeName, onComplete }) => {
-  const [fullName, setFullName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -20,10 +21,12 @@ const CompleteProfile: React.FC<CompleteProfileProps> = ({ profile, storeName, o
     e.preventDefault();
     setError(null);
 
-    if (fullName.trim().split(' ').length < 2) {
-      setError("Por favor, ingresa tu nombre y al menos un apellido.");
+    if (!firstName.trim() || !lastName.trim()) {
+      setError("Por favor, ingresa tu nombre y tus apellidos.");
       return;
     }
+
+    const full_name = `${firstName.trim()} ${lastName.trim()}`.toUpperCase();
 
     if (password.length < 6) {
       setError("La contraseña debe tener al menos 6 caracteres.");
@@ -37,16 +40,17 @@ const CompleteProfile: React.FC<CompleteProfileProps> = ({ profile, storeName, o
 
     setLoading(true);
     try {
-      // 1. Update Password in Auth
+      // 1. Update Password and Metadata in Auth
       const { error: authError } = await supabase.auth.updateUser({
-        password: password
+        password: password,
+        data: { full_name: full_name }
       });
       if (authError) throw authError;
 
       // 2. Update Profile Full Name
       const { error: profileError } = await supabase
         .from('profiles')
-        .update({ full_name: fullName.toUpperCase() })
+        .update({ full_name: full_name })
         .eq('id', profile.id);
       
       if (profileError) throw profileError;
@@ -54,7 +58,7 @@ const CompleteProfile: React.FC<CompleteProfileProps> = ({ profile, storeName, o
       // 3. Notify Parent
       onComplete({
         ...profile,
-        fullName: fullName.toUpperCase()
+        fullName: full_name
       });
 
       alert("¡Registro completado con éxito! Bienvenido al sistema.");
@@ -78,18 +82,34 @@ const CompleteProfile: React.FC<CompleteProfileProps> = ({ profile, storeName, o
 
         <div className="p-8">
           <form onSubmit={handleSubmit} className="space-y-5">
-            <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Nombre y Apellidos</label>
-              <div className="relative">
-                <User className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
-                <input
-                  type="text"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="NOMBRE COMPLETO"
-                  className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-sm font-bold uppercase"
-                  required
-                />
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Nombre(s)</label>
+                <div className="relative">
+                  <User className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
+                  <input
+                    type="text"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    placeholder="NOMBRE"
+                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-sm font-bold uppercase"
+                    required
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Apellidos</label>
+                <div className="relative">
+                  <User className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
+                  <input
+                    type="text"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    placeholder="APELLIDOS"
+                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-sm font-bold uppercase"
+                    required
+                  />
+                </div>
               </div>
             </div>
 

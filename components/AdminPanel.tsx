@@ -58,7 +58,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
   // Direct Create Form
   const [directEmail, setDirectEmail] = useState('');
   const [directPassword, setDirectPassword] = useState('');
-  const [directFullName, setDirectFullName] = useState('');
+  const [directFirstName, setDirectFirstName] = useState('');
+  const [directLastName, setDirectLastName] = useState('');
   const [directRole, setDirectRole] = useState('seller' as UserRole);
   const [directStoreId, setDirectStoreId] = useState('');
 
@@ -240,6 +241,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: directEmail,
         password: directPassword,
+        options: {
+          data: {
+            full_name: directFullName.toUpperCase(),
+            role: directRole,
+            store_id: directStoreId || null,
+            can_justify_absences: directCanJustifyAbsences,
+            can_manage_rest_days: directCanManageRestDays,
+            assigned_stores: (directRole === 'supervisor' || directRole === 'viewer') ? directAssignedStores : null
+          }
+        }
       });
 
       if (authError) throw authError;
@@ -248,7 +259,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
       const { error: profileError } = await supabase
         .from('profiles')
         .update({
-          full_name: directFullName.toUpperCase(),
+          full_name: `${directFirstName.trim()} ${directLastName.trim()}`.toUpperCase(),
           role: directRole,
           store_id: directStoreId || null,
           can_justify_absences: directCanJustifyAbsences,
@@ -262,7 +273,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
       alert('Usuario creado correctamente.');
       setDirectEmail('');
       setDirectPassword('');
-      setDirectFullName('');
+      setDirectFirstName('');
+      setDirectLastName('');
       setActiveModal('none');
       fetchAllData();
       if (onRefresh) onRefresh();
@@ -707,9 +719,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
                         </p>
                       </div>
 
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Nombre Completo</label>
-                        <input type="text" value={directFullName} onChange={(e) => setDirectFullName(e.target.value.toUpperCase())} placeholder="EJ. JOSÉ LUIS MENDOZA" className="w-full bg-slate-50 border border-slate-200 rounded-[1.5rem] px-8 py-6 text-lg font-black uppercase outline-none focus:ring-8 focus:ring-indigo-50 transition-all" required />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Nombre(s)</label>
+                          <input type="text" value={directFirstName} onChange={(e) => setDirectFirstName(e.target.value.toUpperCase())} placeholder="EJ. JOSÉ LUIS" className="w-full bg-slate-50 border border-slate-200 rounded-[1.5rem] px-8 py-6 text-sm font-black uppercase outline-none focus:ring-8 focus:ring-indigo-50 transition-all" required />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Apellidos</label>
+                          <input type="text" value={directLastName} onChange={(e) => setDirectLastName(e.target.value.toUpperCase())} placeholder="EJ. MENDOZA" className="w-full bg-slate-50 border border-slate-200 rounded-[1.5rem] px-8 py-6 text-sm font-black uppercase outline-none focus:ring-8 focus:ring-indigo-50 transition-all" required />
+                        </div>
                       </div>
 
                       <div className="grid grid-cols-2 gap-4">

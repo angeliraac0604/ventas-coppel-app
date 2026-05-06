@@ -205,16 +205,25 @@ function handleSyncMarketParticipation(data) {
 
   try {
     const ss = SpreadsheetApp.openById(sheetId);
-
+    
+    // 1. Agrupar los cierres por nombre de hoja (Mes Año) para no repetir trabajo
+    const closingsBySheet = {};
     closings.forEach(close => {
       const [year, month, day] = close.date.split('-').map(Number);
       const monthName = getSpanishMonth(month - 1).toUpperCase();
       const sheetName = monthName + " " + year;
+      if (!closingsBySheet[sheetName]) closingsBySheet[sheetName] = { 
+        year, month, daysInMonth: new Date(year, month, 0).getDate(), data: [] 
+      };
+      closingsBySheet[sheetName].data.push(close);
+    });
 
+    // 2. Procesar cada hoja una sola vez
+    Object.keys(closingsBySheet).forEach(sheetName => {
+      const group = closingsBySheet[sheetName];
       let sheet = ss.getSheetByName(sheetName);
-      const daysInMonth = new Date(year, month, 0).getDate();
 
-      // 1. Si la hoja no existe, COPIAMOS LA PLANTILLA
+      // Si la hoja no existe, COPIAMOS LA PLANTILLA
       if (!sheet) {
         const template = ss.getSheetByName("PLANTILLA");
         if (template) {
@@ -225,22 +234,17 @@ function handleSyncMarketParticipation(data) {
         }
       }
 
-      // --- DINAMISMO Y LIMPIEZA DE LA HOJA ---
-      // Siempre nos aseguramos que los días del mes estén correctos (Columna A)
-      // Los datos empiezan en la fila 3
-      for (let d = 1; d <= daysInMonth; d++) {
+      // --- TRABAJO PESADO: Solo una vez por hoja ---
+      // Llenar días y limpiar formato
+      for (let d = 1; d <= group.daysInMonth; d++) {
         const row = d + 2;
-        const dateObj = new Date(year, month - 1, d);
+        const dateObj = new Date(group.year, group.month - 1, d);
         const formattedDate = Utilities.formatDate(dateObj, "GMT", "dd/MMM/yy").toLowerCase();
         sheet.getRange(row, 1).setValue(formattedDate);
       }
 
-      // --- AJUSTE DE FILA DE TOTALES Y ELIMINACIÓN DE HUECOS ---
-      // Buscamos dónde está la fila de "TOTALES" (normalmente fila 34 en la plantilla para 31 días)
-      // Queremos que esté en la fila: daysInMonth + 3
-      const targetTotalsRow = daysInMonth + 3;
-      
-      // Buscamos la fila que contiene la palabra "TOTALES" en la columna A o B
+      // Ajustar fila de TOTALES (solo si es necesario)
+      const targetTotalsRow = group.daysInMonth + 3;
       let currentTotalsRow = -1;
       const colBValues = sheet.getRange("B1:B40").getValues();
       for (let i = 0; i < colBValues.length; i++) {
@@ -250,33 +254,30 @@ function handleSyncMarketParticipation(data) {
         }
       }
 
-      // Si la fila de totales existe y no está en la posición correcta, la movemos o eliminamos lo de en medio
       if (currentTotalsRow !== -1 && currentTotalsRow > targetTotalsRow) {
-        // Borramos las filas sobrantes entre el último día y el total para evitar huecos
-        const rowsToDelete = currentTotalsRow - targetTotalsRow;
-        sheet.deleteRows(targetTotalsRow, rowsToDelete);
+        sheet.deleteRows(targetTotalsRow, currentTotalsRow - targetTotalsRow);
       } else if (currentTotalsRow === -1) {
-        // Si no se encontró (no debería pasar con plantilla), la agregamos
         sheet.getRange(targetTotalsRow, 1, 1, 11).setBackground("#002060").setFontColor("white").setFontWeight("bold");
         sheet.getRange(targetTotalsRow, 2).setValue("TOTALES");
       }
 
-      // --- LLENADO DE DATOS ---
-      const targetRow = day + 2;
-      const telcel = parseFloat(close.telcel) || 0;
-      const att = parseFloat(close.att) || 0;
+      // --- LLENADO DE DATOS DEL GRUPO ---
+      group.data.forEach(close => {
+        const [,, day] = close.date.split('-').map(Number);
+        const targetRow = day + 2;
+        const telcel = parseFloat(close.telcel) || 0;
+        const att = parseFloat(close.att) || 0;
 
-      sheet.getRange(targetRow, 2).setValue("COPPEL");
-      sheet.getRange(targetRow, 3).setValue("1053");
-      sheet.getRange(targetRow, 4).setValue(telcel);
-      sheet.getRange(targetRow, 5).setValue(0);
-      sheet.getRange(targetRow, 6).setValue(att);
+        sheet.getRange(targetRow, 2).setValue("COPPEL");
+        sheet.getRange(targetRow, 3).setValue("1053");
+        sheet.getRange(targetRow, 4).setValue(telcel);
+        sheet.getRange(targetRow, 5).setValue(0);
+        sheet.getRange(targetRow, 6).setValue(att);
+        sheet.getRange(targetRow, 7).setFormula(`=SUM(D${targetRow}:F${targetRow})`);
+      });
 
-      // Reforzamos fórmulas de suma en el día y en el total
-      sheet.getRange(targetRow, 7).setFormula(`=SUM(D${targetRow}:F${targetRow})`);
-      
-      // Actualizar fórmulas de la fila de totales (que ahora está en targetTotalsRow)
-      const lastDataRow = daysInMonth + 2;
+      // Actualizar fórmulas finales
+      const lastDataRow = group.daysInMonth + 2;
       sheet.getRange(targetTotalsRow, 4).setFormula(`=SUM(D3:D${lastDataRow})`);
       sheet.getRange(targetTotalsRow, 5).setFormula(`=SUM(E3:E${lastDataRow})`);
       sheet.getRange(targetTotalsRow, 6).setFormula(`=SUM(F3:F${lastDataRow})`);
