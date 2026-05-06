@@ -819,6 +819,7 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
         </div>
       )}
     </div>
+  </div>
   );
 };
 
