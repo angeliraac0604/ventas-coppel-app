@@ -236,7 +236,7 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
     
     setIsSyncing(true);
     try {
-      const sourceData = manualData || filteredClosings;
+      const sourceData = Array.isArray(manualData) ? manualData : filteredClosings;
       
       // Prepare the data for the current month or filtered range
       const dataToSync = sourceData.map(c => ({
