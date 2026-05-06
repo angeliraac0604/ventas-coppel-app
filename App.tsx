@@ -352,8 +352,8 @@ create policy "Users insert store warranties" on public.warranties for insert to
         if (!insertError && inserted) {
           finalProfile = inserted;
           // Borrar invitación ya usada
-          if (invite) {
-            await supabase.from('pending_invitations').delete().eq('email', user.email);
+          if (invite && user.email) {
+            await supabase.from('pending_invitations').delete().eq('email', user.email.toLowerCase());
           }
         }
       } else if (invite) {
@@ -376,7 +376,9 @@ create policy "Users insert store warranties" on public.warranties for insert to
           }
         }
         // Borrar invitación ya usada
-        await supabase.from('pending_invitations').delete().eq('email', user.email);
+        if (user.email) {
+          await supabase.from('pending_invitations').delete().eq('email', user.email.toLowerCase());
+        }
       }
 
       if (finalProfile) {
