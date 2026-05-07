@@ -155,8 +155,8 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
       }
     : goals.find(g => g.month === targetMonth && g.store_id === selectedStoreId);
   
-  const revenueGoalNum = Number(currentGoal?.revenue_goal) || 100000;
-  const devicesGoalNum = Number(currentGoal?.devices_goal) || 50;
+  const revenueGoalNum = Number(currentGoal?.revenue_goal) || 0;
+  const devicesGoalNum = Number(currentGoal?.devices_goal) || 0;
   
   const revenueProgress = (revenueGoalNum > 0) ? (totalNetRevenue / revenueGoalNum) * 100 : 0;
   const devicesProgress = (devicesGoalNum > 0) ? (totalDevices / devicesGoalNum) * 100 : 0;

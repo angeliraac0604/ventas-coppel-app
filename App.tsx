@@ -1365,7 +1365,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
             </div>
 
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
-              {(userProfile?.role === 'admin' || userProfile?.role === 'supervisor') && (
+              {(userProfile?.role === 'admin' || userProfile?.role === 'supervisor' || userProfile?.role === 'viewer') && (
                  <div className="flex items-center gap-2 bg-white px-4 py-2.5 rounded-2xl border border-slate-200 shadow-sm transition-all hover:bg-slate-50 flex-1 sm:flex-none">
                     <Building className="w-4 h-4 text-blue-600 shrink-0" />
                     <select 
@@ -1446,7 +1446,8 @@ create policy "Users insert store warranties" on public.warranties for insert to
                 sales={filteredSales}
                 closings={filteredClosings} 
                 role={userProfile?.role}
-                storeId={userProfile?.role === 'admin' ? (selectedStoreId === 'all' ? undefined : selectedStoreId) : userProfile?.storeId}
+                storeId={(userProfile?.role === 'admin' || userProfile?.role === 'supervisor' || userProfile?.role === 'viewer') ? (selectedStoreId === 'all' ? undefined : selectedStoreId) : userProfile?.storeId}
+                userProfile={userProfile}
                 storeName={userProfile?.role === 'admin' 
                   ? (selectedStoreId === 'all' ? 'Todas las Tiendas' : stores.find(s => s.id === selectedStoreId)?.name) 
                   : stores.find(s => s.id === userProfile?.storeId)?.name}

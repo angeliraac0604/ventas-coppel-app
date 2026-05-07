@@ -14,9 +14,10 @@ interface DashboardProps {
   role?: string;
   storeId?: string;
   storeName?: string;
+  userProfile?: any;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, storeName }) => {
+const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, storeName, userProfile }) => {
 
 
   const handleFactoryReset = async () => {
@@ -46,8 +47,8 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
   };
 
   // --- GOALS STATE (SYNCED WITH DB) ---
-  const [monthlyGoal, setMonthlyGoal] = useState<number>(100000);
-  const [devicesGoal, setDevicesGoal] = useState<number>(50);
+  const [monthlyGoal, setMonthlyGoal] = useState<number>(0);
+  const [devicesGoal, setDevicesGoal] = useState<number>(0);
   // Goals are now "locked" implicitly by being set in DB, but we allow admin to always edit (upsert)
 
   const [isEditingGoal, setIsEditingGoal] = useState(false);
@@ -69,7 +70,14 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
         
         // 1. Fetch Goals
         let goalQuery = supabase.from('monthly_goals').select('*').eq('month', selectedMonth);
-        if (!isGlobal) goalQuery = goalQuery.eq('store_id', storeId);
+        if (!isGlobal) {
+          goalQuery = goalQuery.eq('store_id', storeId);
+        } else if (userProfile?.role === 'supervisor' || userProfile?.role === 'viewer') {
+          // If in global mode but has assigned stores, filter by them
+          if (userProfile.assignedStores && userProfile.assignedStores.length > 0) {
+            goalQuery = goalQuery.in('store_id', userProfile.assignedStores);
+          }
+        }
         const { data: goalData } = await goalQuery;
 
         if (goalData && goalData.length > 0) {
@@ -77,11 +85,11 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
             setMonthlyGoal(goalData.reduce((sum, g) => sum + Number(g.revenue_goal || 0), 0));
             setDevicesGoal(goalData.reduce((sum, g) => sum + Number(g.devices_goal || 0), 0));
           } else {
-            setMonthlyGoal(goalData[0].revenue_goal !== null ? Number(goalData[0].revenue_goal) : 100000);
+            setMonthlyGoal(goalData[0].revenue_goal !== null ? Number(goalData[0].revenue_goal) : 0);
             setDevicesGoal(goalData[0].devices_goal !== null ? Number(goalData[0].devices_goal) : 0);
           }
         } else {
-          setMonthlyGoal(100000);
+          setMonthlyGoal(0);
           setDevicesGoal(0);
         }
 
