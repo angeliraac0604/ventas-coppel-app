@@ -554,12 +554,25 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
                   <span className="md:hidden text-[9px] font-black text-slate-300 uppercase tracking-widest mb-1">Sucursal Asignada</span>
                   {editingUserId === profile.id ? (
                     <div className="space-y-3">
-                      <select value={targetStoreId} onChange={(e) => setTargetStoreId(e.target.value)} className="bg-white border border-indigo-200 rounded-xl px-4 py-2.5 text-xs font-black uppercase outline-none w-full">
+                      <select 
+                        value={targetStoreId} 
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setTargetStoreId(val);
+                          // Si es una tienda específica (no Matriz ni Global), asignamos solo esa
+                          if (val && val !== '7de1b59d-9b0e-4763-9dfc-08030c158664') {
+                            setTargetAssignedStores([val]);
+                          }
+                        }} 
+                        className="bg-white border border-indigo-200 rounded-xl px-4 py-2.5 text-xs font-black uppercase outline-none w-full"
+                      >
                         <option value="">TIENDA GLOBAL</option>
                         {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                       </select>
                       
-                      {(targetRole === 'supervisor' || targetRole === 'viewer') && (
+                      {/* Store Selection Logic: Only show if Matriz or Global (Empty) is selected */}
+                      {((targetRole === 'supervisor' || targetRole === 'viewer')) && 
+                       (targetStoreId === '' || targetStoreId === '7de1b59d-9b0e-4763-9dfc-08030c158664') && (
                         <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
                           <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 px-1">Selección de Tiendas</p>
                           <p className="text-[8px] text-slate-400 font-bold uppercase mb-3 px-1 leading-tight">Si no seleccionas ninguna, tendrá acceso GLOBAL (todas las actuales y futuras)</p>
@@ -582,6 +595,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
                         </div>
                       )}
 
+                      {/* Attendance Flags - Hide for Viewer */}
+                      {targetRole !== 'viewer' && (
+                        <>
+
                           <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100">
                             <label className="flex items-center gap-3 cursor-pointer group">
                               <input 
@@ -603,30 +620,32 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
                                 type="checkbox" 
                                 checked={targetCanJustifyAbsences}
                                 onChange={(e) => setTargetCanJustifyAbsences(e.target.checked)}
-                                className="w-4 h-4 rounded-lg border-slate-700 text-white focus:ring-slate-500"
+                                className="w-4 h-4 rounded-lg border-slate-700 text-indigo-500 focus:ring-indigo-500"
                               />
                               <div className="flex flex-col">
-                                <span className="text-[10px] font-black text-white uppercase">Autorizar Justificar Faltas</span>
-                                <span className="text-[8px] text-slate-400 font-bold uppercase">Permite marcar faltas como permiso</span>
+                                <span className="text-[10px] font-black text-slate-300 uppercase">Autorizar y Justificar Faltas</span>
+                                <span className="text-[8px] text-slate-500 font-bold uppercase">Permite aprobar retardos e inasistencias</span>
                               </div>
                             </label>
                           </div>
 
-                          <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100">
+                          <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800">
                             <label className="flex items-center gap-3 cursor-pointer group">
                               <input 
                                 type="checkbox" 
                                 checked={targetCanManageRestDays}
                                 onChange={(e) => setTargetCanManageRestDays(e.target.checked)}
-                                className="w-4 h-4 rounded-lg border-blue-300 text-blue-600 focus:ring-blue-500"
+                                className="w-4 h-4 rounded-lg border-slate-700 text-indigo-500 focus:ring-indigo-500"
                               />
                               <div className="flex flex-col">
-                                <span className="text-[10px] font-black text-blue-700 uppercase">Autorizar Gestión de Descansos</span>
-                                <span className="text-[8px] text-blue-600/70 font-bold uppercase">Permite asignar días de descanso</span>
+                                <span className="text-[10px] font-black text-slate-300 uppercase">Gestionar Descansos</span>
+                                <span className="text-[8px] text-slate-500 font-bold uppercase">Permite asignar días de descanso al personal</span>
                               </div>
                             </label>
                           </div>
-                      </div>
+                        </>
+                      )}
+                    </div>
                     ) : (
                     <div className="space-y-2">
                       <span className="text-xs font-black text-slate-700 uppercase flex items-center gap-2">
@@ -779,7 +798,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Asignar Tienda</label>
-                          <select value={directStoreId} onChange={(e) => setDirectStoreId(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-[1.2rem] px-6 py-5 text-sm font-black w-full uppercase">
+                          <select 
+                            value={directStoreId} 
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setDirectStoreId(val);
+                              if (val && val !== '7de1b59d-9b0e-4763-9dfc-08030c158664') {
+                                setDirectAssignedStores([val]);
+                              }
+                            }} 
+                            className="bg-slate-50 border border-slate-200 rounded-[1.2rem] px-6 py-5 text-sm font-black w-full uppercase"
+                          >
                             <option value="">GLOBAL / NINGUNA</option>
                             {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                           </select>
@@ -798,12 +827,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
                         </div>
                       </div>
 
-                      {(directRole === 'supervisor' || directRole === 'viewer') && (
+                      {(directRole === 'supervisor' || directRole === 'viewer') && (directStoreId === '' || directStoreId === '7de1b59d-9b0e-4763-9dfc-08030c158664') && (
                         <div className="bg-slate-50 p-6 rounded-[1.5rem] border border-slate-100">
                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 px-1">Seleccionar Área (Tiendas)</p>
                            <p className="text-[8px] text-slate-400 font-bold uppercase mb-4 px-1 leading-tight">Deja vacío para Supervisor General (todas las tiendas)</p>
                            <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
-                              {stores.map(s => (
+                              {stores.filter(s => s.id !== '7de1b59d-9b0e-4763-9dfc-08030c158664').map(s => (
                                 <label key={s.id} className="flex items-center gap-3 px-4 py-3 bg-white border border-slate-100 rounded-xl cursor-pointer hover:border-indigo-200 transition-all">
                                    <input 
                                      type="checkbox" 
@@ -888,7 +917,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Sucursal Principal</label>
-                           <select value={inviteStoreId} onChange={(e) => setInviteStoreId(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-[1.2rem] px-6 py-5 text-sm font-black w-full uppercase">
+                           <select 
+                             value={inviteStoreId} 
+                             onChange={(e) => {
+                               const val = e.target.value;
+                               setInviteStoreId(val);
+                               if (val && val !== '7de1b59d-9b0e-4763-9dfc-08030c158664') {
+                                 setInviteAssignedStores([val]);
+                               }
+                             }} 
+                             className="bg-slate-50 border border-slate-200 rounded-[1.2rem] px-6 py-5 text-sm font-black w-full uppercase"
+                           >
                              <option value="">GLOBAL / NINGUNA</option>
                              {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                            </select>
@@ -907,10 +946,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
                         </div>
                       </div>
 
-                      {(inviteRole === 'supervisor' || inviteRole === 'viewer') && (
+                      {(inviteRole === 'supervisor' || inviteRole === 'viewer') && (inviteStoreId === '' || inviteStoreId === '7de1b59d-9b0e-4763-9dfc-08030c158664') && (
                         <div className="bg-slate-50 p-6 rounded-[1.5rem] border border-slate-100">
                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 px-1">Tiendas a Supervisar</p>
-                           <p className="text-[8px] text-slate-400 font-bold uppercase mb-4 px-1 leading-tight">Si no seleccionas ninguna, tendrá acceso GLOBAL.</p>
+                           <p className="text-[8px] text-slate-400 font-bold uppercase mb-4 px-1 leading-tight">Deja vacío para Supervisor General (todas las tiendas)</p>
                            <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
                               {stores.map(s => (
                                 <label key={s.id} className="flex items-center gap-3 px-4 py-3 bg-white border border-slate-100 rounded-xl cursor-pointer hover:border-indigo-200 transition-all">

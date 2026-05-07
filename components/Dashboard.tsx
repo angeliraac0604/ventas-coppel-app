@@ -216,13 +216,16 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
       const d = new Date(today);
       d.setDate(d.getDate() - (6 - i));
       const dateStr = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      
+      const isFuture = dateStr > tStr;
       const dailySales = safeSales.filter(s => s.date === dateStr);
       const dRev = dailySales.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
+      
       return {
         date: dateStr,
-        amount: dRev,
-        netAmount: dRev / 1.16,
-        count: dailySales.length
+        amount: isFuture ? null : dRev,
+        netAmount: isFuture ? null : (dRev / 1.16),
+        count: isFuture ? null : dailySales.length
       };
     });
 

@@ -163,14 +163,17 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
 
   // Daily Trend Data
   const daysInMonth = new Date(parseInt(targetMonth.split('-')[0]), parseInt(targetMonth.split('-')[1]), 0).getDate();
+  const todayStr = new Date().toISOString().split('T')[0];
   const dailyData = Array.from({ length: daysInMonth }, (_, i) => {
     const day = (i + 1).toString().padStart(2, '0');
     const fullDate = `${targetMonth}-${day}`;
+    const isFuture = fullDate > todayStr;
     const daySales = filteredSales.filter(s => s.date === fullDate);
+    
     return {
       day: (i + 1).toString(),
-      revenue: daySales.reduce((acc, curr) => acc + (Number(curr.price) || 0), 0),
-      devices: daySales.length
+      revenue: isFuture ? null : daySales.reduce((acc, curr) => acc + (Number(curr.price) || 0), 0),
+      devices: isFuture ? null : daySales.length
     };
   });
 
