@@ -185,7 +185,10 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
     const bData = Object.values(Brand).map(brand => {
       const bSales = monthSales.filter(s => s.brand === brand);
       const rev = bSales.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
-      const conf = BRAND_CONFIGS[brand] || { label: 'Desconocido', hex: '#ccc' };
+      let conf = BRAND_CONFIGS[brand] || { label: 'Desconocido', hex: '#ccc' };
+      if (brand === Brand.REALME) {
+         conf = { label: 'Realme', hex: '#FFC700', logoUrl: 'https://www.vectorlogo.zone/logos/realme/realme-icon.svg' };
+      }
       return {
         name: conf.label,
         value: bSales.length,
@@ -385,7 +388,6 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
         scrollables.forEach(s => {
           (s as HTMLElement).style.maxHeight = 'none';
           (s as HTMLElement).style.overflow = 'visible';
-          (s as HTMLElement).style.height = 'auto'; // Force height auto
         });
 
         const canvas = await html2canvas(element, {
@@ -804,7 +806,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
 
             {todayCount > 0 ? (
               <div className="flex flex-col sm:flex-row flex-1 gap-8 items-center relative z-10 bg-white">
-                <div className="w-full sm:w-1/3 h-[200px] shrink-0">
+                <div className="w-full sm:w-1/3 h-[200px] shrink-0 min-w-0">
                   <ResponsiveContainer width="100%" height="100%" key={`today-chart-${storeId}-${selectedMonth}`}>
                     <PieChart>
                       <Pie
@@ -882,7 +884,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
             </div>
 
             <div className="flex flex-col sm:flex-row flex-1 gap-6 items-center">
-              <div className="w-full sm:w-1/2 h-[200px] shrink-0">
+              <div className="w-full sm:w-1/2 h-[200px] shrink-0 min-w-0">
                 <ResponsiveContainer width="100%" height="100%" key={`monthly-dist-${storeId}-${selectedMonth}`}>
                   <PieChart>
                     <Pie
@@ -948,7 +950,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
             </div>
 
             <div className="flex flex-col sm:flex-row flex-1 gap-6 items-center">
-              <div className="w-full sm:w-1/2 h-[200px] shrink-0">
+              <div className="w-full sm:w-1/2 h-[200px] shrink-0 min-w-0">
                 <ResponsiveContainer width="100%" height="100%" key={`monthly-revenue-${storeId}-${selectedMonth}`}>
                   <PieChart>
                     <Pie
@@ -1008,7 +1010,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
 
 
         {/* 4. Timeline Bar Chart (Restored) */}
-        <div id="revenue-chart-card" className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 min-h-[400px] xl:col-span-2">
+        <div id="revenue-chart-card" className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 min-h-[400px] xl:col-span-2 min-w-0">
           <h3 className="text-base sm:text-lg font-bold text-slate-800 mb-6">Ingresos (Últimos 7 días)</h3>
           <ResponsiveContainer width="100%" height={300} key={`timeline-chart-${storeId}-${selectedMonth}`}>
             <ComposedChart data={timelineData}>

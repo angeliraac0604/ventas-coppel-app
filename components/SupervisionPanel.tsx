@@ -133,7 +133,7 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
     const brandSales = filteredSales.filter(s => s.brand === brand);
     const rev = brandSales.reduce((acc, curr) => acc + (Number(curr.price) || 0), 0);
     const conf = brand === Brand.REALME 
-      ? { label: 'Realme', hex: '#FFC700', logoUrl: 'https://cdn.simpleicons.org/realme/000000' } 
+      ? { label: 'Realme', hex: '#FFC700', logoUrl: 'https://www.vectorlogo.zone/logos/realme/realme-icon.svg' } 
       : (BRAND_CONFIGS[brand] || { label: 'Otro', hex: '#64748b' });
     return {
       name: conf.label,
@@ -274,7 +274,7 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
                  </div>
                  <TrendingUp className="w-5 h-5 text-indigo-600" />
               </div>
-              <div className="h-[300px] w-full">
+              <div className="h-[300px] w-full min-w-0">
                  <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={dailyData}>
                        <defs>
@@ -307,7 +307,7 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
               </div>
               
               <div className="flex flex-col xl:flex-row items-center gap-8">
-                 <div className="h-[250px] w-full xl:w-1/2">
+                 <div className="h-[250px] w-full xl:w-1/2 min-w-0">
                    <ResponsiveContainer width="100%" height="100%">
                      <PieChart>
                        <Pie
