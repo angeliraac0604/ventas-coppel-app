@@ -1277,13 +1277,11 @@ create policy "Users insert store warranties" on public.warranties for insert to
                 </>
               )}
               <NavButton view="dashboard" icon={BarChart3} label="Estadísticas" />
-              {userProfile?.role !== 'viewer' && (
-                <NavButton view="closings" icon={CalendarCheck} label="Cierre de Venta" />
-              )}
+              <NavButton view="closings" icon={CalendarCheck} label="Cierre de Venta" />
             </>
           )}
           
-          {(userProfile?.role === 'admin' || userProfile?.role === 'supervisor' || userProfile?.email === 'jeissonjessy@gmail.com' || userProfile?.id === 'b4ba233c-afa9-42fc-9bed-afa0e9be3f8c') && (
+          {(userProfile?.role === 'admin' || userProfile?.role === 'supervisor' || userProfile?.email === 'jeissonjessy@gmail.com' || userProfile?.id === 'b4ba233c-afa9-42fc-9bed-afa0e9be3f8c') && userProfile?.role !== 'viewer' && (
             <>
               <div className="text-[10px] font-bold text-slate-500 px-4 py-2 mt-4 uppercase tracking-wider">Administración</div>
               {userProfile?.role === 'admin' && (
@@ -1426,7 +1424,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
                   : stores.find(s => s.id === userProfile?.storeId)?.name}
               />
             )}
-            {currentView === 'form' && (
+            {currentView === 'form' && userProfile?.role !== 'viewer' && (
               <SalesForm 
                 onAddSale={handleAddSale} 
                 onUpdateSale={handleUpdateSale}
@@ -1453,7 +1451,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
                   : stores.find(s => s.id === userProfile?.storeId)?.name}
               />
             )}
-            {currentView === 'closings' && userProfile?.role !== 'supervisor' && userProfile?.role !== 'viewer' && (
+            {currentView === 'closings' && userProfile?.role !== 'supervisor' && (
               <DailyClosings
                 sales={filteredSales}
                 closings={filteredClosings}
@@ -1479,7 +1477,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
                 stores={stores}
               />
             )}
-            {currentView === 'attendance' && userProfile && (
+            {currentView === 'attendance' && userProfile && userProfile?.role !== 'viewer' && (
               <AttendanceManager 
                 user={userProfile} 
                 storeName={stores.find(s => s.id === userProfile?.storeId)?.name}
