@@ -1372,7 +1372,9 @@ create policy "Users insert store warranties" on public.warranties for insert to
             </div>
 
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
-              {(userProfile?.role === 'admin' || userProfile?.role === 'supervisor' || userProfile?.role === 'viewer') && (
+              {/* Store Selector - Hide if viewer/supervisor has only 1 store */}
+              {((userProfile?.role === 'admin' || userProfile?.role === 'supervisor' || userProfile?.role === 'viewer')) && 
+               !(userProfile?.role !== 'admin' && userProfile?.assignedStores && userProfile?.assignedStores.length === 1) && (
                  <div className="flex items-center gap-2 bg-white px-4 py-2.5 rounded-2xl border border-slate-200 shadow-sm transition-all hover:bg-slate-50 flex-1 sm:flex-none">
                     <Building className="w-4 h-4 text-blue-600 shrink-0" />
                     <select 
@@ -1381,7 +1383,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
                       className="bg-transparent text-[10px] md:text-xs font-black text-slate-800 outline-none cursor-pointer w-full"
                     >
                       <option value="all" disabled={selectedStoreId !== 'all'}>Seleccionar Tienda...</option>
-                      <option value="all">Ver Todas (Global)</option>
+                      {userProfile?.role !== 'viewer' && <option value="all">Ver Todas (Global)</option>}
                       {stores
                         .filter(s => {
                           if (userProfile?.role === 'admin') return true;
