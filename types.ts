@@ -85,7 +85,7 @@ export interface UserProfile {
   canManageRestDays?: boolean;
 }
 
-export type AttendanceType = 'entry' | 'lunch_start' | 'lunch_end' | 'exit' | 'excused';
+export type AttendanceType = 'entry' | 'lunch_start' | 'lunch_end' | 'exit' | 'excused' | 'rest_day' | 'vacation';
 
 export interface AttendanceRecord {
   id: string;

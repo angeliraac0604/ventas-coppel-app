@@ -337,7 +337,8 @@ const AttendanceManager: React.FC<AttendanceManagerProps> = ({ user, storeName }
     
     // Obtener el último registro global para ver si hay un turno abierto
     const lastRecord = history[0]; // history está ordenado desc por timestamp
-    const hasOpenShift = lastRecord && lastRecord.type !== 'exit' && lastRecord.type !== 'excused';
+    const closingTypes: AttendanceType[] = ['exit', 'excused', 'rest_day', 'vacation'];
+    const hasOpenShift = lastRecord && !closingTypes.includes(lastRecord.type as AttendanceType);
     
     // Calcular horas desde el último registro
     const hoursSinceLast = lastRecord 
@@ -358,8 +359,10 @@ const AttendanceManager: React.FC<AttendanceManagerProps> = ({ user, storeName }
 
     // Lógica para Entrada
     if (type === 'entry') {
-      // No permitir entrada si ya hay un turno abierto reciente
-      if (hasOpenShift && hoursSinceLast < 16) return true;
+      // No permitir entrada si ya hay un turno abierto reciente (menos de 16h) EN EL MISMO DÍA
+      // Si es un día distinto, permitimos entrada para no bloquear al usuario si olvidó marcar salida
+      const isNewDay = lastRecord && lastRecord.date !== todayStr;
+      if (hasOpenShift && !isNewDay && hoursSinceLast < 16) return true;
       return false;
     }
     
