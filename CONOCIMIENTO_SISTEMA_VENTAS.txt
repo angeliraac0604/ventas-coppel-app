@@ -1,0 +1,154 @@
+Este es el archivo maestro de conocimiento consolidado para el sistema de ventas Coppel. Este documento ha sido diseñado específicamente para ser indexado por **NotebookLM**, proporcionando una base de conocimientos técnica y lógica completa para el sistema RAG.
+
+# ESTRUCTURA DE PROYECTO
+
+### Resumen de Arquitectura
+El proyecto es una aplicación web moderna (SPA) construida con **React 18** y **TypeScript**, utilizando **Vite** como herramienta de construcción. La interfaz se basa en **Tailwind CSS** con una estética premium, modo oscuro y diseño responsive adaptado a dispositivos móviles (PWA).
+
+**Stack Tecnológico:**
+- **Frontend:** React, TypeScript, Tailwind CSS, Lucide React (iconos), Recharts (gráficas).
+- **Backend (BaaS):** Supabase (PostgreSQL, Auth, Storage).
+- **IA:** Google Generative AI (Modelos Gemini 2.0/1.5 Flash) para análisis de tickets.
+- **Automatización/Persistencia:** Google Apps Script (Sincronización con Drive y Sheets).
+- **Utilidades:** html2canvas y jspdf para generación de reportes.
+
+### Organización de Carpetas (Flat Structure)
+El proyecto sigue una estructura simplificada donde el núcleo reside en la raíz y subcarpetas específicas:
+- `/`: Contiene `App.tsx` (lógica central), `types.ts` (modelos), `constants.ts` y archivos de configuración.
+- `/components`: Componentes modulares de la interfaz (Dashboard, SalesForm, AdminPanel, etc.).
+- `/services`: Clientes de API y servicios externos (Supabase, Gemini, Google Script).
+- `/public`: Activos estáticos y manifiesto PWA.
+
+---
+
+# MODELOS DE DATOS Y TIPOS
+
+Extraído de `types.ts`. Define la estructura fundamental de la información en el sistema.
+
+```typescript
+export enum Brand {
+  SAMSUNG = 'SAMSUNG', APPLE = 'APPLE', OPPO = 'OPPO', ZTE = 'ZTE', 
+  MOTOROLA = 'MOTOROLA', REALME = 'REALME', VIVO = 'VIVO', 
+  XIAOMI = 'XIAOMI', HONOR = 'HONOR', HUAWEI = 'HUAWEI', 
+  SENWA = 'SENWA', NUBIA = 'NUBIA', OTRO = 'OTRO'
+}
+
+export interface Sale {
+  id: string;
+  invoiceNumber: string;
+  customerName: string;
+  price: number;
+  brand: Brand;
+  date: string;
+  ticketImage?: string; // URL o Base64
+  createdBy?: string;
+  createdAt?: string;
+  createdByEmail?: string;
+  createdByName?: string;
+  storeId?: string;
+  transactionFolio?: string; // Formato: VNT-YYYYMMDD-XXXX
+}
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  role: 'admin' | 'supervisor' | 'seller' | 'viewer';
+  fullName?: string;
+  storeId?: string;
+  assignedStores?: string[];
+  restDays?: number[];
+  vacationDates?: string[];
+}
+
+export interface DailyClose {
+  id: string;
+  date: string;
+  totalSales: number;
+  totalRevenue: number;
+  closedAt: string;
+  topBrand: Brand | 'N/A';
+  storeId?: string;
+  attSales?: number; // Ventas de la competencia (AT&T)
+}
+
+export interface AttendanceRecord {
+  id: string;
+  userId: string;
+  storeId?: string;
+  type: 'entry' | 'lunch_start' | 'lunch_end' | 'exit' | 'excused' | 'rest_day';
+  timestamp: string;
+  date: string;
+  imageUrl?: string;
+}
+```
+
+---
+
+# LÓGICA DE NEGOCIO (ESTADO Y HANDLERS)
+
+Aunque el proyecto no utiliza archivos `.ts` de hooks separados (como `usePOS.ts`), toda la lógica de negocio está centralizada en `App.tsx` mediante hooks de React (`useState`, `useEffect`) y manejadores de estado globales.
+
+### 1. Gestión de Ventas (CRUD)
+```typescript
+const handleAddSale = async (newSaleData: Omit<Sale, 'id'>) => {
+  const dbPayload = {
+    ...newSaleData,
+    created_by: session.user.id,
+    store_id: finalStoreId,
+    transaction_folio: `VNT-${date}-${randomPart}`
+  };
+  const { data } = await supabase.from('sales').insert([dbPayload]).select();
+  // Actualización reactiva del estado local
+};
+```
+
+### 2. Lógica de Cierre Automático (Persistence Hook)
+El sistema incluye un efecto que detecta automáticamente si hay días pasados sin corte de caja y genera el cierre de forma autónoma basándose en las ventas registradas en Supabase.
+```typescript
+useEffect(() => {
+  const runAutomaticClosings = async () => {
+    const missingDates = uniqueSaleDates.filter(date => {
+      const hasClosing = closings.some(c => c.date === date && c.storeId === storeId);
+      return date < todayStr;
+    });
+    for (const date of missingDates) {
+      // Cálculo de métricas (revenue, topBrand) y upsert en Supabase
+    }
+  };
+}, [sales, closings]);
+```
+
+### 3. Sistema de Roles y Permisos
+La lógica de filtrado asegura que la IA y el usuario solo accedan a datos pertinentes:
+- **Admin:** Acceso total y filtrado global por sucursal.
+- **Supervisor:** Acceso a sucursales asignadas.
+- **Vendedor:** Acceso exclusivo a los datos de su propia tienda.
+
+---
+
+# INTEGRACIONES EXTERNAS
+
+### 1. Supabase (Backend Principal)
+- **Database:** Tablas para `sales`, `daily_closings`, `profiles`, `attendance`, `warranties` y `stores`.
+- **Auth:** Manejo de sesiones y perfiles con triggers en PostgreSQL para creación de perfiles automáticos.
+- **Storage:** Bucket `receipts` para almacenamiento inmediato de imágenes de tickets y evidencias de asistencia.
+
+### 2. Gemini AI (Análisis de Tickets)
+Servicio ubicado en `geminiService.ts`. Utiliza modelos Flash para:
+- Extraer `invoiceNumber`, `date`, `customerName` e `items` (dispositivos) desde fotos.
+- Filtrar automáticamente elementos no deseados (seguros, chips, fundas).
+- Normalizar nombres de marcas y fechas.
+
+### 3. Google Apps Script (Drive & Sheets)
+Sincronización híbrida gestionada en `googleAppsScriptService.ts` y `storageService.ts`:
+- **Drive Mirroring:** Cuando se sube una imagen a Supabase, se envía una copia en segundo plano a Google Drive para respaldo administrativo.
+- **Market Participation:** Sincroniza cierres diarios (ventas Telcel vs AT&T) con hojas de cálculo para reportes corporativos.
+- **Email Invites:** Envío de correos de invitación a nuevos usuarios con enlaces de registro parametrizados.
+
+### 4. Flujo de Imagen Inteligente (`smartImageUpload`)
+1. Sube a **Supabase Storage** para disponibilidad inmediata en la app.
+2. Dispara un proceso `fire-and-forget` hacia **Google Drive** vía Apps Script.
+3. Organiza jerárquicamente en Drive: `Tienda / Año / Mes / Día / Archivo.jpg`.
+
+---
+*Este documento consolida la inteligencia colectiva del sistema de Ventas Coppel para su procesamiento en modelos RAG.*

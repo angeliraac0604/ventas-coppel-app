@@ -212,6 +212,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
         return;
       }
 
+      // LIMPIEZA AUTOMÁTICA: Si el usuario no tiene perfil pero existe en Auth (huérfano),
+      // lo eliminamos para que su registro sea exitoso.
+      await supabase.rpc('delete_user_by_email', { target_email: emailLower });
+
       const { error } = await supabase.from('pending_invitations').insert([
         { 
           email: emailLower, 
@@ -285,7 +289,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
       fetchAllData();
       if (onRefresh) onRefresh();
     } catch (err: any) {
-      alert('Error: ' + err.message);
+      if (err.status === 422 || err.message?.includes('already registered')) {
+        alert('⚠️ Este correo ya está registrado en el sistema. El usuario debe iniciar sesión directamente.');
+      } else {
+        alert('Error: ' + err.message);
+      }
     } finally {
       setIsDirectLoading(false);
     }
@@ -315,7 +323,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
   const handleDeleteUser = async (userId: string) => {
     if (!confirm('¿Estás seguro de eliminar este usuario?')) return;
     try {
-      const { error } = await supabase.from('profiles').delete().eq('id', userId);
+      const { error } = await supabase.rpc('delete_user_entirely', { target_user_id: userId });
       if (error) throw error;
       fetchAllData();
       if (onRefresh) onRefresh();
@@ -359,11 +367,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
   };
 
   const handleCancelInvite = async (email: string) => {
+    if (!confirm(`¿Estás seguro de cancelar la invitación y eliminar por completo el acceso de ${email}?`)) return;
     try {
-      await supabase.from('pending_invitations').delete().eq('email', email);
+      const { error } = await supabase.rpc('delete_user_by_email', { target_email: email });
+      if (error) throw error;
       fetchAllData();
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      alert('Error: ' + err.message);
     }
   };
 

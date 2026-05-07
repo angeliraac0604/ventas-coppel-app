@@ -124,7 +124,14 @@ const AuthForm: React.FC = () => {
       setFirstName('');
       setLastName('');
     } catch (err: any) {
-      setError(err.message || "Error al registrar");
+      console.error("Error en registro:", err);
+      // Caso especial: El usuario ya existe en Auth pero no tiene perfil o está siendo re-invitado
+      if (err.message?.includes('already registered') || err.status === 422) {
+        setError("Este correo ya cuenta con una cuenta activa. Por favor, inicia sesión con tu contraseña. Tu nueva invitación se activará automáticamente al entrar.");
+        setMode('login');
+      } else {
+        setError(err.message || "Error al registrar");
+      }
     } finally {
       setLoading(false);
     }
