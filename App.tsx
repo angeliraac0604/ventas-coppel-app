@@ -24,7 +24,13 @@ const App: React.FC = () => {
   const [authLoading, setAuthLoading] = useState(true);
 
   // App State
-  const [currentView, setCurrentView] = useState<'form' | 'list' | 'dashboard' | 'closings' | 'warranties' | 'attendance' | 'attendance-report' | 'admin' | 'supervision'>('list');
+  const [currentView, setCurrentView] = useState<'form' | 'list' | 'dashboard' | 'closings' | 'warranties' | 'attendance' | 'attendance-report' | 'admin' | 'supervision'>(() => {
+    try {
+      return (localStorage.getItem('app_current_view') as any) || 'list';
+    } catch {
+      return 'list';
+    }
+  });
   const [stores, setStores] = useState<Store[]>([]);
   const [selectedStoreId, setSelectedStoreId] = useState<string>(() => {
     try {
@@ -393,11 +399,14 @@ create policy "Users insert store warranties" on public.warranties for insert to
           vacationDates: finalProfile.vacation_dates || []
         });
         
-        // Redirección inicial según el rol
-        if (finalProfile.role === 'supervisor') {
-          setCurrentView('supervision');
-        } else if (finalProfile.role === 'viewer') {
-          setCurrentView('dashboard');
+        // Redirección inicial según el rol (Solo si no hay una vista guardada previamente)
+        const savedView = localStorage.getItem('app_current_view');
+        if (!savedView) {
+          if (finalProfile.role === 'supervisor') {
+            setCurrentView('supervision');
+          } else if (finalProfile.role === 'viewer') {
+            setCurrentView('dashboard');
+          }
         }
       } else {
         // Si después de todo no hay perfil, mostramos error
@@ -410,9 +419,9 @@ create policy "Users insert store warranties" on public.warranties for insert to
   };
 
   const handleLogout = async () => {
-    // Limpiamos el rastreador de fecha al salir manualmente
     try {
       localStorage.removeItem('sales_app_session_date');
+      localStorage.removeItem('app_current_view');
     } catch (e) {}
     await supabase.auth.signOut();
   };
