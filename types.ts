@@ -83,9 +83,10 @@ export interface UserProfile {
   vacationDates?: string[];
   canJustifyAbsences?: boolean;
   canManageRestDays?: boolean;
+  canForceAttendance?: boolean;
 }
 
-export type AttendanceType = 'entry' | 'lunch_start' | 'lunch_end' | 'exit' | 'excused' | 'rest_day' | 'vacation';
+export type AttendanceType = 'entry' | 'lunch_start' | 'lunch_end' | 'exit' | 'excused' | 'rest_day' | 'vacation' | 'attended';
 
 export interface AttendanceRecord {
   id: string;

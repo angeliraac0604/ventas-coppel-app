@@ -71,8 +71,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
   const [targetAssignedStores, setTargetAssignedStores] = useState<string[]>([]);
   const [targetCanJustifyAbsences, setTargetCanJustifyAbsences] = useState(false);
   const [targetCanManageRestDays, setTargetCanManageRestDays] = useState(false);
+  const [targetCanForceAttendance, setTargetCanForceAttendance] = useState(false);
   const [directCanJustifyAbsences, setDirectCanJustifyAbsences] = useState(false);
   const [directCanManageRestDays, setDirectCanManageRestDays] = useState(false);
+  const [directCanForceAttendance, setDirectCanForceAttendance] = useState(false);
   const [directAssignedStores, setDirectAssignedStores] = useState<string[]>([]);
   
   // Store Edit State
@@ -129,7 +131,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
           fullName: p.full_name,
           storeId: p.store_id,
           assignedStores: p.assigned_stores || [],
-          canJustifyAbsences: p.can_justify_absences || false
+          canJustifyAbsences: p.can_justify_absences || false,
+          canManageRestDays: p.can_manage_rest_days || false,
+          canForceAttendance: p.can_force_attendance || false
         })));
       }
 
@@ -248,6 +252,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
             store_id: directStoreId || null,
             can_justify_absences: directCanJustifyAbsences,
             can_manage_rest_days: directCanManageRestDays,
+            can_force_attendance: directCanForceAttendance,
             assigned_stores: (directRole === 'supervisor' || directRole === 'viewer') ? directAssignedStores : null
           }
         }
@@ -264,6 +269,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
           store_id: directStoreId || null,
           can_justify_absences: directCanJustifyAbsences,
           can_manage_rest_days: directCanManageRestDays,
+          can_force_attendance: directCanForceAttendance,
           assigned_stores: (directRole === 'supervisor' || directRole === 'viewer') ? directAssignedStores : null
         })
         .eq('id', authData.user.id);
@@ -292,8 +298,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
         role: targetRole,
         store_id: targetStoreId || null,
         assigned_stores: (targetRole === 'supervisor' || targetRole === 'viewer') ? targetAssignedStores : null,
-        can_justify_absences: targetRole === 'supervisor' ? targetCanJustifyAbsences : false,
-        can_manage_rest_days: targetRole === 'supervisor' ? targetCanManageRestDays : false
+        can_justify_absences: targetRole === 'supervisor' ? targetCanJustifyAbsences : (targetRole === 'admin' ? true : false),
+        can_manage_rest_days: targetRole === 'supervisor' ? targetCanManageRestDays : (targetRole === 'admin' ? true : false),
+        can_force_attendance: targetRole === 'supervisor' ? targetCanForceAttendance : (targetRole === 'admin' ? true : false)
       }).eq('id', userId);
 
       if (error) throw error;
@@ -565,19 +572,32 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
                         </div>
                       )}
 
-                      {targetRole === 'supervisor' && (
-                        <div className="space-y-2">
                           <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100">
+                            <label className="flex items-center gap-3 cursor-pointer group">
+                              <input 
+                                type="checkbox" 
+                                checked={targetCanForceAttendance}
+                                onChange={(e) => setTargetCanForceAttendance(e.target.checked)}
+                                className="w-4 h-4 rounded-lg border-emerald-300 text-emerald-600 focus:ring-emerald-500"
+                              />
+                              <div className="flex flex-col">
+                                <span className="text-[10px] font-black text-emerald-700 uppercase">Marcar Asistencia Manual</span>
+                                <span className="text-[8px] text-emerald-600/70 font-bold uppercase">Permite marcar días como "Asistió" en el calendario</span>
+                              </div>
+                            </label>
+                          </div>
+
+                          <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800">
                             <label className="flex items-center gap-3 cursor-pointer group">
                               <input 
                                 type="checkbox" 
                                 checked={targetCanJustifyAbsences}
                                 onChange={(e) => setTargetCanJustifyAbsences(e.target.checked)}
-                                className="w-4 h-4 rounded-lg border-emerald-300 text-emerald-600 focus:ring-emerald-500"
+                                className="w-4 h-4 rounded-lg border-slate-700 text-white focus:ring-slate-500"
                               />
                               <div className="flex flex-col">
-                                <span className="text-[10px] font-black text-emerald-700 uppercase">Autorizar Justificar Faltas</span>
-                                <span className="text-[8px] text-emerald-600/70 font-bold uppercase">Permite marcar faltas como permiso</span>
+                                <span className="text-[10px] font-black text-white uppercase">Autorizar Justificar Faltas</span>
+                                <span className="text-[8px] text-slate-400 font-bold uppercase">Permite marcar faltas como permiso</span>
                               </div>
                             </label>
                           </div>
@@ -596,8 +616,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
                               </div>
                             </label>
                           </div>
-                        </div>
-                      )}
                       </div>
                     ) : (
                     <div className="space-y-2">
@@ -616,20 +634,26 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
                       )}
                       {profile.role === 'supervisor' && (
                          <div className="space-y-1 mt-1">
-                           {profile.canJustifyAbsences && (
-                             <div className="flex items-center gap-1.5 text-emerald-600">
-                               <CheckCircle className="w-3 h-3" />
-                               <span className="text-[8px] font-black uppercase">Justificar Faltas</span>
+                           {profile.canForceAttendance && (
+                               <div className="flex items-center gap-1.5 text-emerald-600">
+                                 <CheckCircle className="w-3 h-3" />
+                                 <span className="text-[8px] font-black uppercase">Asistencia Manual</span>
+                               </div>
+                             )}
+                            {profile.canJustifyAbsences && (
+                               <div className="flex items-center gap-1.5 text-slate-800">
+                                 <CheckCircle className="w-3 h-3" />
+                                 <span className="text-[8px] font-black uppercase">Justificar Faltas</span>
+                               </div>
+                             )}
+                            {profile.canManageRestDays && (
+                               <div className="flex items-center gap-1.5 text-blue-600">
+                                 <CheckCircle className="w-3 h-3" />
+                                 <span className="text-[8px] font-black uppercase">Gestionar Descansos</span>
+                               </div>
+                             )}
                              </div>
                            )}
-                           {profile.canManageRestDays && (
-                             <div className="flex items-center gap-1.5 text-blue-600">
-                               <CheckCircle className="w-3 h-3" />
-                               <span className="text-[8px] font-black uppercase">Gestionar Descansos</span>
-                             </div>
-                           )}
-                         </div>
-                      )}
                     </div>
                   )}
                 </div>
@@ -651,6 +675,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
                         setTargetAssignedStores(profile.assignedStores || []);
                         setTargetCanJustifyAbsences(profile.canJustifyAbsences || false);
                         setTargetCanManageRestDays(profile.canManageRestDays || false);
+                        setTargetCanForceAttendance(profile.canForceAttendance || false);
                       }} className="p-3 hover:bg-indigo-50 text-slate-300 hover:text-indigo-600 rounded-xl transition-all"><Edit2 className="w-5 h-5" /></button>
                       <button onClick={() => handleDeleteUser(profile.id)} className="p-3 hover:bg-red-50 text-slate-300 hover:text-red-500 rounded-xl transition-all"><Trash2 className="w-5 h-5" /></button>
                     </div>
@@ -787,18 +812,48 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
                       )}
 
                       {directRole === 'supervisor' && (
-                        <div className="bg-emerald-50 border border-emerald-100 p-5 rounded-[1.2rem] flex items-center gap-4">
-                          <input 
-                            type="checkbox" 
-                            id="directJustify"
-                            checked={directCanJustifyAbsences}
-                            onChange={(e) => setDirectCanJustifyAbsences(e.target.checked)}
-                            className="w-5 h-5 rounded-lg border-emerald-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
-                          />
-                          <label htmlFor="directJustify" className="flex-1 cursor-pointer">
-                             <p className="text-[10px] font-black text-emerald-700 uppercase">Autorizar Justificar Faltas</p>
-                             <p className="text-[9px] text-emerald-600/70 font-bold uppercase leading-none mt-1">Este supervisor podrá autorizar permisos en las asistencias.</p>
-                          </label>
+                        <div className="space-y-3">
+                          <div className="bg-emerald-50 border border-emerald-100 p-5 rounded-[1.2rem] flex items-center gap-4">
+                            <input 
+                              type="checkbox" 
+                              id="directForce"
+                              checked={directCanForceAttendance}
+                              onChange={(e) => setDirectCanForceAttendance(e.target.checked)}
+                              className="w-5 h-5 rounded-lg border-emerald-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                            />
+                            <label htmlFor="directForce" className="flex-1 cursor-pointer">
+                               <p className="text-[10px] font-black text-emerald-700 uppercase">Autorizar Asistencia Manual</p>
+                               <p className="text-[9px] text-emerald-600/70 font-bold uppercase leading-none mt-1">Este supervisor podrá marcar días como "Asistió".</p>
+                            </label>
+                          </div>
+
+                          <div className="bg-slate-900 border border-slate-800 p-5 rounded-[1.2rem] flex items-center gap-4">
+                            <input 
+                              type="checkbox" 
+                              id="directJustify"
+                              checked={directCanJustifyAbsences}
+                              onChange={(e) => setDirectCanJustifyAbsences(e.target.checked)}
+                              className="w-5 h-5 rounded-lg border-slate-700 text-white focus:ring-slate-500 cursor-pointer"
+                            />
+                            <label htmlFor="directJustify" className="flex-1 cursor-pointer">
+                               <p className="text-[10px] font-black text-white uppercase">Autorizar Justificar Faltas</p>
+                               <p className="text-[9px] text-slate-400 font-bold uppercase leading-none mt-1">Este supervisor podrá autorizar permisos en las asistencias.</p>
+                            </label>
+                          </div>
+
+                          <div className="bg-blue-50 border border-blue-100 p-5 rounded-[1.2rem] flex items-center gap-4">
+                            <input 
+                              type="checkbox" 
+                              id="directRest"
+                              checked={directCanManageRestDays}
+                              onChange={(e) => setDirectCanManageRestDays(e.target.checked)}
+                              className="w-5 h-5 rounded-lg border-blue-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                            />
+                            <label htmlFor="directRest" className="flex-1 cursor-pointer">
+                               <p className="text-[10px] font-black text-blue-700 uppercase">Autorizar Gestión de Descansos</p>
+                               <p className="text-[9px] text-blue-600/70 font-bold uppercase leading-none mt-1">Este supervisor podrá asignar días de descanso.</p>
+                            </label>
+                          </div>
                         </div>
                       )}
 

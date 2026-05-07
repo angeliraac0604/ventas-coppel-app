@@ -4,6 +4,7 @@ import { Mail, Lock, Loader2, ArrowRight, ShieldCheck } from 'lucide-react';
 
 const AuthForm: React.FC = () => {
   const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [email, setEmail] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [password, setPassword] = useState('');

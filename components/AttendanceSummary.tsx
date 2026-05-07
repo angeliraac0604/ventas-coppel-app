@@ -9,7 +9,8 @@ import {
   RotateCcw, 
   User, 
   ShieldCheck,
-  MapPin
+  MapPin,
+  CheckCircle
 } from 'lucide-react';
 
 interface AttendanceSummaryProps {
@@ -57,7 +58,7 @@ const AttendanceSummary: React.FC<AttendanceSummaryProps> = ({ stores, profiles,
 
   const handleMarkExcusedDay = async (userId: string, storeId: string, dateStr: string) => {
     if (userProfile?.role === 'supervisor' && !userProfile?.canJustifyAbsences) {
-      alert("No tienes permiso para asignar permisos.");
+      alert("No tienes permiso para justificar faltas.");
       return;
     }
     setIsUpdating(true);
@@ -75,13 +76,40 @@ const AttendanceSummary: React.FC<AttendanceSummaryProps> = ({ stores, profiles,
       if (onRefresh) onRefresh();
       setSelectedDay(null);
     } catch (err: any) {
-      alert('Error al asignar permiso: ' + err.message);
+      alert('Error al justificar: ' + err.message);
     } finally {
       setIsUpdating(false);
     }
   };
 
-  const handleRemoveRestDay = async (recordId: string) => {
+  const handleMarkAttended = async (userId: string, storeId: string, dateStr: string) => {
+    const canForce = userProfile?.role === 'admin' || userProfile?.canForceAttendance;
+    if (!canForce) {
+      alert("No tienes permiso para marcar asistencia manual.");
+      return;
+    }
+    setIsUpdating(true);
+    try {
+      const { error } = await supabase.from('attendance').insert({
+        user_id: userId,
+        store_id: storeId,
+        type: 'attended',
+        date: dateStr,
+        timestamp: new Date().toISOString(),
+        notes: 'Asistencia manual marcada por ' + (userProfile?.role === 'admin' ? 'Administrador' : 'Supervisor')
+      });
+
+      if (error) throw error;
+      if (onRefresh) onRefresh();
+      setSelectedDay(null);
+    } catch (err: any) {
+      alert('Error al marcar asistencia: ' + err.message);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleRemoveRecord = async (recordId: string) => {
     setIsUpdating(true);
     try {
       const { error } = await supabase.from('attendance').delete().eq('id', recordId);
@@ -124,13 +152,16 @@ const AttendanceSummary: React.FC<AttendanceSummaryProps> = ({ stores, profiles,
         const dayOfWeek = new Date(year, m - 1, day).getDay();
         const dayRecords = records.filter(r => r.userId === profile.id && r.date === dateStr);
         
-        const hasEntry = dayRecords.some(r => r.type === 'entry');
+        const hasEntry = dayRecords.some(r => r.type === 'entry' || r.type === 'attended');
+        const hasExcused = dayRecords.some(r => r.type === 'excused');
         const hasRestOverride = dayRecords.some(r => r.type === 'rest_day');
         const isScheduledRest = profile.restDays?.includes(dayOfWeek);
         const isVacation = profile.vacationDates?.includes(dateStr);
 
         if (hasEntry) {
           worked++;
+        } else if (hasExcused) {
+          excused++;
         } else if (hasRestOverride) {
           restDays++;
         } else if (isVacation && day <= maxEvalDay) {
@@ -211,12 +242,14 @@ const AttendanceSummary: React.FC<AttendanceSummaryProps> = ({ stores, profiles,
           const dateStr = `${year}-${String(m + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
           const dayRecords = records.filter(r => r.userId === viewingAbsences.profile.id && r.date === dateStr);
           const hasEntry = dayRecords.some(r => r.type === 'entry');
+          const hasAttended = dayRecords.some(r => r.type === 'attended');
+          const manualEntry = dayRecords.find(r => r.type === 'attended');
           const restDayOverride = dayRecords.find(r => r.type === 'rest_day');
           const isScheduledRest = viewingAbsences.profile.restDays?.includes(new Date(year, m, day).getDay());
           const isToday = day === today.getDate() && year === today.getFullYear() && m === today.getMonth();
           const isFuture = new Date(year, m, day) > today;
 
-          if (hasEntry) return { color: 'bg-emerald-500 text-white', label: 'Asistencia', type: 'attendance' };
+          if (hasEntry || hasAttended) return { color: 'bg-emerald-500 text-white', label: 'Asistencia', type: hasAttended ? 'attended_manual' : 'attendance', recordId: manualEntry?.id };
           if (restDayOverride) return { color: 'bg-slate-700 text-white font-bold', label: 'C. Descanso', type: 'rest_day_manual', recordId: restDayOverride.id };
           if (dayRecords.some(r => r.type === 'excused')) return { color: 'bg-blue-400 text-white', label: 'Permiso', type: 'excused' };
           if (viewingAbsences.profile.vacationDates?.includes(dateStr)) return { color: 'bg-amber-400 text-white', label: 'Vacaciones', type: 'vacation' };
@@ -239,12 +272,10 @@ const AttendanceSummary: React.FC<AttendanceSummaryProps> = ({ stores, profiles,
           if (onMonthChange) onMonthChange(newMonthStr);
         };
 
-        // Calendar Fill Logic
         const firstDayOfMonth = new Date(year, m, 1).getDay();
         const prevMonthLastDay = new Date(year, m, 0).getDate();
         const prevMonthDays = Array.from({ length: firstDayOfMonth }, (_, i) => prevMonthLastDay - firstDayOfMonth + i + 1);
-        
-        const totalDaysShown = 42; // 6 rows * 7 days
+        const totalDaysShown = 42; 
         const nextMonthDaysCount = totalDaysShown - (firstDayOfMonth + daysInMonth);
         const nextMonthDays = Array.from({ length: nextMonthDaysCount }, (_, i) => i + 1);
 
@@ -263,8 +294,6 @@ const AttendanceSummary: React.FC<AttendanceSummaryProps> = ({ stores, profiles,
                    <div className="bg-white border border-[#B38C52]/20 rounded-3xl overflow-hidden shadow-sm">
                       <div className="bg-[#6B2032] px-5 py-3 flex justify-between items-center">
                         <button onClick={() => handleMonthNav('prev')} className="p-1 hover:bg-white/10 rounded-lg text-white transition-colors">
-                           <X className="w-4 h-4 rotate-90" style={{ transform: 'rotate(180deg)' }} /> 
-                           {/* Using X as arrow placeholder or similar, but better use real icons */}
                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7" /></svg>
                         </button>
                         <div className="text-center">
@@ -279,14 +308,9 @@ const AttendanceSummary: React.FC<AttendanceSummaryProps> = ({ stores, profiles,
                         {['D', 'L', 'M', 'M', 'J', 'V', 'S'].map((d, i) => (<div key={i} className="py-2 text-center text-white font-black text-[10px]">{d}</div>))}
                       </div>
                       <div className="grid grid-cols-7 p-3 gap-1.5">
-                        {/* Prev Month Days */}
                         {prevMonthDays.map((day) => (
-                          <div key={`prev-${day}`} className="aspect-square flex items-center justify-center rounded-xl text-[10px] font-bold text-slate-200">
-                            {day}
-                          </div>
+                          <div key={`prev-${day}`} className="aspect-square flex items-center justify-center rounded-xl text-[10px] font-bold text-slate-200">{day}</div>
                         ))}
-
-                        {/* Current Month Days */}
                         {Array.from({ length: daysInMonth }).map((_, i) => {
                           const day = i + 1;
                           const dateStr = `${year}-${String(m + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -298,39 +322,9 @@ const AttendanceSummary: React.FC<AttendanceSummaryProps> = ({ stores, profiles,
                             </button>
                           );
                         })}
-
-                        {/* Next Month Days */}
                         {nextMonthDays.map((day) => (
-                          <div key={`next-${day}`} className="aspect-square flex items-center justify-center rounded-xl text-[10px] font-bold text-slate-200">
-                            {day}
-                          </div>
+                          <div key={`next-${day}`} className="aspect-square flex items-center justify-center rounded-xl text-[10px] font-bold text-slate-200">{day}</div>
                         ))}
-                      </div>
-                   </div>
-                   <div className="mt-6 grid grid-cols-2 gap-y-3 gap-x-4 px-1">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-100"></div>
-                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter">Asistencia</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-sm shadow-rose-100"></div>
-                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter">Falta</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="w-2.5 h-2.5 rounded-full bg-blue-400 shadow-sm shadow-blue-100"></div>
-                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter">Permiso</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="w-2.5 h-2.5 rounded-full bg-amber-400 shadow-sm shadow-amber-100"></div>
-                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter">Vacaciones</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="w-2.5 h-2.5 rounded-full bg-slate-200 shadow-sm"></div>
-                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter">Descanso</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="w-2.5 h-2.5 rounded-full bg-slate-700 shadow-sm shadow-slate-200"></div>
-                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter">C. Descanso</span>
                       </div>
                    </div>
                 </div>
@@ -385,28 +379,42 @@ const AttendanceSummary: React.FC<AttendanceSummaryProps> = ({ stores, profiles,
                          {selectedDay.status.type === 'absence' && (
                            <div className="pt-4 px-2 space-y-3">
                              <button 
-                               onClick={() => handleMarkRestDay(viewingAbsences.profile.id, viewingAbsences.profile.storeId, selectedDay.date)}
-                               disabled={isUpdating || (userProfile?.role === 'supervisor' && !userProfile?.canManageRestDays)}
-                               className="w-full flex items-center justify-center gap-2 py-3 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all shadow-xl shadow-slate-200 disabled:opacity-50"
-                             >
-                               {isUpdating ? <RotateCcw className="w-4 h-4 animate-spin" /> : <Clock className="w-4 h-4" />}
-                               Autorizar Descanso
-                             </button>
+                                onClick={() => handleMarkAttended(viewingAbsences.profile.id, viewingAbsences.profile.storeId, selectedDay.date)}
+                                disabled={isUpdating || (userProfile?.role === 'supervisor' && !userProfile?.canForceAttendance && userProfile?.role !== 'admin')}
+                                className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 transition-all shadow-xl shadow-emerald-100 disabled:opacity-50"
+                              >
+                                {isUpdating ? <RotateCcw className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                                Marcar como Asistió
+                              </button>
 
-                             <button 
-                               onClick={() => handleMarkExcusedDay(viewingAbsences.profile.id, viewingAbsences.profile.storeId, selectedDay.date)}
-                               disabled={isUpdating || (userProfile?.role === 'supervisor' && !userProfile?.canJustifyAbsences)}
-                               className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 disabled:opacity-50"
-                             >
-                               {isUpdating ? <RotateCcw className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
-                               Asignar Permiso
-                             </button>
+                              <button 
+                                onClick={() => handleMarkRestDay(viewingAbsences.profile.id, viewingAbsences.profile.storeId, selectedDay.date)}
+                                disabled={isUpdating || (userProfile?.role === 'supervisor' && !userProfile?.canManageRestDays && userProfile?.role !== 'admin')}
+                                className="w-full flex items-center justify-center gap-2 py-3 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all shadow-xl shadow-slate-200 disabled:opacity-50"
+                              >
+                                {isUpdating ? <RotateCcw className="w-4 h-4 animate-spin" /> : <Clock className="w-4 h-4" />}
+                                Autorizar Descanso
+                              </button>
+
+                              <button 
+                                onClick={() => handleMarkExcusedDay(viewingAbsences.profile.id, viewingAbsences.profile.storeId, selectedDay.date)}
+                                disabled={isUpdating || (userProfile?.role === 'supervisor' && !userProfile?.canJustifyAbsences && userProfile?.role !== 'admin')}
+                                className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 disabled:opacity-50"
+                              >
+                                {isUpdating ? <RotateCcw className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                                Asignar Permiso
+                              </button>
                            </div>
                          )}
                       </div>
                     )}
+                    {selectedDay.status.type === 'attended_manual' && (
+                      <button onClick={() => handleRemoveRecord(selectedDay.status.recordId)} className="w-full py-3 bg-red-50 text-red-600 rounded-2xl text-[10px] font-black uppercase mt-4">
+                        Revertir Asistencia Manual
+                      </button>
+                    )}
                     {selectedDay.status.type === 'rest_day_manual' && (
-                      <button onClick={() => handleRemoveRestDay(selectedDay.status.recordId)} className="w-full py-3 bg-red-50 text-red-600 rounded-2xl text-[10px] font-black uppercase mt-4">
+                      <button onClick={() => handleRemoveRecord(selectedDay.status.recordId)} className="w-full py-3 bg-red-50 text-red-600 rounded-2xl text-[10px] font-black uppercase mt-4">
                         Revertir Cambio de Descanso
                       </button>
                     )}
