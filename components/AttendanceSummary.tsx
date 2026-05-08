@@ -31,7 +31,7 @@ const AttendanceSummary: React.FC<AttendanceSummaryProps> = ({ stores, profiles,
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
 
   const handleMarkRestDay = async (userId: string, storeId: string, dateStr: string) => {
-    if (userProfile?.role === 'supervisor' && !userProfile?.canManageRestDays) {
+    if (userProfile?.role !== 'admin' && !userProfile?.canManageRestDays) {
       alert("No tienes permiso para autorizar descansos.");
       return;
     }
@@ -57,7 +57,7 @@ const AttendanceSummary: React.FC<AttendanceSummaryProps> = ({ stores, profiles,
   };
 
   const handleMarkExcusedDay = async (userId: string, storeId: string, dateStr: string) => {
-    if (userProfile?.role === 'supervisor' && !userProfile?.canJustifyAbsences) {
+    if (userProfile?.role !== 'admin' && !userProfile?.canJustifyAbsences) {
       alert("No tienes permiso para justificar faltas.");
       return;
     }
@@ -380,7 +380,7 @@ const AttendanceSummary: React.FC<AttendanceSummaryProps> = ({ stores, profiles,
                            <div className="pt-4 px-2 space-y-3">
                              <button 
                                 onClick={() => handleMarkAttended(viewingAbsences.profile.id, viewingAbsences.profile.storeId, selectedDay.date)}
-                                disabled={isUpdating || (userProfile?.role === 'supervisor' && !userProfile?.canForceAttendance && userProfile?.role !== 'admin')}
+                                disabled={isUpdating || (userProfile?.role !== 'admin' && !userProfile?.canForceAttendance)}
                                 className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 transition-all shadow-xl shadow-emerald-100 disabled:opacity-50"
                               >
                                 {isUpdating ? <RotateCcw className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
@@ -389,7 +389,7 @@ const AttendanceSummary: React.FC<AttendanceSummaryProps> = ({ stores, profiles,
 
                               <button 
                                 onClick={() => handleMarkRestDay(viewingAbsences.profile.id, viewingAbsences.profile.storeId, selectedDay.date)}
-                                disabled={isUpdating || (userProfile?.role === 'supervisor' && !userProfile?.canManageRestDays && userProfile?.role !== 'admin')}
+                                disabled={isUpdating || (userProfile?.role !== 'admin' && !userProfile?.canManageRestDays)}
                                 className="w-full flex items-center justify-center gap-2 py-3 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all shadow-xl shadow-slate-200 disabled:opacity-50"
                               >
                                 {isUpdating ? <RotateCcw className="w-4 h-4 animate-spin" /> : <Clock className="w-4 h-4" />}
@@ -398,7 +398,7 @@ const AttendanceSummary: React.FC<AttendanceSummaryProps> = ({ stores, profiles,
 
                               <button 
                                 onClick={() => handleMarkExcusedDay(viewingAbsences.profile.id, viewingAbsences.profile.storeId, selectedDay.date)}
-                                disabled={isUpdating || (userProfile?.role === 'supervisor' && !userProfile?.canJustifyAbsences && userProfile?.role !== 'admin')}
+                                disabled={isUpdating || (userProfile?.role !== 'admin' && !userProfile?.canJustifyAbsences)}
                                 className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 disabled:opacity-50"
                               >
                                 {isUpdating ? <RotateCcw className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}

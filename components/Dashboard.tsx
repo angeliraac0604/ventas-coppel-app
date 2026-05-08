@@ -144,6 +144,8 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
     brandDataToday,
     timelineData,
     todayCount,
+    todayRevenue,
+    todayNet,
     todayStr
   } = React.useMemo(() => {
     // 🟠 REAL-TIME MERGE: Combine state from DB fetch with the realtime 'sales' prop
@@ -210,6 +212,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
         logoUrl: (conf as any).logoUrl
       };
     }).filter(item => item.value > 0);
+    const todayRev = todaySales.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
 
     // Timeline 7 days
     const tLineData = Array.from({ length: 7 }, (_, i) => {
@@ -245,6 +248,8 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
       brandDataToday: bDataToday,
       timelineData: tLineData,
       todayCount: todaySales.length,
+      todayRevenue: todayRev,
+      todayNet: todayRev / 1.16,
       todayStr: tStr
     };
   }, [monthlySales, monthlyGoal, devicesGoal, sales, selectedMonth, storeId]);
@@ -733,6 +738,21 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
           </p>
         </div>
 
+        {/* TODAY REVENUE (NEW) */}
+        <div className="bg-white rounded-2xl p-4 md:p-6 shadow-sm border border-slate-100 hover:shadow-md transition-shadow relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-16 h-16 bg-blue-500 rounded-full blur-[40px] opacity-10"></div>
+          <div className="flex items-center gap-2 md:gap-3 mb-2 md:mb-3 relative z-10">
+            <div className="p-1.5 md:p-2 bg-blue-50 rounded-lg">
+              <DollarSign className="w-4 h-4 md:w-5 md:h-5 text-blue-600" />
+            </div>
+            <p className="text-slate-500 text-[10px] md:text-sm font-bold truncate">Ingreso Hoy</p>
+          </div>
+          <h3 className="text-lg md:text-2xl font-bold text-slate-800 truncate">${todayRevenue.toLocaleString()}</h3>
+          <p className="text-[9px] md:text-xs text-blue-500 font-medium mt-0.5 md:mt-1 truncate">
+             Neto: ${todayNet.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+          </p>
+        </div>
+
         <div className="bg-white rounded-2xl p-4 md:p-6 shadow-sm border border-slate-100 hover:shadow-md transition-shadow relative overflow-hidden">
           <div className="flex items-center gap-2 md:gap-3 mb-2 md:mb-3">
             <div className="p-1.5 md:p-2 bg-indigo-50 rounded-lg">
@@ -741,7 +761,9 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
             <p className="text-slate-500 text-[10px] md:text-sm font-bold truncate">Ingreso Bruto</p>
           </div>
           <h3 className="text-lg md:text-2xl font-bold text-slate-800 truncate">${currentMonthRevenue.toLocaleString('es-MX', { maximumFractionDigits: 0 })}</h3>
-          <p className="text-[9px] md:text-xs text-slate-400 mt-0.5 md:mt-1">IVA Incluido</p>
+          <p className="text-[9px] md:text-xs text-indigo-500 font-medium mt-0.5 md:mt-1 truncate">
+             Neto: ${currentMonthNet.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+          </p>
         </div>
 
         <div className="bg-white rounded-2xl p-4 md:p-6 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">

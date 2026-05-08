@@ -114,9 +114,15 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
   const totalNetRevenue = totalRevenue / 1.16;
   const totalDevices = filteredSales.length;
 
-  // Seller Performance
+  const todayStr = new Date().toISOString().split('T')[0];
+  const todaySales = filteredSales.filter(s => s.date === todayStr);
+  const todayCount = todaySales.length;
+  const todayRevenue = todaySales.reduce((acc, curr) => acc + (Number(curr.price) || 0), 0);
+  const todayNetRevenue = todayRevenue / 1.16;
+
+  // Seller Performance (Including Admin Angel Irak Alvarado Dávila)
   const sellerPerformance: PerformanceData[] = profiles
-    .filter(p => selectedStoreId === 'all' || p.store_id === selectedStoreId)
+    .filter(p => (selectedStoreId === 'all' || p.store_id === selectedStoreId) && (p.role === 'seller' || p.email === 'angelirac@alvarado.com' || p.email === 'angeliraac@gmail.com'))
     .map(p => {
       const sellerSales = filteredSales.filter(s => s.created_by === p.id);
       return {
@@ -131,6 +137,23 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
   // Brand Performance
   const brandPerformance = Object.values(Brand).map(brand => {
     const brandSales = filteredSales.filter(s => s.brand === brand);
+    const rev = brandSales.reduce((acc, curr) => acc + (Number(curr.price) || 0), 0);
+    const conf = brand === Brand.REALME 
+      ? { label: 'Realme', hex: '#FFC700', logoUrl: 'https://www.vectorlogo.zone/logos/realme/realme-icon.svg' } 
+      : (BRAND_CONFIGS[brand] || { label: 'Otro', hex: '#64748b' });
+    return {
+      name: conf.label,
+      brand: brand,
+      count: brandSales.length,
+      revenue: rev,
+      netRevenue: rev / 1.16,
+      color: conf.hex,
+      logoUrl: (conf as any).logoUrl
+    };
+  }).filter(b => b.count > 0).sort((a, b) => b.count - a.count);
+
+  const brandPerformanceToday = Object.values(Brand).map(brand => {
+    const brandSales = todaySales.filter(s => s.brand === brand);
     const rev = brandSales.reduce((acc, curr) => acc + (Number(curr.price) || 0), 0);
     const conf = brand === Brand.REALME 
       ? { label: 'Realme', hex: '#FFC700', logoUrl: 'https://www.vectorlogo.zone/logos/realme/realme-icon.svg' } 
@@ -163,7 +186,6 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
 
   // Daily Trend Data
   const daysInMonth = new Date(parseInt(targetMonth.split('-')[0]), parseInt(targetMonth.split('-')[1]), 0).getDate();
-  const todayStr = new Date().toISOString().split('T')[0];
   const dailyData = Array.from({ length: daysInMonth }, (_, i) => {
     const day = (i + 1).toString().padStart(2, '0');
     const fullDate = `${targetMonth}-${day}`;
@@ -211,29 +233,79 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
                 className="bg-transparent text-sm font-black text-slate-700 outline-none cursor-pointer"
               />
            </div>
-
-           {/* Internal store select removed as it's now controlled by the global header */}
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
-        {/* STATS CARDS & GOALS */}
+        {/* MAIN COLUMN (LEFT) */}
         <div className="lg:col-span-2 space-y-8">
            
-           {/* SUMMARY MINI GRID */}
+           {/* 1. TODAY STATS GRID */}
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* REVENUE TODAY (NOW LEFT) */}
+              <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110"></div>
+                  <div className="relative z-10">
+                    <div className="flex items-center justify-between mb-6">
+                        <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl">
+                          <DollarSign className="w-6 h-6" />
+                        </div>
+                        <span className="text-[10px] font-black uppercase text-slate-400">Ventas Hoy (Bruto)</span>
+                    </div>
+                    <div className="text-4xl font-black text-slate-800 tracking-tighter mb-1">
+                       ${todayRevenue.toLocaleString()}
+                    </div>
+                    <div className="flex items-center gap-2">
+                       <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full uppercase tracking-tighter">
+                          Neto: ${todayNetRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                       </span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase mt-3">Ingreso generado hoy</p>
+                  </div>
+              </div>
+
+              {/* DEVICES TODAY (NOW RIGHT) */}
+              <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-orange-50 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110"></div>
+                  <div className="relative z-10">
+                    <div className="flex items-center justify-between mb-6">
+                        <div className="p-3 bg-orange-50 text-orange-600 rounded-2xl">
+                          <ShoppingBag className="w-6 h-6" />
+                        </div>
+                        <span className="text-[10px] font-black uppercase text-slate-400">Ventas de Hoy</span>
+                    </div>
+                    <div className="flex items-end gap-3 mb-2">
+                       <div className="text-4xl font-black text-slate-800 tracking-tighter">
+                          {todayCount}
+                       </div>
+                       <span className="text-sm font-bold text-slate-400 mb-1.5 uppercase">Equipos</span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase">
+                       {todayCount > 0 ? "Actividad registrada hoy" : "Sin ventas aún"}
+                    </p>
+                  </div>
+              </div>
+           </div>
+
+           {/* 2. MONTHLY SUMMARY GRID */}
            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 relative overflow-hidden group">
-                 <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110"></div>
-                 <div className="relative z-10">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110"></div>
+                  <div className="relative z-10">
                     <div className="flex items-center justify-between mb-6">
                        <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl">
                           <DollarSign className="w-6 h-6" />
                        </div>
-                     <span className="text-[10px] font-black uppercase text-slate-400">Ventas Netas (Sin IVA)</span>
+                     <span className="text-[10px] font-black uppercase text-slate-400">Ventas Mes (Bruto)</span>
                     </div>
-                    <div className="text-4xl font-black text-slate-800 tracking-tighter mb-2">
-                       ${totalNetRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                    <div className="text-4xl font-black text-slate-800 tracking-tighter mb-1">
+                       ${totalRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                    </div>
+                    <div className="flex items-center gap-3 mb-4">
+                       <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full uppercase tracking-tighter">
+                          Neto: ${totalNetRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                       </span>
                     </div>
                     <div className="flex items-center gap-2">
                        <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
@@ -242,17 +314,17 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
                        <span className="text-[10px] font-black text-indigo-600">{revenueProgress.toFixed(0)}%</span>
                     </div>
                     <p className="text-[10px] text-slate-400 font-bold uppercase mt-4">Meta: ${revenueGoalNum.toLocaleString()}</p>
-                 </div>
+                  </div>
               </div>
 
               <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 relative overflow-hidden group">
-                 <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-50 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110"></div>
-                 <div className="relative z-10">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-50 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110"></div>
+                  <div className="relative z-10">
                     <div className="flex items-center justify-between mb-6">
                        <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl">
                           <Smartphone className="w-6 h-6" />
                        </div>
-                       <span className="text-[10px] font-black uppercase text-slate-400">Celulares (Unid)</span>
+                       <span className="text-[10px] font-black uppercase text-slate-400">Celulares Mes (Unid)</span>
                     </div>
                     <div className="text-4xl font-black text-slate-800 tracking-tighter mb-2">
                        {totalDevices}
@@ -264,16 +336,16 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
                        <span className="text-[10px] font-black text-emerald-600">{devicesProgress.toFixed(0)}%</span>
                     </div>
                     <p className="text-[10px] text-slate-400 font-bold uppercase mt-4">Meta: {currentGoal?.devices_goal || 0} equipos</p>
-                 </div>
+                  </div>
               </div>
            </div>
 
-           {/* MAIN CHARTS SECTION */}
+           {/* 3. DAILY TREND CHART */}
            <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100">
               <div className="flex items-center justify-between mb-8">
                  <div>
                     <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">Tendencia Diaria</h3>
-                    <p className="text-[10px] font-black text-slate-400 uppercase">Ventas por día en el mes seleccionado</p>
+                    <p className="text-[10px] font-black text-slate-400 uppercase">Ingresos diarios acumulados</p>
                  </div>
                  <TrendingUp className="w-5 h-5 text-indigo-600" />
               </div>
@@ -299,67 +371,137 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
               </div>
            </div>
 
-           {/* BRAND DISTRIBUTION CHART */}
+           {/* 4. TODAY BRAND DISTRIBUTION */}
            <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100">
-              <div className="flex items-center justify-between mb-8">
-                 <div>
-                    <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">Distribución por Marcas</h3>
-                    <p className="text-[10px] font-black text-slate-400 uppercase">Preferencia de compra este mes</p>
-                 </div>
-                 <ShoppingBag className="w-5 h-5 text-indigo-600" />
-              </div>
-              
-              <div className="flex flex-col xl:flex-row items-center gap-8">
-                 <div className="h-[250px] w-full xl:w-1/2 min-w-0">
-                   <ResponsiveContainer width="100%" height="100%">
-                     <PieChart>
-                       <Pie
-                         data={brandPerformance}
-                         cx="50%"
-                         cy="50%"
-                         innerRadius={60}
-                         outerRadius={90}
-                         paddingAngle={5}
-                         dataKey="count"
-                       >
-                         {brandPerformance.map((entry, index) => (
-                           <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />
-                         ))}
-                       </Pie>
-                       <Tooltip 
-                         contentStyle={{ borderRadius: '1rem', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)', fontSize: '10px' }}
-                       />
-                     </PieChart>
-                   </ResponsiveContainer>
-                 </div>
-
-                 <div className="flex-1 w-full grid grid-cols-2 min-[1600px]:grid-cols-3 gap-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                    {brandPerformance.map((item) => (
-                      <div key={item.name} className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-100/50 hover:bg-white hover:shadow-md transition-all group">
-                        {item.logoUrl ? (
-                          <img src={item.logoUrl} alt={item.name} className="w-7 h-7 object-contain transition-all" />
-                        ) : (
-                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
-                        )}
-                        <div className="flex-1 min-w-0 flex flex-col justify-center">
-                          <p className="text-[10px] font-black text-slate-800 uppercase mb-1 tracking-tight truncate">{item.name}</p>
-                          <div className="flex flex-col gap-0.5">
-                            <span className="text-[11px] font-black text-indigo-600 leading-none">
-                              {item.count} {item.count === 1 ? 'Equipo' : 'Equipos'}
-                            </span>
-                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">
-                              {totalDevices > 0 ? ((item.count / totalDevices) * 100).toFixed(1) : 0}% del total
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+               <div className="flex items-center justify-between mb-8">
+                  <div>
+                     <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">Distribución Hoy</h3>
+                     <p className="text-[10px] font-black text-slate-400 uppercase">Ventas por marca registradas hoy</p>
                   </div>
-              </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black bg-orange-100 text-orange-600 px-2 py-1 rounded-lg uppercase">En Vivo</span>
+                  </div>
+               </div>
+               
+               {todayCount > 0 ? (
+                 <div className="flex flex-col xl:flex-row items-center gap-8">
+                    <div className="h-[200px] w-full xl:w-1/3 min-w-0">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={brandPerformanceToday}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={50}
+                            outerRadius={75}
+                            paddingAngle={5}
+                            dataKey="count"
+                          >
+                            {brandPerformanceToday.map((entry, index) => (
+                              <Cell key={`cell-today-${index}`} fill={entry.color} stroke="none" />
+                            ))}
+                          </Pie>
+                          <Tooltip 
+                            contentStyle={{ borderRadius: '1rem', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)', fontSize: '10px' }}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    <div className="flex-1 w-full grid grid-cols-2 sm:grid-cols-3 gap-3">
+                       {brandPerformanceToday.map((item) => (
+                         <div key={`today-${item.name}`} className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-100/50">
+                           {item.logoUrl ? (
+                             <img src={item.logoUrl} alt={item.name} className="w-6 h-6 object-contain" />
+                           ) : (
+                             <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: item.color }} />
+                           )}
+                           <div className="flex-1 min-w-0">
+                             <p className="text-[9px] font-black text-slate-800 uppercase truncate">{item.name}</p>
+                             <div className="flex flex-col">
+                                <p className="text-[10px] font-black text-indigo-600 leading-none">{item.count} un.</p>
+                                <p className="text-[8px] font-bold text-slate-400 uppercase leading-tight tracking-tighter mt-0.5">
+                                   Neto: ${item.netRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                </p>
+                             </div>
+                           </div>
+                         </div>
+                       ))}
+                    </div>
+                 </div>
+               ) : (
+                 <div className="py-12 text-center opacity-30 text-[10px] font-black uppercase italic border-2 border-dashed border-slate-100 rounded-[2rem]">
+                    Sin actividad de marcas hoy
+                 </div>
+               )}
+           </div>
+
+           {/* 5. MONTHLY BRAND DISTRIBUTION */}
+           <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100">
+               <div className="flex items-center justify-between mb-8">
+                  <div>
+                     <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">Distribución por Marcas</h3>
+                     <p className="text-[10px] font-black text-slate-400 uppercase">Preferencia de compra este mes</p>
+                  </div>
+                  <ShoppingBag className="w-5 h-5 text-indigo-600" />
+               </div>
+               
+               <div className="flex flex-col xl:flex-row items-center gap-8">
+                  <div className="h-[250px] w-full xl:w-1/2 min-w-0">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={brandPerformance}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={60}
+                          outerRadius={90}
+                          paddingAngle={5}
+                          dataKey="count"
+                        >
+                          {brandPerformance.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />
+                          ))}
+                        </Pie>
+                        <Tooltip 
+                          contentStyle={{ borderRadius: '1rem', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)', fontSize: '10px' }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  <div className="flex-1 w-full grid grid-cols-2 min-[1600px]:grid-cols-3 gap-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                     {brandPerformance.map((item) => (
+                       <div key={item.name} className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-100/50 hover:bg-white hover:shadow-md transition-all group">
+                         {item.logoUrl ? (
+                           <img src={item.logoUrl} alt={item.name} className="w-7 h-7 object-contain transition-all" />
+                         ) : (
+                           <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
+                         )}
+                         <div className="flex-1 min-w-0 flex flex-col justify-center">
+                           <p className="text-[10px] font-black text-slate-800 uppercase mb-1 tracking-tight truncate">{item.name}</p>
+                           <div className="flex flex-col gap-0.5">
+                             <div className="flex items-center gap-2">
+                                <span className="text-[11px] font-black text-indigo-600 leading-none">
+                                  {item.count} un.
+                                </span>
+                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">
+                                  {totalDevices > 0 ? ((item.count / totalDevices) * 100).toFixed(1) : 0}%
+                                </span>
+                             </div>
+                             <span className="text-[9px] font-bold text-slate-500 uppercase leading-tight">
+                                Neto: ${item.netRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                             </span>
+                           </div>
+                         </div>
+                       </div>
+                     ))}
+                   </div>
+               </div>
            </div>
         </div>
 
-        {/* SIDEBAR: GOAL SETTING & RANKING */}
+        {/* SIDEBAR (RIGHT) */}
         <div className="space-y-8">
            
            {/* GOAL ASSIGNMENT FORM */}

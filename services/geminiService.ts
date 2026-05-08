@@ -52,7 +52,11 @@ const parseSpanishDate = (dateStr: string | undefined): string | undefined => {
   return undefined; 
 };
 
-export const analyzeTicketImage = async (base64Image: string): Promise<TicketAnalysisResult | null> => {
+export const analyzeTicketImage = async (
+  base64Image: string, 
+  storeName: string = 'Sucursal', 
+  chainName: string = 'Coppel'
+): Promise<TicketAnalysisResult | null> => {
   const apiKeys = API_KEYS;
 
   if (apiKeys.length === 0) {
@@ -68,19 +72,24 @@ export const analyzeTicketImage = async (base64Image: string): Promise<TicketAna
   const now = new Date();
   const currentDateContext = `Hoy es ${now.toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })}.`;
 
-  const prompt = `Analiza este ticket de Coppel o nota de entrega. 
+  const prompt = `Analiza este ticket de compra de la tienda ${chainName} (${storeName}). 
   ${currentDateContext}
   
   Extrae los siguientes datos en formato JSON estricto:
-  1. invoiceNumber: Busca "Factura No." o "Ticket". En Coppel suele ser un número como "6624 14537" (únelos como "662414537").
-  2. date: Busca la fecha del ticket.
+  1. invoiceNumber: Busca el folio, factura o número de ticket. (Únelo sin espacios).
+  2. date: Busca la fecha de la transacción.
   3. customerName: El nombre del cliente en MAYÚSCULAS.
-  4. items: Lista de CELULARES vendidos. 
-     - IGNORA: Seguros, Garantías, Chips, Fundas.
-     - brand: Debe ser una de estas: (SAMSUNG, APPLE, MOTOROLA, XIAOMI, OPPO, HONOR, HUAWEI, ZTE, REALME, VIVO, SENWA, NUBIA).
-     - price: El precio final (después de descuentos si los hay).
-
-  RESPONDE SOLO CON EL JSON.`;
+  4. items: Lista de TODOS los equipos celulares vendidos. 
+     - DETECCIÓN MÚLTIPLE: Si hay varios celulares, lístalos todos.
+     - FILTRADO: 
+       - INCLUYE: Solo equipos móviles de marcas reconocidas.
+       - IGNORA: Chips, Seguros, Garantías, Accesorios. (Si dice "CHIP", descártalo aunque tenga IMEI).
+     - price: El PRECIO NETO FINAL pagado por el equipo. 
+       REGLA GENERAL DE DESCUENTO: 
+       - Identifica el precio del equipo. Si inmediatamente debajo aparece un concepto de descuento (DESCTO, BONIFICACIÓN, AHORRO, PROMOCIÓN, REBAJA), réstalo al precio original.
+       - En Coppel: Busca "DESCTO PROMOCION" debajo del precio y réstalo.
+  
+  RESPONDE ÚNICAMENTE CON EL JSON.`;
 
   const imagePart = {
     inlineData: {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Smartphone, LayoutList, BarChart3, Menu, X, CalendarCheck, Plus, LogOut, User as UserIcon, ChevronRight, Loader2, RefreshCcw, Database, AlertTriangle, Copy, Check, Shield, ShieldAlert, Wand2, Clock, Building, TrendingUp } from 'lucide-react';
+import { Smartphone, LayoutList, BarChart3, Menu, X, CalendarCheck, Plus, LogOut, User as UserIcon, ChevronRight, Loader2, RefreshCcw, Database, AlertTriangle, Copy, Check, Shield, ShieldAlert, Wand2, Clock, Building, TrendingUp, Bell, CheckCircle } from 'lucide-react';
 import SalesForm from './components/SalesForm';
 import SalesList from './components/SalesList';
 import Dashboard from './components/Dashboard';
@@ -8,11 +8,13 @@ import Warranties from './components/Warranties';
 import AttendanceManager from './components/AttendanceManager';
 import AdminPanel from './components/AdminPanel';
 import SupervisionPanel from './components/SupervisionPanel';
+import RequestsPanel from './components/RequestsPanel';
 import AttendanceReport from './components/AttendanceReport';
 import AuthForm from './components/AuthForm';
 import CompleteProfile from './components/CompleteProfile';
 import { Sale, DailyClose, Brand, UserProfile, Warranty, Store, UserRole } from './types';
 import { BRAND_CONFIGS } from './constants';
+import posthog from 'posthog-js';
 import { supabase } from './services/supabaseClient';
 import { deleteImageFromDriveScript } from './services/googleAppsScriptService';
 import { smartImageUpload } from './services/storageService';
@@ -22,9 +24,19 @@ const App: React.FC = () => {
   const [session, setSession] = useState<any>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [pendingResolutions, setPendingResolutions] = useState<any[]>([]);
+  const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
+  const [showAdminNotification, setShowAdminNotification] = useState(() => {
+    try {
+      // For Admin: Only show once per session
+      return sessionStorage.getItem('admin_notified_session') !== 'true';
+    } catch {
+      return false;
+    }
+  });
 
   // App State
-  const [currentView, setCurrentView] = useState<'form' | 'list' | 'dashboard' | 'closings' | 'warranties' | 'attendance' | 'attendance-report' | 'admin' | 'supervision'>(() => {
+  const [currentView, setCurrentView] = useState<'form' | 'list' | 'dashboard' | 'closings' | 'warranties' | 'attendance' | 'attendance-report' | 'admin' | 'supervision' | 'requests'>(() => {
     try {
       return (localStorage.getItem('app_current_view') as any) || 'list';
     } catch {
@@ -95,6 +107,52 @@ const App: React.FC = () => {
 
   const [copiedSql, setCopiedSql] = useState(false);
   const [saleToEdit, setSaleToEdit] = useState<Sale | null>(null);
+
+  // --- REAL-TIME NOTIFICATIONS ---
+  useEffect(() => {
+    if (!session?.user) return;
+
+    // Request notification permission on mount for admin
+    if (userProfile?.role === 'admin' && "Notification" in window && Notification.permission === "default") {
+       Notification.requestPermission();
+    }
+
+    const channel = supabase
+      .channel('sale_requests_alerts')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'sale_requests' },
+        (payload) => {
+          // If admin, increment count and show notification
+          if (userProfile?.role === 'admin') {
+             fetchPendingRequestsCount();
+             // Browser notification or visual cue
+             if ("Notification" in window && Notification.permission === "granted") {
+                new Notification("Nueva Solicitud", { body: "Un vendedor ha enviado una nueva solicitud de edición/baja." });
+             }
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'sale_requests' },
+        (payload) => {
+           // If the user is the one who sent the request, and it was approved/rejected
+           if (payload.new.requester_id === session.user.id) {
+              fetchPendingRequestsCount(); // This also fetches resolutions for non-admins
+           }
+           // If admin, refresh count
+           if (userProfile?.role === 'admin') {
+              fetchPendingRequestsCount();
+           }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [session, userProfile]);
 
 
 
@@ -184,6 +242,15 @@ alter table public.daily_closings enable row level security;
 alter table public.profiles enable row level security;
 alter table public.attendance enable row level security;
 alter table public.stores enable row level security;
+alter table public.sale_requests enable row level security;
+alter table public.monthly_goals enable row level security;
+alter table public.warranties enable row level security;
+
+-- Políticas de Cierres (Missing)
+create policy "Admins see all closings" on public.daily_closings for select to authenticated using (public.is_admin());
+create policy "Supervisors see all closings" on public.daily_closings for select to authenticated using (public.is_supervisor());
+create policy "Sellers see store closings" on public.daily_closings for select to authenticated using (store_id = public.get_user_store_id());
+create policy "Admins/Supervisors manage closings" on public.daily_closings for all to authenticated using (public.is_admin() or public.is_supervisor());
 
 -- Bloque de Funciones de Ayuda para Políticas
 create or replace function public.is_admin()
@@ -396,8 +463,35 @@ create policy "Users insert store warranties" on public.warranties for insert to
           storeId: finalProfile.store_id,
           assignedStores: finalProfile.assigned_stores || [],
           restDays: finalProfile.rest_days || [],
-          vacationDates: finalProfile.vacation_dates || []
+          vacationDates: finalProfile.vacation_dates || [],
+          canJustifyAbsences: finalProfile.can_justify_absences,
+          canManageRestDays: finalProfile.can_manage_rest_days,
+          canForceAttendance: finalProfile.can_force_attendance,
+          canSetSchedules: finalProfile.can_set_schedules
         });
+
+        // Auto-set selectedStoreId if restricted to one store
+        const isRestricted = finalProfile.role !== 'admin' && (
+           !!finalProfile.store_id || (finalProfile.assigned_stores && finalProfile.assigned_stores.length === 1)
+        );
+        if (isRestricted) {
+           const targetId = finalProfile.store_id || finalProfile.assigned_stores[0];
+           setSelectedStoreId(targetId);
+        }
+
+        // --- POSTHOG IDENTIFICATION ---
+        posthog.identify(finalProfile.id, {
+          email: finalProfile.email,
+          name: finalProfile.full_name,
+          role: finalProfile.role,
+          store: finalProfile.store_id
+        });
+        
+        // --- NOTIFICATION CHECK ---
+        checkResolvedRequests(finalProfile.id);
+        if (finalProfile.role === 'admin') {
+          fetchPendingRequestsCount();
+        }
         
         // Redirección inicial según el rol (Solo si no hay una vista guardada previamente)
         const savedView = localStorage.getItem('app_current_view');
@@ -570,6 +664,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
     return JSON.stringify(error);
   };
 
+
   // --- FETCH DATA FROM SUPABASE ---
   const fetchData = async () => {
     if (!session) return;
@@ -721,9 +816,13 @@ create policy "Users insert store warranties" on public.warranties for insert to
 
     // Supervisors and Viewers: handle "Global" vs "Area" access
     if (userProfile?.role === 'supervisor' || userProfile?.role === 'viewer') {
-      const allowedStores = (userProfile?.assignedStores && userProfile.assignedStores?.length > 0)
-        ? userProfile.assignedStores
-        : (userProfile?.storeId ? [userProfile.storeId] : null);
+      // Combine base store and assigned stores
+      const storesFromProfile = [
+        ...(userProfile.storeId ? [userProfile.storeId] : []),
+        ...(userProfile.assignedStores || [])
+      ];
+      
+      const allowedStores = storesFromProfile.length > 0 ? storesFromProfile : null;
 
       const baseData = allowedStores 
         ? data.filter(item => allowedStores.includes(item.storeId || ''))
@@ -848,15 +947,90 @@ create policy "Users insert store warranties" on public.warranties for insert to
            if (prev.some(s => s.id === newSale.id)) return prev;
            return [newSale, ...prev];
         });
-        setCurrentView('list');
       }
+      setCurrentView('list');
     } catch (error: any) {
       console.error('Error saving sale:', error);
       alert(`Error al guardar la venta: ${formatError(error)}`);
     } finally {
       setIsLoading(false);
     }
+  };
 
+  const fetchPendingRequestsCount = async () => {
+    try {
+      const { count, error } = await supabase
+        .from('sale_requests')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'pending');
+      
+      if (!error) {
+        const countValue = count || 0;
+        setPendingRequestsCount(countValue);
+        
+        // Only show notification if there are pending requests AND we haven't shown it this session
+        if (countValue > 0 && sessionStorage.getItem('admin_notified_session') !== 'true') {
+          setShowAdminNotification(true);
+        }
+      }
+    } catch (err) {
+      console.error("Error counting requests:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (showAdminNotification) {
+      // Mark as shown for this session
+      try {
+        sessionStorage.setItem('admin_notified_session', 'true');
+      } catch (e) {}
+
+      const timer = setTimeout(() => {
+        setShowAdminNotification(false);
+      }, 8000); // Slightly longer for better visibility
+      return () => clearTimeout(timer);
+    }
+  }, [showAdminNotification]);
+
+  const checkResolvedRequests = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('sale_requests')
+        .select(`
+          *,
+          sale:sales(invoice_number, customer_name)
+        `)
+        .eq('requester_id', userId)
+        .neq('status', 'pending')
+        .eq('notified', false);
+
+      if (error) throw error;
+      if (data && data.length > 0) {
+        setPendingResolutions(data);
+        // Mark as notified in DB immediately so they don't reappear on reload
+        const requestIds = data.map(r => r.id);
+        await supabase
+          .from('sale_requests')
+          .update({ notified: true })
+          .in('id', requestIds);
+      }
+    } catch (err) {
+      console.error("Error checking resolutions:", err);
+    }
+  };
+
+  const handleDismissResolution = async (requestId: string) => {
+    try {
+      const { error } = await supabase
+        .from('sale_requests')
+        .update({ notified: true })
+        .eq('id', requestId);
+      
+      if (error) throw error;
+      setPendingResolutions(prev => prev.filter(r => r.id !== requestId));
+    } catch (err) {
+      console.error("Error marking as notified:", err);
+    }
   };
 
   const handleUpdateSale = async (updatedSale: Sale) => {
@@ -1105,7 +1279,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
     }
   };
 
-  const NavButton = ({ view, icon: Icon, label, badge }: { view: 'form' | 'list' | 'dashboard' | 'closings' | 'warranties' | 'admin' | 'attendance' | 'supervision' | 'attendance-report', icon: any, label: string, badge?: number }) => {
+  const NavButton = ({ view, icon: Icon, label, badge }: { view: 'form' | 'list' | 'dashboard' | 'closings' | 'warranties' | 'admin' | 'attendance' | 'supervision' | 'attendance-report' | 'requests', icon: any, label: string, badge?: number }) => {
     const isActive = currentView === view;
     return (
       <button
@@ -1303,7 +1477,10 @@ create policy "Users insert store warranties" on public.warranties for insert to
                 badge={alerts.length > 0 ? alerts.length : undefined}
               />
               {userProfile?.role === 'admin' && (
-                <NavButton view="admin" icon={Shield} label="Administración" />
+                <>
+                  <NavButton view="admin" icon={Shield} label="Administración" />
+                  <NavButton view="requests" icon={Bell} label="Solicitudes" badge={pendingRequestsCount > 0 ? pendingRequestsCount : undefined} />
+                </>
               )}
               <NavButton view="supervision" icon={TrendingUp} label="Rendimiento" />
             </>
@@ -1372,9 +1549,23 @@ create policy "Users insert store warranties" on public.warranties for insert to
             </div>
 
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
-              {/* Store Selector - Hide if viewer/supervisor has only 1 store */}
-              {((userProfile?.role === 'admin' || userProfile?.role === 'supervisor' || userProfile?.role === 'viewer')) && 
-               !(userProfile?.role !== 'admin' && userProfile?.assignedStores && userProfile?.assignedStores.length === 1) && (
+              {/* Store Selector Visibility Logic */}
+              {(() => {
+                const isAdmin = userProfile?.role === 'admin';
+                const isRestrictedToOneStore = !isAdmin && (
+                  !!userProfile?.storeId || 
+                  (userProfile?.assignedStores && userProfile.assignedStores.length === 1)
+                );
+                const isGlobalAccess = !isAdmin && (
+                  !userProfile?.storeId && 
+                  (!userProfile?.assignedStores || userProfile.assignedStores.length === 0)
+                );
+
+                if (!isAdmin && isRestrictedToOneStore) return null;
+                if (!isAdmin && userProfile?.role === 'seller') return null;
+                if (!isAdmin && !isGlobalAccess && (!userProfile?.assignedStores || userProfile.assignedStores.length <= 1) && !userProfile?.storeId) return null;
+
+                return (
                  <div className="flex items-center gap-2 bg-white px-4 py-2.5 rounded-2xl border border-slate-200 shadow-sm transition-all hover:bg-slate-50 flex-1 sm:flex-none">
                     <Building className="w-4 h-4 text-blue-600 shrink-0" />
                     <select 
@@ -1383,11 +1574,17 @@ create policy "Users insert store warranties" on public.warranties for insert to
                       className="bg-transparent text-[10px] md:text-xs font-black text-slate-800 outline-none cursor-pointer w-full"
                     >
                       <option value="all" disabled={selectedStoreId !== 'all'}>Seleccionar Tienda...</option>
-                      {userProfile?.role !== 'viewer' && <option value="all">Ver Todas (Global)</option>}
+                      {/* Show 'Global' only for admins or truly global supervisors */}
+                      {(isAdmin || isGlobalAccess || (userProfile?.assignedStores && userProfile.assignedStores.length > 1)) && (
+                        <option value="all">Ver Todas {isAdmin ? '(Global)' : '(Mis Tiendas)'}</option>
+                      )}
                       {stores
                         .filter(s => {
                           if (userProfile?.role === 'admin') return true;
                           if (userProfile?.role === 'supervisor' || userProfile?.role === 'viewer') {
+                             if (userProfile.storeId) {
+                               return s.id === userProfile.storeId;
+                             }
                              if (userProfile?.assignedStores && userProfile.assignedStores?.length > 0) {
                                return userProfile.assignedStores.includes(s.id);
                              }
@@ -1398,7 +1595,8 @@ create policy "Users insert store warranties" on public.warranties for insert to
                         .map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
                  </div>
-              )}
+                );
+              })()}
 
               {currentView === 'list' && (userProfile?.role === 'admin' || userProfile?.role === 'seller') && (
                 <button
@@ -1412,7 +1610,77 @@ create policy "Users insert store warranties" on public.warranties for insert to
             </div>
           </div>
 
-          <div className="fade-in">
+          {/* RESOLUTION NOTIFICATIONS (FOR SELLERS) */}
+          {pendingResolutions.length > 0 && (
+            <div className="mb-6 space-y-3 animate-in slide-in-from-top-4 duration-500 max-w-3xl mx-auto px-4">
+              {pendingResolutions.map((res) => (
+                <div key={res.id} className={`p-6 rounded-[2rem] border shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 ${res.status === 'approved' ? 'bg-emerald-50 border-emerald-100 text-emerald-900' : 'bg-red-50 border-red-100 text-red-900'}`}>
+                  <div className="flex items-center gap-4">
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 border ${res.status === 'approved' ? 'bg-emerald-500 text-white border-emerald-400' : 'bg-red-500 text-white border-red-400'}`}>
+                      {res.status === 'approved' ? <CheckCircle className="w-6 h-6" /> : <AlertTriangle className="w-6 h-6" />}
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-black uppercase tracking-tight">
+                        Solicitud de {res.type === 'edit' ? 'Edición' : 'Eliminación'} {res.status === 'approved' ? 'Aprobada' : 'Rechazada'}
+                      </h4>
+                      <p className="text-[11px] font-bold opacity-70 uppercase tracking-widest mt-0.5">
+                        Ticket: {res.sale?.invoice_number || 'Venta'} - {res.sale?.customer_name || 'Cliente'}
+                      </p>
+                      {res.status === 'rejected' && res.rejection_reason && (
+                        <p className="mt-2 text-[10px] font-black bg-white/40 px-3 py-1.5 rounded-xl border border-red-200/50 inline-block">
+                          Motivo: "{res.rejection_reason}"
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => handleDismissResolution(res.id)}
+                    className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${res.status === 'approved' ? 'bg-emerald-500 text-white hover:bg-emerald-600' : 'bg-red-500 text-white hover:bg-red-600'}`}
+                  >
+                    Entendido
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* ADMIN PENDING REQUESTS NOTIFICATION (TRANSIENT) */}
+          {userProfile?.role === 'admin' && showAdminNotification && (
+            <div className="fixed top-4 md:top-8 right-0 md:right-8 z-[60] w-full md:max-w-md px-4 md:px-0 animate-in slide-in-from-top-10 md:slide-in-from-right-10 fade-in duration-700">
+              <div 
+                onClick={() => {
+                  setCurrentView('requests');
+                  setShowAdminNotification(false);
+                }}
+                className="bg-indigo-600 p-4 md:p-5 rounded-2xl md:rounded-3xl shadow-2xl shadow-indigo-200/50 flex items-center justify-between gap-4 cursor-pointer hover:scale-[1.02] active:scale-95 transition-all group overflow-hidden relative border border-white/20 backdrop-blur-sm"
+              >
+                <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full -mr-12 -mt-12 group-hover:scale-125 transition-transform duration-500"></div>
+                <div className="flex items-center gap-4 relative z-10">
+                   <div className="w-12 h-12 bg-white/20 text-white rounded-2xl flex items-center justify-center animate-bounce">
+                      <Bell className="w-6 h-6" />
+                   </div>
+                   <div className="text-white">
+                      <h4 className="text-xs font-black uppercase tracking-tight">¡Nuevas Solicitudes!</h4>
+                      <p className="text-[9px] font-bold opacity-80 uppercase tracking-widest mt-0.5">
+                        Tienes {pendingRequestsCount} cambios pendientes
+                      </p>
+                   </div>
+                </div>
+                <div className="flex items-center gap-1.5 bg-white/20 px-3 py-1.5 rounded-xl text-white text-[9px] font-black uppercase tracking-widest relative z-10 group-hover:bg-white/30 transition-colors">
+                   VER <ChevronRight className="w-3 h-3" />
+                </div>
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowAdminNotification(false);
+                  }}
+                  className="absolute top-2 right-2 text-white/40 hover:text-white transition-colors"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+          )}
             {currentView === 'list' && userProfile?.role !== 'supervisor' && userProfile?.role !== 'viewer' && (
               <SalesList
                 sales={filteredSales}
@@ -1430,7 +1698,8 @@ create policy "Users insert store warranties" on public.warranties for insert to
                   }
                 }}
                 role={userProfile?.role}
-                storeName={userProfile?.role === 'admin' 
+                userProfile={userProfile}
+                storeName={(userProfile?.role === 'admin' || userProfile?.role === 'supervisor' || userProfile?.role === 'viewer') 
                   ? (selectedStoreId === 'all' ? 'Todas las Tiendas' : stores.find(s => s.id === selectedStoreId)?.name) 
                   : stores.find(s => s.id === userProfile?.storeId)?.name}
               />
@@ -1457,7 +1726,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
                 role={userProfile?.role}
                 storeId={(userProfile?.role === 'admin' || userProfile?.role === 'supervisor' || userProfile?.role === 'viewer') ? (selectedStoreId === 'all' ? undefined : selectedStoreId) : userProfile?.storeId}
                 userProfile={userProfile}
-                storeName={userProfile?.role === 'admin' 
+                storeName={(userProfile?.role === 'admin' || userProfile?.role === 'supervisor' || userProfile?.role === 'viewer') 
                   ? (selectedStoreId === 'all' ? 'Todas las Tiendas' : stores.find(s => s.id === selectedStoreId)?.name) 
                   : stores.find(s => s.id === userProfile?.storeId)?.name}
               />
@@ -1469,10 +1738,10 @@ create policy "Users insert store warranties" on public.warranties for insert to
                 onCloseDay={handleCloseDay}
                 onDeleteClosing={handleDeleteClosing}
                 role={userProfile?.role}
-                storeName={userProfile?.role === 'admin' 
+                storeName={(userProfile?.role === 'admin' || userProfile?.role === 'supervisor' || userProfile?.role === 'viewer') 
                   ? (selectedStoreId === 'all' ? 'Todas las Tiendas' : stores.find(s => s.id === selectedStoreId)?.name) 
                   : stores.find(s => s.id === userProfile?.storeId)?.name}
-                activeStoreId={userProfile?.role === 'admin' ? selectedStoreId : userProfile?.storeId}
+                activeStoreId={(userProfile?.role === 'admin' || userProfile?.role === 'supervisor' || userProfile?.role === 'viewer') ? selectedStoreId : userProfile?.storeId}
                 stores={stores}
               />
             )}
@@ -1511,16 +1780,22 @@ create policy "Users insert store warranties" on public.warranties for insert to
             )}
             {currentView === 'admin' && (userProfile?.role === 'admin' || userProfile?.role === 'supervisor') && (
               <AdminPanel 
-                role={userProfile?.role}
+                userProfile={userProfile}
                 onRefresh={() => {
                   fetchData();
-                  if (session) fetchUserProfile(session.user.id);
+                  fetchPendingRequestsCount();
                 }} 
+                onViewRequests={() => setCurrentView('requests')}
+              />
+            )}
+            {currentView === 'requests' && userProfile?.role === 'admin' && (
+              <RequestsPanel 
+                onBack={() => setCurrentView('admin')}
+                onRefresh={() => fetchPendingRequestsCount()}
+                stores={stores}
               />
             )}
           </div>
-
-        </div>
       </main>
 
       {/* Floating Action Button (Mobile Only for List View) */}

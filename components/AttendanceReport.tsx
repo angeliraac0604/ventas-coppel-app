@@ -94,7 +94,10 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
             storeId: p.store_id,
             restDays: p.rest_days || [],
             vacationDates: p.vacation_dates || [],
-            canJustifyAbsences: p.can_justify_absences
+            canJustifyAbsences: p.can_justify_absences,
+            canManageRestDays: p.can_manage_rest_days,
+            canForceAttendance: p.can_force_attendance,
+            canSetSchedules: p.can_set_schedules
           })));
       }
 
@@ -153,6 +156,15 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
   };
 
   const handleUpdateSchedule = async (userId: string) => {
+    // Permission Check
+    const canManage = userProfile?.role === 'admin' || 
+                      (userProfile?.role === 'supervisor' && userProfile?.canManageRestDays) || 
+                      userProfile?.canManageRestDays; // covers seller with special permission if ever added
+    if (!canManage) {
+      alert("No tienes autorización para gestionar descansos o vacaciones.");
+      return;
+    }
+
     try {
       let datesArray: string[] = [];
       if (targetVacationStart && targetVacationEnd) {
@@ -199,6 +211,14 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
   };
 
   const handleUpdateStoreSchedule = async (storeId: string) => {
+    // Permission Check: Only admin/supervisor can edit store baseline schedules
+    // Permission Check: Only admin or supervisors with canSetSchedules can edit store baseline schedules
+    const canSetSchedules = userProfile?.role === 'admin' || (userProfile?.role === 'supervisor' && userProfile?.canSetSchedules);
+    if (!canSetSchedules) {
+      alert("Solo administradores o supervisores autorizados pueden configurar horarios de tienda.");
+      return;
+    }
+
     try {
       const lunchMins = Math.round(editStoreLunchHours * 60);
       const store = localStores.find(s => s.id === storeId);
@@ -477,14 +497,16 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
                 >
                   Día
                 </button>
-                <button 
-                  onClick={() => setActiveTab('schedules')}
-                  className={`flex-1 sm:flex-none px-3 py-1.5 rounded-lg font-black text-[10px] uppercase tracking-widest transition-all ${
-                    activeTab === 'schedules' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'
-                  }`}
-                >
-                  Horas
-                </button>
+                {(userProfile?.role === 'admin' || userProfile?.canSetSchedules) && (
+                  <button 
+                    onClick={() => setActiveTab('schedules')}
+                    className={`flex-1 sm:flex-none px-3 py-1.5 rounded-lg font-black text-[10px] uppercase tracking-widest transition-all ${
+                      activeTab === 'schedules' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'
+                    }`}
+                  >
+                    Horas
+                  </button>
+                )}
                 <button 
                   onClick={() => setActiveTab('summary')}
                   className={`flex-1 sm:flex-none px-3 py-1.5 rounded-lg font-black text-[10px] uppercase tracking-widest transition-all ${
@@ -624,20 +646,22 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
                             <p className="text-sm font-black text-slate-700 uppercase">{localStores.find(s => s.id === selectedStoreId)?.daySchedules?.[configDayOfWeek]?.lunchDurationMinutes || localStores.find(s => s.id === selectedStoreId)?.lunchDurationMinutes || 60} Min</p>
                          </div>
                       </div>
-                      <button 
-                        onClick={() => {
-                          setEditingStoreId(selectedStoreId);
-                          const store = localStores.find(s => s.id === selectedStoreId);
-                          const dayConfig = store?.daySchedules?.[configDayOfWeek];
-                          
-                          setEditStoreEntry(dayConfig?.entryTime || store?.entryTime || '09:00');
-                          setEditStoreExit(dayConfig?.exitTime || store?.exitTime || '18:00');
-                          setEditStoreLunchHours((dayConfig?.lunchDurationMinutes || store?.lunchDurationMinutes || 60) / 60);
-                        }}
-                        className="p-5 bg-white border-2 border-dashed border-slate-200 rounded-[1.5rem] text-slate-400 font-black text-xs uppercase tracking-widest hover:border-indigo-300 hover:text-indigo-600 transition-all flex items-center justify-center gap-2"
-                      >
-                         <Edit2 className="w-4 h-4" /> Configurar
-                      </button>
+                      {(userProfile?.role === 'admin' || userProfile?.role === 'supervisor') && (
+                        <button 
+                          onClick={() => {
+                            setEditingStoreId(selectedStoreId);
+                            const store = localStores.find(s => s.id === selectedStoreId);
+                            const dayConfig = store?.daySchedules?.[configDayOfWeek];
+                            
+                            setEditStoreEntry(dayConfig?.entryTime || store?.entryTime || '09:00');
+                            setEditStoreExit(dayConfig?.exitTime || store?.exitTime || '18:00');
+                            setEditStoreLunchHours((dayConfig?.lunchDurationMinutes || store?.lunchDurationMinutes || 60) / 60);
+                          }}
+                          className="p-5 bg-white border-2 border-dashed border-slate-200 rounded-[1.5rem] text-slate-400 font-black text-xs uppercase tracking-widest hover:border-indigo-300 hover:text-indigo-600 transition-all flex items-center justify-center gap-2"
+                        >
+                           <Edit2 className="w-4 h-4" /> Configurar
+                        </button>
+                      )}
                    </div>
                  )}
               </div>
@@ -738,24 +762,26 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
                            <button onClick={() => setEditingProfileId(null)} className="p-2.5 bg-slate-100 text-slate-400 rounded-xl hover:bg-slate-200"><X className="w-5 h-5" /></button>
                          </div>
                        ) : (
-                         <button 
-                           onClick={() => {
-                             setEditingProfileId(profile.id);
-                             setTargetRestDays(profile.restDays || []);
-                             const vDates = profile.vacationDates || [];
-                             if (vDates.length > 0) {
-                               const sortedDates = [...vDates].sort();
-                               setTargetVacationStart(sortedDates[0]);
-                               setTargetVacationEnd(sortedDates[sortedDates.length - 1]);
-                             } else {
-                               setTargetVacationStart('');
-                               setTargetVacationEnd('');
-                             }
-                           }}
-                           className="p-3 bg-white text-slate-300 hover:text-indigo-600 rounded-xl border border-slate-100 shadow-sm opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all"
-                         >
-                           <Clock className="w-5 h-5" />
-                         </button>
+                         (userProfile?.role === 'admin' || userProfile?.canManageRestDays) && (
+                           <button 
+                             onClick={() => {
+                               setEditingProfileId(profile.id);
+                               setTargetRestDays(profile.restDays || []);
+                               const vDates = profile.vacationDates || [];
+                               if (vDates.length > 0) {
+                                 const sortedDates = [...vDates].sort();
+                                 setTargetVacationStart(sortedDates[0]);
+                                 setTargetVacationEnd(sortedDates[sortedDates.length - 1]);
+                               } else {
+                                 setTargetVacationStart('');
+                                 setTargetVacationEnd('');
+                               }
+                             }}
+                             className="p-3 bg-white text-slate-300 hover:text-indigo-600 rounded-xl border border-slate-100 shadow-sm opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all"
+                           >
+                             <Clock className="w-5 h-5" />
+                           </button>
+                         )
                        )}
                     </td>
                   </tr>
@@ -840,14 +866,14 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
                           <button 
                             onClick={(e) => { 
                               e.stopPropagation(); 
-                              if (userProfile?.role === 'supervisor' && !userProfile?.canJustifyAbsences) {
+                              if (userProfile?.role !== 'admin' && !userProfile?.canJustifyAbsences) {
                                 alert("No tienes autorización para justificar faltas. Solicita el permiso al administrador.");
                                 return;
                               }
                               setJustifyingAbsence(row); 
                             }}
                             className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-tighter shadow-lg transition-colors ${
-                              (userProfile?.role === 'supervisor' && !userProfile?.canJustifyAbsences)
+                              (userProfile?.role !== 'admin' && !userProfile?.canJustifyAbsences)
                                 ? 'bg-slate-100 text-slate-400 cursor-not-allowed shadow-none'
                                 : 'bg-red-600 text-white shadow-red-200 hover:bg-red-700'
                             }`}

@@ -6,7 +6,7 @@ import { supabase } from '../services/supabaseClient';
 import { uploadImageToDriveScript, deleteImageFromDriveScript } from '../services/googleAppsScriptService';
 import { uploadToSupabaseStorage, smartImageUpload } from '../services/storageService';
 import { analyzeTicketImage } from '../services/geminiService';
-import PWAInstallBanner from './PWAInstallBanner';
+
 
 interface SalesFormProps {
   onAddSale: (sale: Omit<Sale, 'id'>) => Promise<void>;
@@ -249,7 +249,13 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
   const handleAnalyzeTicket = async (base64Image: string) => {
     setIsAnalyzing(true);
     try {
-      const result = await analyzeTicketImage(base64Image);
+      // Obtener contexto de tienda para la IA
+      const storeIdToUse = activeStoreId || userProfile?.storeId;
+      const storeData = stores?.find((s: any) => s.id === storeIdToUse);
+      const storeName = storeData?.name || 'Sucursal';
+      const chainName = storeData?.type || 'Coppel';
+
+      const result = await analyzeTicketImage(base64Image, storeName, chainName);
 
       // Update fields if we got results
       if (result) {
@@ -407,8 +413,9 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
           date: commonData.date,
           price: parseFloat(items[0].price),
           brand: items[0].brand,
-          ticketImage: finalImageUrl || initialData.ticketImage, // Keep old if no new one, or use new one
-          createdBy: initialData.createdBy
+          ticketImage: finalImageUrl || initialData.ticketImage,
+          createdBy: initialData.createdBy,
+          storeId: initialData.storeId
         });
       } else {
         // CREATE MODE: Submit all items
@@ -439,8 +446,7 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
 
   return (
     <div className="space-y-6 max-w-3xl mx-auto">
-      {/* BANNER DE INSTALACIÓN */}
-      <PWAInstallBanner />
+
       
       <div className="bg-white rounded-xl shadow-lg p-6 border border-slate-100">
       <div className="flex justify-between items-center mb-6">

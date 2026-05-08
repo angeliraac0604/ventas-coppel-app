@@ -1,6 +1,13 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import posthog from 'posthog-js';
+import { PostHogProvider } from '@posthog/react';
+
+posthog.init(import.meta.env.VITE_PUBLIC_POSTHOG_PROJECT_TOKEN, {
+  api_host: import.meta.env.VITE_PUBLIC_POSTHOG_HOST,
+  defaults: '2026-01-30',
+});
 
 console.log('--- INDEX.TSX STARTING ---');
 
@@ -18,7 +25,9 @@ try {
   console.log('Rendering App...');
   root.render(
     <React.StrictMode>
-      <App />
+      <PostHogProvider client={posthog}>
+        <App />
+      </PostHogProvider>
     </React.StrictMode>
   );
   console.log('Render Called Successfully');

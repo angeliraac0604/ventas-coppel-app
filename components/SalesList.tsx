@@ -1,8 +1,10 @@
 import React, { useState, useRef } from 'react';
 import html2canvas from 'html2canvas';
 import { Search, Image as ImageIcon, Calendar, User, Tag, Trash2, Eye, DollarSign, TrendingUp, Smartphone, MoreHorizontal, Edit2, X, Share2, Clock } from 'lucide-react';
-import { Sale, Brand } from '../types';
+import { Sale, Brand, UserProfile } from '../types';
 import { BRAND_CONFIGS } from '../constants';
+import { supabase } from '../services/supabaseClient';
+import PWAInstallBanner from './PWAInstallBanner';
 
 interface SalesListProps {
   sales: Sale[];
@@ -11,13 +13,44 @@ interface SalesListProps {
   onEdit: (sale: Sale) => void;
   role?: string;
   storeName?: string;
+  userProfile?: UserProfile | null;
 }
 
-const SalesList: React.FC<SalesListProps> = ({ sales, onDelete, onEdit, onAdd, role, storeName }) => {
+const SalesList: React.FC<SalesListProps> = ({ sales, onDelete, onEdit, onAdd, role, storeName, userProfile }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterBrand, setFilterBrand] = useState<Brand | 'ALL'>('ALL');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [requestModal, setRequestModal] = useState<{type: 'edit' | 'delete', sale: Sale} | null>(null);
+  const [requestReason, setRequestReason] = useState('');
+  const [isRequesting, setIsRequesting] = useState(false);
+  const [suggestedData, setSuggestedData] = useState<Partial<Sale>>({});
   const summaryRef = useRef<HTMLDivElement>(null);
+
+  const handleSendRequest = async () => {
+    if (!requestModal || !requestReason.trim()) return;
+    setIsRequesting(true);
+    try {
+      const { error } = await supabase.from('sale_requests').insert([{
+        sale_id: requestModal.sale.id,
+        requester_id: userProfile?.id,
+        type: requestModal.type,
+        reason: requestReason,
+        suggested_changes: requestModal.type === 'edit' ? suggestedData : null,
+        status: 'pending',
+        sale_data_snapshot: requestModal.sale // Store current state for history/undo
+      }]);
+
+      if (error) throw error;
+      alert("✅ Solicitud enviada correctamente al administrador.");
+      setRequestModal(null);
+      setRequestReason('');
+      setSuggestedData({});
+    } catch (err: any) {
+      alert("Error al enviar solicitud: " + err.message);
+    } finally {
+      setIsRequesting(false);
+    }
+  };
 
   const handleShareSummary = async () => {
     if (!summaryRef.current) return;
@@ -121,6 +154,8 @@ const SalesList: React.FC<SalesListProps> = ({ sales, onDelete, onEdit, onAdd, r
 
   return (
     <div className="space-y-8">
+      {/* BANNER DE INSTALACIÓN (Solo visible en navegador) */}
+      <PWAInstallBanner />
 
       {/* --- TODAY'S PERFORMANCE HERO CARD --- */}
       <div ref={summaryRef} className="bg-slate-900 rounded-3xl p-6 md:p-8 text-white relative overflow-hidden shadow-xl border border-slate-800">
@@ -378,12 +413,116 @@ const SalesList: React.FC<SalesListProps> = ({ sales, onDelete, onEdit, onAdd, r
                       </button>
                     </>
                   )}
+
+                  {role === 'seller' && (
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => {
+                          setRequestModal({ type: 'edit', sale });
+                          setSuggestedData({
+                            customerName: sale.customerName,
+                            price: sale.price,
+                            brand: sale.brand,
+                            invoiceNumber: sale.invoiceNumber
+                          });
+                        }}
+                        className="p-2 text-slate-300 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-all"
+                        title="Solicitar Edición"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => setRequestModal({ type: 'delete', sale })}
+                        className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                        title="Solicitar Eliminación"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
           ))
         )}
       </div>
+
+       {/* REQUEST MODAL */}
+      {requestModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
+           <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-md overflow-hidden flex flex-col">
+              <div className="p-8 border-b border-slate-50 flex justify-between items-center">
+                 <h3 className="text-xl font-black text-slate-800 uppercase tracking-tighter">
+                   {requestModal.type === 'edit' ? 'Solicitar Edición' : 'Solicitar Eliminación'}
+                 </h3>
+                 <button onClick={() => setRequestModal(null)} className="p-2 hover:bg-slate-100 rounded-xl"><X className="w-6 h-6 text-slate-400" /></button>
+              </div>
+              
+              <div className="p-8 space-y-6">
+                 <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100">
+                    <p className="text-[10px] font-black text-blue-600 uppercase mb-1">Venta Seleccionada</p>
+                    <p className="text-sm font-bold text-slate-800">{requestModal.sale.invoiceNumber} - {requestModal.sale.customerName}</p>
+                 </div>
+
+                 {requestModal.type === 'edit' && (
+                    <div className="space-y-4">
+                       <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-1">
+                             <label className="text-[10px] font-black text-slate-400 uppercase px-2">Nueva Marca</label>
+                             <select 
+                               value={suggestedData.brand} 
+                               onChange={(e) => setSuggestedData({...suggestedData, brand: e.target.value as Brand})}
+                               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-black uppercase outline-none"
+                             >
+                                {Object.values(Brand).map(b => <option key={b} value={b}>{BRAND_CONFIGS[b].label}</option>)}
+                             </select>
+                          </div>
+                          <div className="space-y-1">
+                             <label className="text-[10px] font-black text-slate-400 uppercase px-2">Nuevo Precio</label>
+                             <input 
+                               type="number" 
+                               value={suggestedData.price} 
+                               onChange={(e) => setSuggestedData({...suggestedData, price: parseFloat(e.target.value)})}
+                               className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-black outline-none"
+                             />
+                          </div>
+                       </div>
+                       <div className="space-y-1">
+                          <label className="text-[10px] font-black text-slate-400 uppercase px-2">Nombre Cliente Correcto</label>
+                          <input 
+                            type="text" 
+                            value={suggestedData.customerName} 
+                            onChange={(e) => setSuggestedData({...suggestedData, customerName: e.target.value.toUpperCase()})}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-black uppercase outline-none"
+                          />
+                       </div>
+                    </div>
+                 )}
+
+                 <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">
+                      {requestModal.type === 'edit' ? '¿Qué se debe corregir?' : 'Motivo de la cancelación'}
+                    </label>
+                    <textarea 
+                      value={requestReason}
+                      onChange={(e) => setRequestReason(e.target.value)}
+                      placeholder="Explica brevemente al administrador..."
+                      className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 text-xs font-bold outline-none h-24 resize-none"
+                      required
+                    ></textarea>
+                 </div>
+
+                 <button 
+                   onClick={handleSendRequest}
+                   disabled={isRequesting || !requestReason.trim()}
+                   className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl shadow-xl shadow-indigo-100 uppercase text-xs tracking-widest hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50"
+                 >
+                   {isRequesting ? 'Enviando...' : 'Enviar Solicitud'}
+                 </button>
+              </div>
+           </div>
+        </div>
+      )}
 
       {/* Image Modal */}
       {selectedImage && (

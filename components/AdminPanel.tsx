@@ -23,18 +23,24 @@ import {
   TrendingUp,
   Calendar,
   Loader2,
-  LayoutDashboard
+  LayoutDashboard,
+  Bell,
+  MessageSquare,
+  Undo2,
+  ShieldCheck
 } from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
 import { Store, UserProfile, UserRole } from '../types';
 
 interface AdminPanelProps {
-  role?: UserRole;
+  userProfile?: UserProfile | null;
   onRefresh?: () => void;
+  onViewRequests?: () => void;
 }
 
-const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
-  const [activeModal, setActiveModal] = useState<'none' | 'store' | 'invite' | 'direct' | 'stores-list'>('none');
+const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewRequests }) => {
+  const role = userProfile?.role;
+  const [activeModal, setActiveModal] = useState<'none' | 'store' | 'invite' | 'direct' | 'stores-list' | 'profile-edit'>('none');
   const [isLoading, setIsLoading] = useState(false);
   const [isDirectLoading, setIsDirectLoading] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
@@ -72,9 +78,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
   const [targetCanJustifyAbsences, setTargetCanJustifyAbsences] = useState(false);
   const [targetCanManageRestDays, setTargetCanManageRestDays] = useState(false);
   const [targetCanForceAttendance, setTargetCanForceAttendance] = useState(false);
+  const [targetCanSetSchedules, setTargetCanSetSchedules] = useState(false);
   const [directCanJustifyAbsences, setDirectCanJustifyAbsences] = useState(false);
   const [directCanManageRestDays, setDirectCanManageRestDays] = useState(false);
   const [directCanForceAttendance, setDirectCanForceAttendance] = useState(false);
+  const [directCanSetSchedules, setDirectCanSetSchedules] = useState(false);
   const [directAssignedStores, setDirectAssignedStores] = useState<string[]>([]);
   
   // Store Edit State
@@ -93,6 +101,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
   useEffect(() => {
     fetchAllData();
   }, []);
+
 
   const getAvailableStores = () => {
     const user = profiles.find(p => p.id === (supabase.auth.getUser() as any).data?.user?.id);
@@ -133,7 +142,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
           assignedStores: p.assigned_stores || [],
           canJustifyAbsences: p.can_justify_absences || false,
           canManageRestDays: p.can_manage_rest_days || false,
-          canForceAttendance: p.can_force_attendance || false
+          canForceAttendance: p.can_force_attendance || false,
+          canSetSchedules: p.can_set_schedules || false
         })));
       }
 
@@ -222,7 +232,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
           role: inviteRole, 
           store_id: inviteStoreId || null,
           invited_by: (await supabase.auth.getUser()).data.user?.id,
-          assigned_stores: (inviteRole === 'supervisor' || inviteRole === 'viewer') ? inviteAssignedStores : null
+          assigned_stores: (inviteRole === 'supervisor' || inviteRole === 'viewer') ? inviteAssignedStores : null,
+          can_set_schedules: false // Default to false for invites
         }
       ]);
       if (error) throw error;
@@ -257,6 +268,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
             can_justify_absences: directCanJustifyAbsences,
             can_manage_rest_days: directCanManageRestDays,
             can_force_attendance: directCanForceAttendance,
+            can_set_schedules: directCanSetSchedules,
             assigned_stores: (directRole === 'supervisor' || directRole === 'viewer') ? directAssignedStores : null
           }
         }
@@ -274,6 +286,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
           can_justify_absences: directCanJustifyAbsences,
           can_manage_rest_days: directCanManageRestDays,
           can_force_attendance: directCanForceAttendance,
+          can_set_schedules: directCanSetSchedules,
           assigned_stores: (directRole === 'supervisor' || directRole === 'viewer') ? directAssignedStores : null
         })
         .eq('id', authData.user.id);
@@ -299,24 +312,30 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
     }
   };
 
-  const handleUpdateProfile = async (userId: string) => {
+  const handleUpdateProfile = async () => {
+    if (!editingUserId) return;
+    setIsLoading(true);
     try {
       const { error } = await supabase.from('profiles').update({
         full_name: targetFullName.toUpperCase(),
         role: targetRole,
         store_id: targetStoreId || null,
         assigned_stores: (targetRole === 'supervisor' || targetRole === 'viewer') ? targetAssignedStores : null,
-        can_justify_absences: targetRole === 'supervisor' ? targetCanJustifyAbsences : (targetRole === 'admin' ? true : false),
-        can_manage_rest_days: targetRole === 'supervisor' ? targetCanManageRestDays : (targetRole === 'admin' ? true : false),
-        can_force_attendance: targetRole === 'supervisor' ? targetCanForceAttendance : (targetRole === 'admin' ? true : false)
-      }).eq('id', userId);
+        can_justify_absences: targetCanJustifyAbsences,
+        can_manage_rest_days: targetCanManageRestDays,
+        can_force_attendance: targetCanForceAttendance,
+        can_set_schedules: targetCanSetSchedules
+      }).eq('id', editingUserId);
 
       if (error) throw error;
       setEditingUserId(null);
+      setActiveModal('none');
       fetchAllData();
       if (onRefresh) onRefresh();
     } catch (err: any) {
       alert('Error: ' + err.message);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -409,6 +428,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
              </div>
           </div>
         </div>
+
 
         <button onClick={() => setActiveModal('invite')} className="bg-white p-8 rounded-[2.5rem] shadow-lg shadow-slate-100 border border-slate-50 flex flex-col items-center justify-center gap-3 hover:scale-[1.02] active:scale-95 transition-all group">
           <div className="w-14 h-14 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition-colors duration-300">
@@ -513,211 +533,96 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
                 {/* Colaborador */}
                 <div className="flex flex-col">
                   <span className="md:hidden text-[9px] font-black text-slate-300 uppercase tracking-widest mb-1">Colaborador</span>
-                  {editingUserId === profile.id ? (
-                    <input type="text" value={targetFullName} onChange={(e) => setTargetFullName(e.target.value.toUpperCase())} className="bg-white border border-indigo-200 rounded-xl px-4 py-2.5 text-sm font-black w-full uppercase outline-none focus:ring-4 focus:ring-indigo-50" />
-                  ) : (
-                    <div>
-                      <div className="font-black text-slate-800 text-sm uppercase tracking-tight">{profile.fullName || 'INCOMPLETO'}</div>
-                      <div className="text-[10px] text-slate-400 font-bold">{profile.email}</div>
-                    </div>
-                  )}
+                  <div>
+                    <div className="font-black text-slate-800 text-sm uppercase tracking-tight">{profile.fullName || 'INCOMPLETO'}</div>
+                    <div className="text-[10px] text-slate-400 font-bold">{profile.email}</div>
+                  </div>
                 </div>
 
                 {/* Rol / Nivel */}
                 <div className="flex flex-col">
                   <span className="md:hidden text-[9px] font-black text-slate-300 uppercase tracking-widest mb-1">Rol / Nivel</span>
                   <div className="flex">
-                    {editingUserId === profile.id ? (
-                      <select value={targetRole} onChange={(e) => setTargetRole(e.target.value as UserRole)} className="bg-white border border-indigo-200 rounded-xl px-4 py-2.5 text-xs font-black uppercase outline-none w-full">
-                        <option value="seller">VENDEDOR</option>
-                        <option value="supervisor">SUPERVISOR</option>
-                        <option value="admin">ADMINISTRADOR</option>
-                        <option value="viewer">LECTOR</option>
-                      </select>
-                    ) : (
-                      <span className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border ${
-                        profile.role === 'admin' ? 'bg-amber-50 text-amber-600 border-amber-100' : 
-                        profile.role === 'supervisor' ? 'bg-indigo-50 text-indigo-600 border-indigo-100' :
-                        profile.role === 'viewer' ? 'bg-slate-100 text-slate-500 border-slate-200' :
-                        'bg-emerald-50 text-emerald-600 border-emerald-100'
-                      }`}>
-                        {profile.role === 'admin' ? 'ADMINISTRADOR' : 
-                         profile.role === 'supervisor' ? 'SUPERVISOR' : 
-                         profile.role === 'viewer' ? 'LECTOR' : 'VENDEDOR'}
-                      </span>
-                    )}
+                    <span className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border ${
+                      profile.role === 'admin' ? 'bg-amber-50 text-amber-600 border-amber-100' : 
+                      profile.role === 'supervisor' ? 'bg-indigo-50 text-indigo-600 border-indigo-100' :
+                      profile.role === 'viewer' ? 'bg-slate-100 text-slate-500 border-slate-200' :
+                      'bg-emerald-50 text-emerald-600 border-emerald-100'
+                    }`}>
+                      {profile.role === 'admin' ? 'ADMINISTRADOR' : 
+                       profile.role === 'supervisor' ? 'SUPERVISOR' : 
+                       profile.role === 'viewer' ? 'LECTOR' : 'VENDEDOR'}
+                    </span>
                   </div>
                 </div>
 
                 {/* Sucursal Asignada */}
                 <div className="flex flex-col">
                   <span className="md:hidden text-[9px] font-black text-slate-300 uppercase tracking-widest mb-1">Sucursal Asignada</span>
-                  {editingUserId === profile.id ? (
-                    <div className="space-y-3">
-                      <select 
-                        value={targetStoreId} 
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setTargetStoreId(val);
-                          // Si es una tienda específica (no Matriz ni Global), asignamos solo esa
-                          if (val && val !== '7de1b59d-9b0e-4763-9dfc-08030c158664') {
-                            setTargetAssignedStores([val]);
-                          }
-                        }} 
-                        className="bg-white border border-indigo-200 rounded-xl px-4 py-2.5 text-xs font-black uppercase outline-none w-full"
-                      >
-                        <option value="">TIENDA GLOBAL</option>
-                        {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                      </select>
-                      
-                      {/* Store Selection Logic: Only show if Matriz or Global (Empty) is selected */}
-                      {((targetRole === 'supervisor' || targetRole === 'viewer')) && 
-                       (targetStoreId === '' || targetStoreId === '7de1b59d-9b0e-4763-9dfc-08030c158664') && (
-                        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 px-1">Selección de Tiendas</p>
-                          <p className="text-[8px] text-slate-400 font-bold uppercase mb-3 px-1 leading-tight">Si no seleccionas ninguna, tendrá acceso GLOBAL (todas las actuales y futuras)</p>
-                          <div className="max-h-32 overflow-y-auto space-y-1.5 pr-2 custom-scrollbar">
-                            {stores.map(s => (
-                              <label key={s.id} className="flex items-center gap-3 px-3 py-2 hover:bg-white rounded-xl cursor-pointer transition-all border border-transparent hover:border-slate-100 group">
-                                <input 
-                                  type="checkbox" 
-                                  checked={targetAssignedStores.includes(s.id)}
-                                  onChange={(e) => {
-                                    if (e.target.checked) setTargetAssignedStores([...targetAssignedStores, s.id]);
-                                    else setTargetAssignedStores(targetAssignedStores.filter(id => id !== s.id));
-                                  }}
-                                  className="w-4 h-4 rounded-lg border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                                />
-                                <span className="text-[10px] font-black text-slate-600 uppercase group-hover:text-indigo-600">{s.name}</span>
-                              </label>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Attendance Flags - Hide for Viewer */}
-                      {targetRole !== 'viewer' && (
-                        <>
-
-                          <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100">
-                            <label className="flex items-center gap-3 cursor-pointer group">
-                              <input 
-                                type="checkbox" 
-                                checked={targetCanForceAttendance}
-                                onChange={(e) => setTargetCanForceAttendance(e.target.checked)}
-                                className="w-4 h-4 rounded-lg border-emerald-300 text-emerald-600 focus:ring-emerald-500"
-                              />
-                              <div className="flex flex-col">
-                                <span className="text-[10px] font-black text-emerald-700 uppercase">Marcar Asistencia Manual</span>
-                                <span className="text-[8px] text-emerald-600/70 font-bold uppercase">Permite marcar días como "Asistió" en el calendario</span>
-                              </div>
-                            </label>
-                          </div>
-
-                          <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800">
-                            <label className="flex items-center gap-3 cursor-pointer group">
-                              <input 
-                                type="checkbox" 
-                                checked={targetCanJustifyAbsences}
-                                onChange={(e) => setTargetCanJustifyAbsences(e.target.checked)}
-                                className="w-4 h-4 rounded-lg border-slate-700 text-indigo-500 focus:ring-indigo-500"
-                              />
-                              <div className="flex flex-col">
-                                <span className="text-[10px] font-black text-slate-300 uppercase">Autorizar y Justificar Faltas</span>
-                                <span className="text-[8px] text-slate-500 font-bold uppercase">Permite aprobar retardos e inasistencias</span>
-                              </div>
-                            </label>
-                          </div>
-
-                          <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800">
-                            <label className="flex items-center gap-3 cursor-pointer group">
-                              <input 
-                                type="checkbox" 
-                                checked={targetCanManageRestDays}
-                                onChange={(e) => setTargetCanManageRestDays(e.target.checked)}
-                                className="w-4 h-4 rounded-lg border-slate-700 text-indigo-500 focus:ring-indigo-500"
-                              />
-                              <div className="flex flex-col">
-                                <span className="text-[10px] font-black text-slate-300 uppercase">Gestionar Descansos</span>
-                                <span className="text-[8px] text-slate-500 font-bold uppercase">Permite asignar días de descanso al personal</span>
-                              </div>
-                            </label>
-                          </div>
-                        </>
-                      )}
+                  <div className="space-y-1">
+                    <span className="text-xs font-black text-slate-700 uppercase flex items-center gap-2">
+                      <Building className="w-3.5 h-3.5 text-slate-400" />
+                      {stores.find(s => s.id === profile.storeId)?.name || 'TIENDA GLOBAL'}
+                    </span>
+                    {profile.assignedStores && profile.assignedStores.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {profile.assignedStores.map(id => (
+                          <span key={id} className="px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded text-[8px] font-black uppercase">
+                            {stores.find(s => s.id === id)?.name?.split(' ')[0] || 'T'}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {/* Permission Indicators */}
+                    <div className="flex flex-wrap gap-1.5 mt-1.5">
+                      {profile.canForceAttendance && (
+                         <div className="flex items-center gap-1 text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
+                           <CheckCircle className="w-2.5 h-2.5" />
+                           <span className="text-[7px] font-black uppercase">Asistencia</span>
+                         </div>
+                       )}
+                      {profile.canJustifyAbsences && (
+                         <div className="flex items-center gap-1 text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">
+                           <ShieldCheck className="w-2.5 h-2.5" />
+                           <span className="text-[7px] font-black uppercase">Justificar</span>
+                         </div>
+                       )}
+                      {profile.canManageRestDays && (
+                         <div className="flex items-center gap-1 text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100">
+                           <Calendar className="w-2.5 h-2.5" />
+                           <span className="text-[7px] font-black uppercase">Descansos</span>
+                         </div>
+                       )}
                     </div>
-                    ) : (
-                    <div className="space-y-2">
-                      <span className="text-xs font-black text-slate-700 uppercase flex items-center gap-2">
-                        <Building className="w-3.5 h-3.5 text-slate-400" />
-                        {stores.find(s => s.id === profile.storeId)?.name || 'TIENDA GLOBAL'}
-                      </span>
-                      {profile.assignedStores && profile.assignedStores.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5">
-                          {profile.assignedStores.map(sid => (
-                            <span key={sid} className="text-[8px] bg-indigo-50 text-indigo-500 px-2 py-0.5 rounded-full font-black uppercase border border-indigo-100">
-                              {stores.find(s => s.id === sid)?.name || '?'}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      {profile.role === 'supervisor' && (
-                         <div className="space-y-1 mt-1">
-                           {profile.canForceAttendance && (
-                               <div className="flex items-center gap-1.5 text-emerald-600">
-                                 <CheckCircle className="w-3 h-3" />
-                                 <span className="text-[8px] font-black uppercase">Asistencia Manual</span>
-                               </div>
-                             )}
-                            {profile.canJustifyAbsences && (
-                               <div className="flex items-center gap-1.5 text-slate-800">
-                                 <CheckCircle className="w-3 h-3" />
-                                 <span className="text-[8px] font-black uppercase">Justificar Faltas</span>
-                               </div>
-                             )}
-                            {profile.canManageRestDays && (
-                               <div className="flex items-center gap-1.5 text-blue-600">
-                                 <CheckCircle className="w-3 h-3" />
-                                 <span className="text-[8px] font-black uppercase">Gestionar Descansos</span>
-                               </div>
-                             )}
-                             </div>
-                           )}
-                    </div>
-                  )}
+                  </div>
                 </div>
 
                 {/* Acciones */}
                 <div className="flex justify-end items-center">
-                  {editingUserId === profile.id ? (
-                    <div className="flex justify-end gap-2 w-full md:w-auto">
-                      <button onClick={() => handleUpdateProfile(profile.id)} className="flex-1 md:flex-none p-3 bg-emerald-500 text-white rounded-xl shadow-lg shadow-emerald-200 hover:scale-[1.05] active:scale-95 transition-all flex items-center justify-center"><Save className="w-5 h-5" /></button>
-                      <button onClick={() => setEditingUserId(null)} className="flex-1 md:flex-none p-3 bg-slate-100 text-slate-400 rounded-xl hover:bg-slate-200 transition-all flex items-center justify-center"><X className="w-5 h-5" /></button>
-                    </div>
-                  ) : (
-                    <div className="flex justify-end gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all">
-                      <button onClick={() => { 
-                        setEditingUserId(profile.id); 
-                        setTargetFullName(profile.fullName || ''); 
-                        setTargetRole(profile.role); 
-                        setTargetStoreId(profile.storeId || ''); 
-                        setTargetAssignedStores(profile.assignedStores || []);
-                        setTargetCanJustifyAbsences(profile.canJustifyAbsences || false);
-                        setTargetCanManageRestDays(profile.canManageRestDays || false);
-                        setTargetCanForceAttendance(profile.canForceAttendance || false);
-                      }} className="p-3 hover:bg-indigo-50 text-slate-300 hover:text-indigo-600 rounded-xl transition-all"><Edit2 className="w-5 h-5" /></button>
-                      <button onClick={() => handleDeleteUser(profile.id)} className="p-3 hover:bg-red-50 text-slate-300 hover:text-red-500 rounded-xl transition-all"><Trash2 className="w-5 h-5" /></button>
-                    </div>
-                  )}
+                  <div className="flex justify-end gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all">
+                    <button onClick={() => { 
+                      setEditingUserId(profile.id); 
+                      setTargetFullName(profile.fullName || ''); 
+                      setTargetRole(profile.role); 
+                      setTargetStoreId(profile.storeId || ''); 
+                      setTargetAssignedStores(profile.assignedStores || []);
+                      setTargetCanJustifyAbsences(profile.can_justify_absences || profile.canJustifyAbsences || false);
+                      setTargetCanManageRestDays(profile.can_manage_rest_days || profile.canManageRestDays || false);
+                      setTargetCanForceAttendance(profile.can_force_attendance || profile.canForceAttendance || false);
+                      setTargetCanSetSchedules(profile.can_set_schedules || profile.canSetSchedules || false);
+                      setActiveModal('profile-edit');
+                    }} className="p-3 hover:bg-indigo-50 text-slate-300 hover:text-indigo-600 rounded-xl transition-all"><Edit2 className="w-5 h-5" /></button>
+                    <button onClick={() => handleDeleteUser(profile.id)} className="p-3 hover:bg-red-50 text-slate-300 hover:text-red-500 rounded-xl transition-all"><Trash2 className="w-5 h-5" /></button>
+                  </div>
                 </div>
               </div>
             ))}
-            </div>
+          </div>
           </div>
         </div>
 
       {/* MODALS */}
-      {activeModal !== 'none' && (
+      {activeModal !== 'none' && activeModal !== 'profile-edit' && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-300">
            <div className="absolute inset-0" onClick={() => setActiveModal('none')}></div>
            <div className="bg-white rounded-[3.5rem] shadow-[0_32px_64px_-12px_rgba(0,0,0,0.3)] w-full max-w-xl max-h-[90vh] relative z-10 animate-in zoom-in-95 duration-300 flex flex-col overflow-hidden">
@@ -893,6 +798,20 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
                                <p className="text-[9px] text-blue-600/70 font-bold uppercase leading-none mt-1">Este supervisor podrá asignar días de descanso.</p>
                             </label>
                           </div>
+
+                          <div className="bg-indigo-50 border border-indigo-100 p-5 rounded-[1.2rem] flex items-center gap-4">
+                            <input 
+                              type="checkbox" 
+                              id="directSchedules"
+                              checked={directCanSetSchedules}
+                              onChange={(e) => setDirectCanSetSchedules(e.target.checked)}
+                              className="w-5 h-5 rounded-lg border-indigo-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                            />
+                            <label htmlFor="directSchedules" className="flex-1 cursor-pointer">
+                               <p className="text-[10px] font-black text-indigo-700 uppercase">Autorizar Asignar Horarios</p>
+                               <p className="text-[9px] text-indigo-600/70 font-bold uppercase leading-none mt-1">Este supervisor podrá configurar horas de entrada/salida.</p>
+                            </label>
+                          </div>
                         </div>
                       )}
 
@@ -922,7 +841,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
                              onChange={(e) => {
                                const val = e.target.value;
                                setInviteStoreId(val);
-                               if (val && val !== '7de1b59d-9b0e-4763-9dfc-08030c158664') {
+                               if (val !== '') {
                                  setInviteAssignedStores([val]);
                                }
                              }} 
@@ -946,7 +865,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
                         </div>
                       </div>
 
-                      {(inviteRole === 'supervisor' || inviteRole === 'viewer') && (inviteStoreId === '' || inviteStoreId === '7de1b59d-9b0e-4763-9dfc-08030c158664') && (
+                      {(inviteRole === 'supervisor' || inviteRole === 'viewer') && inviteStoreId === '' && (
                         <div className="bg-slate-50 p-6 rounded-[1.5rem] border border-slate-100">
                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 px-1">Tiendas a Supervisar</p>
                            <p className="text-[8px] text-slate-400 font-bold uppercase mb-4 px-1 leading-tight">Deja vacío para Supervisor General (todas las tiendas)</p>
@@ -1033,6 +952,173 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ role, onRefresh }) => {
                  )}
               </div>
            </div>
+        </div>
+      )}
+      {/* Profile Edit Modal */}
+      {activeModal === 'profile-edit' && editingUserId && (
+        <div className="fixed inset-0 z-[60] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
+            <div className="p-8 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-blue-600 text-white rounded-2xl shadow-lg shadow-blue-200">
+                  <Edit2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-800 uppercase tracking-tight">Editar Perfil</h3>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{targetFullName || 'Usuario'}</p>
+                </div>
+              </div>
+              <button onClick={() => { setActiveModal('none'); setEditingUserId(null); }} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
+                <X className="w-5 h-5 text-slate-500" />
+              </button>
+            </div>
+
+            <div className="p-8 space-y-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
+              {/* Basic Info */}
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nombre Completo</label>
+                  <input 
+                    type="text" 
+                    value={targetFullName} 
+                    onChange={(e) => setTargetFullName(e.target.value.toUpperCase())} 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-black uppercase outline-none focus:ring-4 focus:ring-blue-50 focus:border-blue-200 transition-all"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Rol / Nivel</label>
+                    <select 
+                      value={targetRole} 
+                      onChange={(e) => {
+                        const newRole = e.target.value as UserRole;
+                        setTargetRole(newRole);
+                        // Reset permissions if not supervisor
+                        if (newRole !== 'supervisor') {
+                          setTargetCanJustifyAbsences(false);
+                          setTargetCanManageRestDays(false);
+                          setTargetCanForceAttendance(false);
+                        }
+                        // Reset multi-store if seller
+                        if (newRole === 'seller') {
+                          setTargetAssignedStores([]);
+                        }
+                      }}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-xs font-black uppercase outline-none focus:ring-4 focus:ring-blue-50 transition-all"
+                    >
+                      <option value="seller">VENDEDOR</option>
+                      <option value="supervisor">SUPERVISOR</option>
+                      <option value="admin">ADMINISTRADOR</option>
+                      <option value="viewer">LECTOR</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Sucursal Base</label>
+                    <select 
+                      value={targetStoreId} 
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setTargetStoreId(val);
+                        // If a specific store is selected, clear multi-store access
+                        if (val !== '') {
+                          setTargetAssignedStores([]);
+                        }
+                      }}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-xs font-black uppercase outline-none focus:ring-4 focus:ring-blue-50 transition-all"
+                    >
+                      <option value="">TIENDA GLOBAL</option>
+                      {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Advanced Permissions - ONLY FOR SUPERVISORS */}
+              {targetRole === 'supervisor' && (
+                <div className="space-y-4 border-t border-slate-100 pt-6">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Permisos Especiales</p>
+                  
+                  <div className="space-y-3">
+                    <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${targetCanForceAttendance ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                      <div className="flex flex-col">
+                        <span className={`text-[10px] font-black uppercase ${targetCanForceAttendance ? 'text-emerald-700' : 'text-slate-500'}`}>Asistencia Manual</span>
+                        <span className="text-[8px] font-bold text-slate-400 uppercase">Autorizar registros manuales</span>
+                      </div>
+                      <input type="checkbox" checked={targetCanForceAttendance} onChange={(e) => setTargetCanForceAttendance(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-emerald-600 focus:ring-emerald-500" />
+                    </label>
+
+                    <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${targetCanJustifyAbsences ? 'bg-indigo-50 border-indigo-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                      <div className="flex flex-col">
+                        <span className={`text-[10px] font-black uppercase ${targetCanJustifyAbsences ? 'text-indigo-700' : 'text-slate-500'}`}>Autorizar/Justificar Faltas</span>
+                        <span className="text-[8px] font-bold text-slate-400 uppercase">Configura si puede aprobar retardos e inasistencias</span>
+                      </div>
+                      <input type="checkbox" checked={targetCanJustifyAbsences} onChange={(e) => setTargetCanJustifyAbsences(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+                    </label>
+
+                    <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${targetCanManageRestDays ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                      <div className="flex flex-col">
+                        <span className={`text-[10px] font-black uppercase ${targetCanManageRestDays ? 'text-amber-700' : 'text-slate-500'}`}>Gestionar Descansos</span>
+                        <span className="text-[8px] font-bold text-slate-400 uppercase">Asignar días libres al personal</span>
+                      </div>
+                      <input type="checkbox" checked={targetCanManageRestDays} onChange={(e) => setTargetCanManageRestDays(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-amber-600 focus:ring-amber-500" />
+                    </label>
+                    
+                    <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${targetCanSetSchedules ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                      <div className="flex flex-col">
+                        <span className={`text-[10px] font-black uppercase ${targetCanSetSchedules ? 'text-blue-700' : 'text-slate-500'}`}>Asignar Horarios</span>
+                        <span className="text-[8px] font-bold text-slate-400 uppercase">Configura horas de entrada, salida y comida</span>
+                      </div>
+                      <input type="checkbox" checked={targetCanSetSchedules} onChange={(e) => setTargetCanSetSchedules(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-blue-600 focus:ring-blue-500" />
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* Multi-Store Access (ONLY if Global) */}
+              {(targetRole === 'supervisor' || targetRole === 'viewer') && targetStoreId === '' && (
+                <div className="space-y-4 border-t border-slate-100 pt-6">
+                  <div className="flex items-center justify-between px-1">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Acceso Multi-Tienda</p>
+                    <span className="text-[8px] font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full uppercase">Opcional</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
+                    {stores.map(s => (
+                      <label key={s.id} className={`flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer ${targetAssignedStores.includes(s.id) ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-100'}`}>
+                        <input 
+                          type="checkbox" 
+                          checked={targetAssignedStores.includes(s.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) setTargetAssignedStores([...targetAssignedStores, s.id]);
+                            else setTargetAssignedStores(targetAssignedStores.filter(id => id !== s.id));
+                          }}
+                          className="w-4 h-4 rounded border-slate-300 text-blue-600"
+                        />
+                        <span className={`text-[9px] font-black uppercase ${targetAssignedStores.includes(s.id) ? 'text-blue-700' : 'text-slate-500'}`}>{s.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-8 bg-slate-50 border-t border-slate-100 flex gap-3">
+              <button 
+                onClick={() => { setActiveModal('none'); setEditingUserId(null); }}
+                className="flex-1 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest text-slate-400 hover:bg-slate-100 transition-all"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={handleUpdateProfile}
+                disabled={isLoading}
+                className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-blue-200 hover:bg-blue-700 active:scale-95 transition-all flex items-center justify-center gap-2"
+              >
+                {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                Guardar Cambios
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

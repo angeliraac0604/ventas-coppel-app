@@ -10,10 +10,12 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "@posthog/react": "^1.9.0",
     "@supabase/supabase-js": "2.39.3",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
     "lucide-react": "^0.562.0",
+    "posthog-js": "^1.372.10",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "recharts": "^3.6.0"
