@@ -60,6 +60,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
   const [inviteRole, setInviteRole] = useState('seller' as UserRole);
   const [inviteStoreId, setInviteStoreId] = useState('');
   const [inviteAssignedStores, setInviteAssignedStores] = useState<string[]>([]);
+  const [inviteCanJustifyAbsences, setInviteCanJustifyAbsences] = useState(false);
+  const [inviteCanManageRestDays, setInviteCanManageRestDays] = useState(false);
+  const [inviteCanForceAttendance, setInviteCanForceAttendance] = useState(false);
+  const [inviteCanSetSchedules, setInviteCanSetSchedules] = useState(false);
 
   // Direct Create Form
   const [directEmail, setDirectEmail] = useState('');
@@ -233,7 +237,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
           store_id: inviteStoreId || null,
           invited_by: (await supabase.auth.getUser()).data.user?.id,
           assigned_stores: (inviteRole === 'supervisor' || inviteRole === 'viewer') ? inviteAssignedStores : null,
-          can_set_schedules: false // Default to false for invites
+          can_justify_absences: inviteCanJustifyAbsences,
+          can_manage_rest_days: inviteCanManageRestDays,
+          can_force_attendance: inviteCanForceAttendance,
+          can_set_schedules: inviteCanSetSchedules
         }
       ]);
       if (error) throw error;
@@ -244,6 +251,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
 
       setInviteEmail('');
       setInviteAssignedStores([]);
+      setInviteCanJustifyAbsences(false);
+      setInviteCanManageRestDays(false);
+      setInviteCanForceAttendance(false);
+      setInviteCanSetSchedules(false);
       setActiveModal('none');
       fetchAllData();
     } catch (err: any) {
@@ -864,6 +875,46 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
                            </select>
                         </div>
                       </div>
+
+                      {inviteRole === 'supervisor' && (
+                        <div className="space-y-4 border-t border-slate-100 pt-6">
+                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Permisos de Supervisor</p>
+                           
+                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                             <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${inviteCanForceAttendance ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                               <div className="flex flex-col">
+                                 <span className={`text-[10px] font-black uppercase ${inviteCanForceAttendance ? 'text-emerald-700' : 'text-slate-500'}`}>Asistencia Manual</span>
+                                 <span className="text-[8px] font-bold text-slate-400 uppercase">Autorizar registros manuales</span>
+                               </div>
+                               <input type="checkbox" checked={inviteCanForceAttendance} onChange={(e) => setInviteCanForceAttendance(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-emerald-600" />
+                             </label>
+
+                             <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${inviteCanJustifyAbsences ? 'bg-indigo-50 border-indigo-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                               <div className="flex flex-col">
+                                 <span className={`text-[10px] font-black uppercase ${inviteCanJustifyAbsences ? 'text-indigo-700' : 'text-slate-500'}`}>Justificar Faltas</span>
+                                 <span className="text-[8px] font-bold text-slate-400 uppercase">Aprobar retardos e inasistencias</span>
+                               </div>
+                               <input type="checkbox" checked={inviteCanJustifyAbsences} onChange={(e) => setInviteCanJustifyAbsences(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-indigo-600" />
+                             </label>
+
+                             <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${inviteCanManageRestDays ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                               <div className="flex flex-col">
+                                 <span className={`text-[10px] font-black uppercase ${inviteCanManageRestDays ? 'text-amber-700' : 'text-slate-500'}`}>Gestionar Descansos</span>
+                                 <span className="text-[8px] font-bold text-slate-400 uppercase">Asignar días libres</span>
+                               </div>
+                               <input type="checkbox" checked={inviteCanManageRestDays} onChange={(e) => setInviteCanManageRestDays(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-amber-600" />
+                             </label>
+                             
+                             <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${inviteCanSetSchedules ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                               <div className="flex flex-col">
+                                 <span className={`text-[10px] font-black uppercase ${inviteCanSetSchedules ? 'text-blue-700' : 'text-slate-500'}`}>Asignar Horarios</span>
+                                 <span className="text-[8px] font-bold text-slate-400 uppercase">Configurar horas de entrada/salida</span>
+                               </div>
+                               <input type="checkbox" checked={inviteCanSetSchedules} onChange={(e) => setInviteCanSetSchedules(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-blue-600" />
+                             </label>
+                           </div>
+                        </div>
+                      )}
 
                       {(inviteRole === 'supervisor' || inviteRole === 'viewer') && inviteStoreId === '' && (
                         <div className="bg-slate-50 p-6 rounded-[1.5rem] border border-slate-100">
