@@ -110,12 +110,10 @@ const App: React.FC = () => {
 
   // --- REAL-TIME NOTIFICATIONS ---
   useEffect(() => {
-    if (!session?.user) return;
+    if (!session?.user?.id || !userProfile) return;
 
-    // Request notification permission on mount for admin
-    if (userProfile?.role === 'admin' && "Notification" in window && Notification.permission === "default") {
-       Notification.requestPermission();
-    }
+    // Solo admin recibe alertas de solicitudes
+    if (userProfile.role !== 'admin' && userProfile.role !== 'seller') return;
 
     const channel = supabase
       .channel('sale_requests_alerts')
@@ -123,12 +121,10 @@ const App: React.FC = () => {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'sale_requests' },
         (payload) => {
-          // If admin, increment count and show notification
-          if (userProfile?.role === 'admin') {
+          if (userProfile.role === 'admin') {
              fetchPendingRequestsCount();
-             // Browser notification or visual cue
              if ("Notification" in window && Notification.permission === "granted") {
-                new Notification("Nueva Solicitud", { body: "Un vendedor ha enviado una nueva solicitud de edición/baja." });
+                new Notification("Nueva Solicitud", { body: "Un vendedor ha enviado una nueva solicitud." });
              }
           }
         }
@@ -137,12 +133,7 @@ const App: React.FC = () => {
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'sale_requests' },
         (payload) => {
-           // If the user is the one who sent the request, and it was approved/rejected
-           if (payload.new.requester_id === session.user.id) {
-              fetchPendingRequestsCount(); // This also fetches resolutions for non-admins
-           }
-           // If admin, refresh count
-           if (userProfile?.role === 'admin') {
+           if (payload.new.requester_id === session.user.id || userProfile.role === 'admin') {
               fetchPendingRequestsCount();
            }
         }
@@ -152,7 +143,7 @@ const App: React.FC = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [session, userProfile]);
+  }, [session?.user?.id, userProfile?.role]); // Depend on ID and Role to avoid constant re-subs
 
 
 
@@ -525,37 +516,32 @@ create policy "Users insert store warranties" on public.warranties for insert to
     if (!session) return;
 
     const SESSION_DATE_KEY = 'sales_app_session_date';
+    
+    // Al montar (justo después del login), forzamos que la fecha sea la de hoy
+    // para evitar el bucle de logout si había una fecha de ayer guardada.
+    const todayStr = new Date().toDateString();
+    try {
+      localStorage.setItem(SESSION_DATE_KEY, todayStr);
+    } catch (e) {}
 
     const checkMidnight = () => {
       const now = new Date();
-      // Obtenemos la fecha actual como string único (ej: "Mon Oct 25 2023")
       const currentDateStr = now.toDateString();
       let storedDate = null;
       try {
         storedDate = localStorage.getItem(SESSION_DATE_KEY);
       } catch (e) {}
 
-      if (!storedDate) {
-        // Si no hay fecha guardada (primer login del día o recarga), guardamos la actual
-        try {
-          localStorage.setItem(SESSION_DATE_KEY, currentDateStr);
-        } catch (e) {}
-      } else if (storedDate !== currentDateStr) {
-        // Si la fecha guardada es diferente a la actual, significa que cambió el día (medianoche)
-        // Forzamos el cierre de sesión
+      if (storedDate && storedDate !== currentDateStr) {
+        // Solo cerramos sesión si la fecha cambia mientras el usuario ya está activo
         console.log("Cierre de sesión automático: Cambio de día detectado.");
         handleLogout();
       }
     };
 
-    // Revisar inmediatamente al cargar
-    checkMidnight();
-
-    // Configurar intervalo para revisar cada minuto (60,000 ms)
     const intervalId = setInterval(checkMidnight, 60000);
-
     return () => clearInterval(intervalId);
-  }, [session]);
+  }, [!!session]); // Se dispara cuando cambia el estado de la sesión
 
   // --- AUTOMATIC RECOVERY & CLOSE LOGIC ---
   const processingDatesRef = React.useRef<Set<string>>(new Set());
