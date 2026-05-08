@@ -66,29 +66,62 @@ export const smartImageUpload = async (
   }
   
   const supabaseUrl = await uploadToSupabaseStorage(base64Image, supabasePath);
+  
+  // 2. BACKGROUND SYNC (Non-blocking for the UI)
+  // We return the Supabase URL immediately so the user doesn't wait.
+  // The transfer to Drive and cleanup happens in the background.
+  setTimeout(async () => {
+    try {
+      const { uploadImageToDriveScript } = await import('./googleAppsScriptService');
+      
+      // Set context
+      (window as any)._activeStoreName = storeName;
+      (window as any)._activeStoreChain = chainName;
+      (window as any)._customMonthName = m;
+      
+      const driveUrl = await uploadImageToDriveScript(base64Image, filename, date, folderType as any, userName, chainName);
+      
+      if (driveUrl) {
+        console.log(`✅ [Background] Photo synced to Drive: ${driveUrl}`);
+        
+        // Multi-table and Multi-column update logic
+        const targets = [
+          { table: 'sales', columns: ['ticket_image'] },
+          { table: 'attendance', columns: ['image_url', 'screenshot_url'] },
+          { table: 'warranties', columns: ['ticket_image'] }
+        ];
 
-  // 2. SYNC TO GOOGLE DRIVE (Wait for it to ensure we can use the Drive URL and delete from Supabase)
-  try {
-    const { uploadImageToDriveScript } = await import('./googleAppsScriptService');
-    
-    // Set context for the script
-    (window as any)._activeStoreName = storeName;
-    (window as any)._activeStoreChain = chainName;
-    (window as any)._customMonthName = m;
-    
-    const driveUrl = await uploadImageToDriveScript(base64Image, filename, date, folderType as any, userName, chainName);
-    
-    if (driveUrl) {
-      console.log(`✅ Photo moved to Drive: ${driveUrl}. Deleting from Supabase...`);
-      // 3. DELETE FROM SUPABASE (Now that we have it in Drive)
-      await deleteFromSupabaseStorage(supabasePath);
-      return driveUrl; // Use Drive URL for the database record
+        let updated = false;
+        for (const target of targets) {
+          for (const col of target.columns) {
+            const { data, error: updateError } = await supabase
+              .from(target.table)
+              .update({ [col]: driveUrl })
+              .eq(col, supabaseUrl)
+              .select();
+
+            if (!updateError && data && data.length > 0) {
+              console.log(`✅ [Background] Updated ${target.table}.${col} to Drive URL.`);
+              updated = true;
+              break;
+            }
+          }
+          if (updated) break;
+        }
+
+        if (updated) {
+          // ONLY delete from Supabase after we are 100% sure the DB record points to Drive
+          await deleteFromSupabaseStorage(supabasePath);
+          console.log(`✅ [Background] Temporary photo deleted from Supabase.`);
+        } else {
+          console.warn(`⚠️ [Background] Could not find record to update, keeping Supabase file as fallback.`);
+        }
+      }
+    } catch (err) {
+      console.error(`❌ [Background] Drive sync failed:`, err);
     }
-  } catch (err) {
-    console.error(`❌ Drive sync failed, keeping Supabase backup:`, err);
-  }
+  }, 5000); // 5 second buffer to ensure UI has saved the record
 
-  // Fallback to Supabase URL if Drive fails
   return supabaseUrl;
 };
 
