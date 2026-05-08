@@ -404,7 +404,11 @@ create policy "Users insert store warranties" on public.warranties for insert to
           role: invite?.role || metadata.role || 'seller',
           store_id: invite?.store_id || metadata.store_id || null,
           assigned_stores: invite?.assigned_stores || metadata.assigned_stores || [],
-          full_name: metadata.full_name || null
+          full_name: metadata.full_name || null,
+          can_justify_absences: invite?.can_justify_absences || false,
+          can_manage_rest_days: invite?.can_manage_rest_days || false,
+          can_force_attendance: invite?.can_force_attendance || false,
+          can_set_schedules: invite?.can_set_schedules || false
         };
 
         const { data: inserted, error: insertError } = await supabase
@@ -427,9 +431,11 @@ create policy "Users insert store warranties" on public.warranties for insert to
           const { data: updated, error: updateError } = await supabase
             .from('profiles')
             .update({
-              role: invite.role,
-              store_id: invite.store_id,
-              assigned_stores: invite.assigned_stores || profileData.assigned_stores
+              assigned_stores: invite.assigned_stores || profileData.assigned_stores,
+              can_justify_absences: invite.can_justify_absences,
+              can_manage_rest_days: invite.can_manage_rest_days,
+              can_force_attendance: invite.can_force_attendance,
+              can_set_schedules: invite.can_set_schedules
             })
             .eq('id', userId)
             .select()
