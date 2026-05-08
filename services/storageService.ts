@@ -67,21 +67,28 @@ export const smartImageUpload = async (
   
   const supabaseUrl = await uploadToSupabaseStorage(base64Image, supabasePath);
 
-  // 2. BACKGROUND SYNC TO GOOGLE DRIVE (Async, non-blocking)
-  import('./googleAppsScriptService').then(({ uploadImageToDriveScript }) => {
+  // 2. SYNC TO GOOGLE DRIVE (Wait for it to ensure we can use the Drive URL and delete from Supabase)
+  try {
+    const { uploadImageToDriveScript } = await import('./googleAppsScriptService');
+    
+    // Set context for the script
     (window as any)._activeStoreName = storeName;
     (window as any)._activeStoreChain = chainName;
-    (window as any)._customMonthName = m; // Pass month name as hint
+    (window as any)._customMonthName = m;
     
-    uploadImageToDriveScript(base64Image, filename, date, folderType as any, userName, chainName)
-      .then(driveUrl => {
-        console.log(`✅ [Background Sync] Successfully moved photo to Drive: ${driveUrl}`);
-      })
-      .catch(err => {
-        console.error(`❌ [Background Sync] Failed to sync ${filename} to Drive:`, err);
-      });
-  });
+    const driveUrl = await uploadImageToDriveScript(base64Image, filename, date, folderType as any, userName, chainName);
+    
+    if (driveUrl) {
+      console.log(`✅ Photo moved to Drive: ${driveUrl}. Deleting from Supabase...`);
+      // 3. DELETE FROM SUPABASE (Now that we have it in Drive)
+      await deleteFromSupabaseStorage(supabasePath);
+      return driveUrl; // Use Drive URL for the database record
+    }
+  } catch (err) {
+    console.error(`❌ Drive sync failed, keeping Supabase backup:`, err);
+  }
 
+  // Fallback to Supabase URL if Drive fails
   return supabaseUrl;
 };
 
