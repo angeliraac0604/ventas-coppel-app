@@ -115,6 +115,13 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
   const totalNetRevenue = totalRevenue / 1.16;
   const totalDevices = filteredSales.length;
 
+  const now = new Date();
+  const todayStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+  const todaySales = filteredSales.filter(s => s.date === todayStr);
+  const todayCount = todaySales.length;
+  const todayRevenue = todaySales.reduce((acc, curr) => acc + (Number(curr.price) || 0), 0);
+  const todayNetRevenue = todayRevenue / 1.16;
+
   // Seller Performance (Including Admin Angel Irak Alvarado Dávila)
   const calculatePerformance = (salesArray: any[]) => {
     return profiles
