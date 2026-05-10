@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell, Legend } from 'recharts';
-import { Building, Target, TrendingUp, Users, Smartphone, DollarSign, Calendar, Filter, ChevronRight, Award, AlertCircle, Loader2, Save, ShoppingBag } from 'lucide-react';
+import { Building, Target, TrendingUp, Users, Smartphone, DollarSign, Calendar, Filter, ChevronRight, Award, AlertCircle, Loader2, Save, ShoppingBag, Edit2, Trophy } from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
 import { Store, UserProfile, Brand } from '../types';
 import { BRAND_CONFIGS } from '../constants';
@@ -31,6 +31,7 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
   }); // YYYY-MM
   const [revenueGoal, setRevenueGoal] = useState('');
   const [devicesGoal, setDevicesGoal] = useState('');
+  const [showGoalForm, setShowGoalForm] = useState(false);
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -114,25 +115,24 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
   const totalNetRevenue = totalRevenue / 1.16;
   const totalDevices = filteredSales.length;
 
-  const todayStr = new Date().toISOString().split('T')[0];
-  const todaySales = filteredSales.filter(s => s.date === todayStr);
-  const todayCount = todaySales.length;
-  const todayRevenue = todaySales.reduce((acc, curr) => acc + (Number(curr.price) || 0), 0);
-  const todayNetRevenue = todayRevenue / 1.16;
-
   // Seller Performance (Including Admin Angel Irak Alvarado Dávila)
-  const sellerPerformance: PerformanceData[] = profiles
-    .filter(p => (selectedStoreId === 'all' || p.store_id === selectedStoreId) && (p.role === 'seller' || p.email === 'angelirac@alvarado.com' || p.email === 'angeliraac@gmail.com'))
-    .map(p => {
-      const sellerSales = filteredSales.filter(s => s.created_by === p.id);
-      return {
-        sellerName: p.full_name || p.email?.split('@')[0] || 'Vendedor',
-        count: sellerSales.length,
-        revenue: sellerSales.reduce((acc, curr) => acc + (Number(curr.price) || 0), 0)
-      };
-    })
-    .filter(sp => sp.count > 0 || selectedStoreId !== 'all')
-    .sort((a, b) => b.revenue - a.revenue);
+  const calculatePerformance = (salesArray: any[]) => {
+    return profiles
+      .filter(p => (selectedStoreId === 'all' || p.store_id === selectedStoreId) && (p.role === 'seller' || p.email === 'angelirac@alvarado.com' || p.email === 'angeliraac@gmail.com'))
+      .map(p => {
+        const sellerSales = salesArray.filter(s => s.created_by === p.id);
+        return {
+          sellerName: p.full_name || p.email?.split('@')[0] || 'Vendedor',
+          count: sellerSales.length,
+          revenue: sellerSales.reduce((acc, curr) => acc + (Number(curr.price) || 0), 0)
+        };
+      })
+      .filter(sp => sp.count > 0 || (selectedStoreId !== 'all' && salesArray.length > 0))
+      .sort((a, b) => b.revenue - a.revenue);
+  };
+
+  const sellerPerformance = calculatePerformance(filteredSales);
+  const sellerPerformanceToday = calculatePerformance(todaySales);
 
   // Brand Performance
   const brandPerformance = Object.values(Brand).map(brand => {
@@ -185,17 +185,23 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
   const devicesProgress = (devicesGoalNum > 0) ? (totalDevices / devicesGoalNum) * 100 : 0;
 
   // Daily Trend Data
+  const nowForTrend = new Date();
+  const currentMonthStr = nowForTrend.getFullYear() + '-' + String(nowForTrend.getMonth() + 1).padStart(2, '0');
+  const isCurrentMonth = targetMonth === currentMonthStr;
+  const currentDay = nowForTrend.getDate();
+
   const daysInMonth = new Date(parseInt(targetMonth.split('-')[0]), parseInt(targetMonth.split('-')[1]), 0).getDate();
-  const dailyData = Array.from({ length: daysInMonth }, (_, i) => {
+  const daysToShow = isCurrentMonth ? currentDay : daysInMonth;
+
+  const dailyData = Array.from({ length: daysToShow }, (_, i) => {
     const day = (i + 1).toString().padStart(2, '0');
     const fullDate = `${targetMonth}-${day}`;
-    const isFuture = fullDate > todayStr;
     const daySales = filteredSales.filter(s => s.date === fullDate);
     
     return {
       day: (i + 1).toString(),
-      revenue: isFuture ? null : daySales.reduce((acc, curr) => acc + (Number(curr.price) || 0), 0),
-      devices: isFuture ? null : daySales.length
+      revenue: daySales.reduce((acc, curr) => acc + (Number(curr.price) || 0), 0),
+      devices: daySales.length
     };
   });
 
@@ -504,53 +510,107 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
         {/* SIDEBAR (RIGHT) */}
         <div className="space-y-8">
            
-           {/* GOAL ASSIGNMENT FORM */}
+           {/* GOAL ASSIGNMENT TOGGLE */}
            {userProfile.role === 'admin' && (
-             <div className="bg-slate-900 text-white p-8 rounded-[2.5rem] shadow-xl relative overflow-hidden">
+             <div className="bg-slate-900 text-white p-6 rounded-[2.5rem] shadow-xl relative overflow-hidden transition-all duration-500">
                 <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/20 rounded-full -mr-12 -mt-12"></div>
                 <div className="relative z-10">
-                   <div className="flex items-center gap-3 mb-6">
-                      <Target className="w-5 h-5 text-indigo-400" />
-                      <h3 className="text-base font-black uppercase tracking-tight">Asignar Metas</h3>
-                   </div>
-                   <form onSubmit={handleSaveGoal} className="space-y-5">
-                      <div>
-                         <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-2 px-1">Presupuesto ($)</label>
-                         <input 
-                           type="number" 
-                           value={revenueGoal} 
-                           onChange={(e) => setRevenueGoal(e.target.value)}
-                           placeholder="0.00"
-                           className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-sm font-black text-white outline-none focus:ring-4 focus:ring-indigo-500/20 transition-all" 
-                         />
-                      </div>
-                      <div>
-                         <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-2 px-1">Equipos (Qty)</label>
-                         <input 
-                           type="number" 
-                           value={devicesGoal} 
-                           onChange={(e) => setDevicesGoal(e.target.value)}
-                           placeholder="0"
-                           className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-sm font-black text-white outline-none focus:ring-4 focus:ring-indigo-500/20 transition-all" 
-                         />
+                   <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                         <Target className="w-5 h-5 text-indigo-400" />
+                         <h3 className="text-base font-black uppercase tracking-tight">Metas</h3>
                       </div>
                       <button 
-                        type="submit" 
-                        disabled={isSavingGoal}
-                        className="w-full bg-indigo-600 hover:bg-white hover:text-indigo-600 text-white font-black py-4 rounded-2xl transition-all shadow-lg shadow-indigo-900/40 text-[10px] uppercase tracking-widest mt-2 flex items-center justify-center gap-2"
+                        onClick={() => setShowGoalForm(!showGoalForm)}
+                        className={`p-2 rounded-xl transition-all ${showGoalForm ? 'bg-white text-indigo-600' : 'bg-white/10 text-white hover:bg-white/20'}`}
                       >
-                        {isSavingGoal ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Save className="w-4 h-4" /> Actualizar Meta</>}
+                        {showGoalForm ? <ChevronRight className="w-5 h-5 rotate-90" /> : <Edit2 className="w-4 h-4" />}
                       </button>
-                   </form>
+                   </div>
+
+                   {showGoalForm ? (
+                     <form onSubmit={(e) => { handleSaveGoal(e); setShowGoalForm(false); }} className="space-y-5 mt-6 animate-in slide-in-from-top-4 duration-300">
+                        <div>
+                           <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-2 px-1">Presupuesto ($)</label>
+                           <input 
+                             type="number" 
+                             value={revenueGoal} 
+                             onChange={(e) => setRevenueGoal(e.target.value)}
+                             placeholder="0.00"
+                             className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-sm font-black text-white outline-none focus:ring-4 focus:ring-indigo-500/20 transition-all" 
+                           />
+                        </div>
+                        <div>
+                           <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-2 px-1">Equipos (Qty)</label>
+                           <input 
+                             type="number" 
+                             value={devicesGoal} 
+                             onChange={(e) => setDevicesGoal(e.target.value)}
+                             placeholder="0"
+                             className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-sm font-black text-white outline-none focus:ring-4 focus:ring-indigo-500/20 transition-all" 
+                           />
+                        </div>
+                        <button 
+                          type="submit" 
+                          disabled={isSavingGoal}
+                          className="w-full bg-indigo-600 hover:bg-white hover:text-indigo-600 text-white font-black py-4 rounded-2xl transition-all shadow-lg shadow-indigo-900/40 text-[10px] uppercase tracking-widest mt-2 flex items-center justify-center gap-2"
+                        >
+                          {isSavingGoal ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Save className="w-4 h-4" /> Guardar</>}
+                        </button>
+                     </form>
+                   ) : (
+                     <div className="mt-4 flex flex-col gap-2">
+                        <div className="flex justify-between items-center text-[10px] font-bold uppercase text-slate-400">
+                           <span>Presupuesto</span>
+                           <span className="text-white">${revenueGoalNum.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[10px] font-bold uppercase text-slate-400">
+                           <span>Equipos</span>
+                           <span className="text-white">{devicesGoalNum} un.</span>
+                        </div>
+                     </div>
+                   )}
                 </div>
              </div>
            )}
 
-           {/* SELLER RANKING */}
+           {/* TOP SELLERS TODAY */}
+           <div className="bg-gradient-to-br from-amber-500 to-orange-600 p-8 rounded-[2.5rem] shadow-xl text-white relative overflow-hidden group">
+              <div className="absolute top-0 right-0 p-4 opacity-20 transform translate-x-4 -translate-y-4">
+                 <Award className="w-24 h-24 rotate-12" />
+              </div>
+              <div className="relative z-10">
+                 <div className="flex items-center gap-3 mb-6">
+                    <Trophy className="w-5 h-5 text-amber-200" />
+                    <h3 className="text-base font-black uppercase tracking-tight">Top Hoy</h3>
+                 </div>
+                 <div className="space-y-4">
+                    {sellerPerformanceToday.slice(0, 3).map((seller, index) => (
+                       <div key={`today-rank-${seller.sellerName}`} className="flex items-center gap-4">
+                          <div className="w-6 h-6 bg-white/20 rounded-lg flex items-center justify-center text-[10px] font-black">
+                             {index + 1}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                             <div className="text-xs font-black uppercase truncate leading-tight">{seller.sellerName}</div>
+                             <div className="text-[9px] font-bold opacity-70 uppercase">{seller.count} EQUIPOS</div>
+                          </div>
+                          <div className="text-right text-xs font-black">
+                             ${seller.revenue.toLocaleString()}
+                          </div>
+                       </div>
+                    ))}
+                    {sellerPerformanceToday.length === 0 && (
+                       <div className="py-4 text-center opacity-60 text-[9px] font-black uppercase italic">Sin ventas hoy aún</div>
+                    )}
+                 </div>
+              </div>
+           </div>
+
+           {/* SELLER RANKING MONTHLY */}
            <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex-1">
               <div className="flex items-center gap-3 mb-8">
-                 <Award className="w-5 h-5 text-amber-500" />
-                 <h3 className="text-base font-black text-slate-800 uppercase tracking-tight">Top Vendedores</h3>
+                 <Users className="w-5 h-5 text-indigo-500" />
+                 <h3 className="text-base font-black text-slate-800 uppercase tracking-tight">Top Mes</h3>
               </div>
               <div className="space-y-4">
                  {sellerPerformance.map((seller, index) => (
@@ -561,13 +621,6 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
                           index === 2 ? 'bg-orange-100 text-orange-600' : 'bg-slate-50 text-slate-400'
                        }`}>
                           {index + 1}
-                       </div>
-                       <div className="hidden min-[1600px]:block">
-                          <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-xs ${
-                             index === 0 ? 'bg-amber-50 text-amber-600 shadow-sm' : 'bg-slate-50 text-slate-400'
-                          }`}>
-                            {seller.sellerName.charAt(0)}
-                          </div>
                        </div>
                        <div className="flex-1 min-w-0">
                           <div className="text-xs font-black text-slate-800 uppercase tracking-tight truncate leading-tight">{seller.sellerName}</div>
