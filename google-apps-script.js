@@ -8,7 +8,8 @@
  * 4. Sincronización de participación de mercado con Google Sheets
  */
 
-const ROOT_FOLDER_NAME = "App cadenas comerciales";
+// ID de la carpeta principal de Google Drive
+const ROOT_FOLDER_ID = "1o-dLhRr7x3IjyoodRFdsVxkd_h5fyQtY";
 
 /**
  * Punto de entrada principal para peticiones POST
@@ -51,64 +52,64 @@ function doPost(e) {
  * MANEJADOR: Carga de archivos y organización de carpetas
  */
 function handleUpload(data) {
-  const folderType = data.folderType; // 'sales', 'attendance', 'warranties'
-  const storeName = data.storeName || 'Sucursal';
-  const chainName = data.chainName || 'Coppel';
-  const userName = data.userName || 'Usuario';
+  const folderType = data.folderType; // 'sales', 'attendance', 'warranties', 'portability'
+  const storeName = (data.storeName || 'Sucursal Desconocida').trim();
+  const userName = (data.userName || 'Usuario').trim();
   const dateStr = data.date || new Date().toISOString().split('T')[0]; // YYYY-MM-DD
   const filename = data.filename;
   const fileContent = data.file;
   const mimeType = data.mimeType || 'image/jpeg';
+  const subFolder = (data.subFolder || "").trim();
 
   const [year, month, day] = dateStr.split('-');
   const monthName = getSpanishMonth(parseInt(month) - 1);
 
-  // 1. Obtener/Crear Carpeta Raíz
-  const rootFolder = getOrCreateFolder(DriveApp.getRootFolder(), ROOT_FOLDER_NAME);
+  // 1. Obtener Carpeta Raíz Principal (AppCadenasComerciales)
+  let mainRoot;
+  try {
+    mainRoot = DriveApp.getFolderById(ROOT_FOLDER_ID);
+  } catch (e) {
+    mainRoot = getOrCreateFolder(DriveApp.getRootFolder(), "AppCadenasComerciales");
+  }
+
   let targetFolder;
 
-  if (folderType === 'attendance') {
-    // ESTRUCTURA SOLICITADA PARA CHECKS:
-    // Raíz: App cadenas comerciales
-    // 1. Registro de check
-    // (a) Cadena comercial
-    // (b) Año / Mes / Día
-    // (c) Nombre de la persona
-    const checkRoot = getOrCreateFolder(rootFolder, "Registro de check");
-    const chainFolder = getOrCreateFolder(checkRoot, chainName);
-    const yearFolder = getOrCreateFolder(chainFolder, year);
+  // LÓGICA SEGÚN EL TIPO DE CARGA
+  if (folderType === 'attendance' || subFolder === 'Check Asistencia') {
+    // --- RUTA 2: Registro de Check ---
+    // Estructura: Registro de Check > [Tienda] > Año > Mes > Día > [Usuario]
+    const checkRoot = getOrCreateFolder(mainRoot, "Registro de Check");
+    const storeFolder = getOrCreateFolder(checkRoot, storeName);
+    const yearFolder = getOrCreateFolder(storeFolder, year);
     const monthFolder = getOrCreateFolder(yearFolder, monthName);
     const dayFolder = getOrCreateFolder(monthFolder, day);
     targetFolder = getOrCreateFolder(dayFolder, userName);
-
-  } else if (folderType === 'sales') {
-    // ESTRUCTURA SOLICITADA PARA VENTAS:
-    // Raíz: App cadenas comerciales
-    // 2. Ventas de cadenas
-    // (a) Por tiendas
-    // (b) Por año
-    // (c) Por mes (nombre)
-    // (d) Por día
-    const salesRoot = getOrCreateFolder(rootFolder, "Ventas de cadenas");
+    
+  } else {
+    // --- RUTA 1: Ventas de Cadenas ---
+    // Estructura: Ventas de Cadenas > [Tienda] > Año > Mes > Día > [Categoría]
+    const salesRoot = getOrCreateFolder(mainRoot, "Ventas de Cadenas");
     const storeFolder = getOrCreateFolder(salesRoot, storeName);
     const yearFolder = getOrCreateFolder(storeFolder, year);
     const monthFolder = getOrCreateFolder(yearFolder, monthName);
-    targetFolder = getOrCreateFolder(monthFolder, day);
+    const dayFolder = getOrCreateFolder(monthFolder, day);
+    
+    // Determinar nombre de la categoría (Ajustado a Kit, Chip 0, Portabilidad)
+    let categoryName = subFolder;
+    if (!categoryName || categoryName === 'Check Asistencia') {
+      if (folderType === 'sales') categoryName = "Kit";
+      else if (folderType === 'portability') categoryName = "Portabilidad";
+      else if (folderType === 'warranties') categoryName = "Garantias";
+      else categoryName = "Otros";
+    }
+    // Mapeo a nombres específicos solicitados
+    if (categoryName === 'Equipo Kit' || categoryName === 'Ventas Kit') categoryName = "Kit";
+    if (categoryName === 'Chip Cero') categoryName = "Chip 0";
 
-  } else if (folderType === 'warranties') {
-    // Estructura para Garantías (Extra)
-    const warrantiesRoot = getOrCreateFolder(rootFolder, "Garantías");
-    const storeFolder = getOrCreateFolder(warrantiesRoot, storeName);
-    const yearFolder = getOrCreateFolder(storeFolder, year);
-    targetFolder = getOrCreateFolder(yearFolder, monthName);
-
-  } else {
-    // Otros
-    const otherRoot = getOrCreateFolder(rootFolder, "Otros");
-    targetFolder = getOrCreateFolder(otherRoot, storeName);
+    targetFolder = getOrCreateFolder(dayFolder, categoryName);
   }
 
-  // 2. Crear el archivo
+  // 3. Crear el archivo en la carpeta destino final
   const decodedFile = Utilities.base64Decode(fileContent);
   const blob = Utilities.newBlob(decodedFile, mimeType, filename);
   const file = targetFolder.createFile(blob);
@@ -295,11 +296,12 @@ function handleSyncMarketParticipation(data) {
  * UTIL: Obtener carpeta o crearla si no existe
  */
 function getOrCreateFolder(parent, name) {
-  const folders = parent.getFoldersByName(name);
+  const cleanName = name.trim();
+  const folders = parent.getFoldersByName(cleanName);
   if (folders.hasNext()) {
     return folders.next();
   } else {
-    return parent.createFolder(name);
+    return parent.createFolder(cleanName);
   }
 }
 

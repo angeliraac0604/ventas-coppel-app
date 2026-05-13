@@ -31,6 +31,7 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
   const [loading, setLoading] = useState(true);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
+  const [allProfiles, setAllProfiles] = useState<UserProfile[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDate, setFilterDate] = useState(() => {
     const now = new Date();
@@ -76,9 +77,23 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
       // 1. Fetch Profiles to get names
       const { data: profilesData } = await supabase.from('profiles').select('*');
       if (profilesData && Array.isArray(profilesData)) {
+        const mappedAll = profilesData.map((p: any) => ({
+          id: p.id,
+          email: p.email,
+          role: p.role,
+          fullName: p.full_name,
+          storeId: p.store_id,
+          restDays: p.rest_days || [],
+          vacationDates: p.vacation_dates || [],
+          canJustifyAbsences: p.can_justify_absences,
+          canManageRestDays: p.can_manage_rest_days,
+          canForceAttendance: p.can_force_attendance,
+          canSetSchedules: p.can_set_schedules
+        }));
+        setAllProfiles(mappedAll);
+
         let filteredProfiles = profilesData.filter((p: any) => 
-          (p && p.role !== 'supervisor' && p.role !== 'admin') || 
-          (p && (p.email === 'angeliraac@gmail.com' || p.email === 'jeissonjessy@gmail.com'))
+          p && (p.role === 'seller' || p.email === 'angeliraac@gmail.com')
         );
         
         // Filter by assignedStores if the current viewer is a supervisor with limited area
@@ -271,7 +286,7 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
     const groups: Record<string, GroupedAttendance> = {};
 
     records.forEach(record => {
-      const profile = profiles.find(p => p.id === record.userId);
+      const profile = allProfiles.find(p => p.id === record.userId);
       const store = localStores.find(s => s.id === record.storeId);
       const key = `${record.userId}-${record.date}`;
 
@@ -389,7 +404,7 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
       (g.userEmail || '').toLowerCase().includes((searchTerm || '').toLowerCase())) &&
       (localStoreFilter === 'all' || g.storeConfig?.id === localStoreFilter)
     );
-  }, [records, profiles, localStores, searchTerm, filterDate, selectedStoreId, localStoreFilter]);
+  }, [records, profiles, allProfiles, localStores, searchTerm, filterDate, selectedStoreId, localStoreFilter]);
 
 
   const stats = React.useMemo(() => {

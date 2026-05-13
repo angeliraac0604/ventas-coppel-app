@@ -571,55 +571,52 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
                         <span className="text-[9px] font-bold uppercase tracking-wider">{dateObj.toLocaleDateString('es-MX', { month: 'short' }).replace('.', '')}</span>
                       </div>
 
-                      {/* Main Info Area - Flex-based for tight vertical rhythm */}
-                      <div className="flex-1 min-w-0 flex justify-between items-center gap-2">
+                      {/* Main Info Area - Flexible layout for Mobile vs Desktop */}
+                      <div className="flex-1 min-w-0 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
                         {/* Left Side: Date Info, Sales, Brand */}
-                        <div className="flex flex-col gap-0.5 overflow-hidden">
-                          <div className="flex items-center gap-2">
-                            <p className="font-bold text-slate-800 capitalize text-base truncate">
+                        <div className="flex flex-col gap-1 overflow-hidden">
+                          <div className="flex items-center flex-wrap gap-2">
+                            <p className="font-black text-slate-800 capitalize text-lg tracking-tight truncate">
                               {dateObj.toLocaleDateString('es-MX', { weekday: 'long' })}
                             </p>
                             {close.topBrand !== 'N/A' && BRAND_CONFIGS[close.topBrand as Brand] && (
                               <span
-                                className={`px-1.5 py-0.5 rounded text-[9px] font-bold text-white uppercase tracking-wide shrink-0 ${BRAND_CONFIGS[close.topBrand as Brand].colorClass}`}
-                                style={BRAND_CONFIGS[close.topBrand as Brand].colorClass.includes('text-black') ? { color: 'black' } : {}}
+                                className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest shrink-0 shadow-sm text-white ${BRAND_CONFIGS[close.topBrand as Brand].colorClass}`}
+                                style={BRAND_CONFIGS[close.topBrand as Brand].colorClass.includes('text-black') ? { color: 'black' } : { color: 'white' }}
                               >
                                 {BRAND_CONFIGS[close.topBrand as Brand].label}
                               </span>
                             )}
                           </div>
-                          <div className="flex items-center gap-3 text-xs text-slate-500 font-medium">
+                          <div className="flex items-center gap-3 text-xs text-slate-500 font-semibold">
                             <span className="flex items-center gap-1">
-                              {new Date(close.closedAt).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              • {close.totalSales} Ventas
+                              • <span className="text-slate-800 font-bold">{close.totalSales}</span> Ventas
                             </span>
                           </div>
                         </div>
 
                         {/* Right Side: Money & Competition (if 1053) */}
-                        <div className="flex items-center gap-6">
-                           {/* Competition Stats Mini-Badges */}
-                           {isSpecialStore && (
-                             <div className="hidden sm:flex items-center gap-2">
-                               <div className="flex flex-col items-center px-2 py-1 bg-blue-50 border border-blue-100 rounded-lg">
-                                  <span className="text-[8px] font-black text-blue-400 uppercase leading-none mb-0.5">AT&T</span>
+                        <div className="flex items-center justify-between sm:justify-end gap-6 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-0 border-slate-100">
+                           {/* Competition Stats Mini-Badges - ALWAYS VISIBLE if it's the 1053 store */}
+                           {(isSpecialStore || stores.find(s => s.id === close.storeId)?.prefix === '1053') && (
+                             <div className="flex items-center gap-2">
+                               <div className="flex flex-col items-center px-2 py-1 bg-blue-50 border border-blue-100 rounded-lg min-w-[45px]">
+                                  <span className="text-[7px] font-black text-blue-400 uppercase leading-none mb-0.5">AT&T</span>
                                   <span className="text-xs font-black text-blue-700">{close.attSales || 0}</span>
                                </div>
-                               <div className="flex flex-col items-center px-2 py-1 bg-slate-50 border border-slate-100 rounded-lg opacity-40">
-                                  <span className="text-[8px] font-black text-slate-400 uppercase leading-none mb-0.5">MOV</span>
+                               <div className="flex flex-col items-center px-2 py-1 bg-slate-50 border border-slate-100 rounded-lg opacity-40 min-w-[45px]">
+                                  <span className="text-[7px] font-black text-slate-400 uppercase leading-none mb-0.5">MOV</span>
                                   <span className="text-xs font-black text-slate-700">0</span>
                                </div>
                              </div>
                            )}
 
-                          <div className="flex flex-col items-end gap-0.5">
-                            <span className="font-bold text-slate-900 text-base">
-                              ${close.totalRevenue.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          <div className="flex flex-col items-end gap-0">
+                            <span className="font-black text-slate-900 text-lg leading-tight">
+                              ${close.totalRevenue.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                             </span>
-                            <span className="text-[10px] text-slate-400 font-medium">
-                              Neto: ${(close.totalRevenue / 1.16).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">
+                              Neto: ${(close.totalRevenue / 1.16).toLocaleString('es-MX', { maximumFractionDigits: 0 })}
                             </span>
                           </div>
                         </div>
@@ -627,7 +624,7 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
 
                       {/* Actions */}
                       <div className="flex items-center gap-1 md:ml-2">
-                        {isSpecialStore && (role === 'admin' || role === 'supervisor') && (
+                        {(isSpecialStore || stores.find(s => s.id === close.storeId)?.prefix === '1053') && (role === 'admin' || role === 'supervisor') && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -759,20 +756,20 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
                         <span className="text-[9px] font-bold text-indigo-400">{month.year}</span>
                       </div>
 
-                      {/* Main Info Area - Flex-based */}
-                      <div className="flex-1 min-w-0 flex justify-between items-center gap-2">
+                      {/* Main Info Area - Flexible layout */}
+                      <div className="flex-1 min-w-0 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
                         {/* Left Side: Period Info */}
-                        <div className="flex flex-col gap-0.5 overflow-hidden">
-                          <p className="font-bold text-slate-800 text-base truncate">
+                        <div className="flex flex-col gap-1 overflow-hidden">
+                          <p className="font-black text-slate-800 capitalize text-lg tracking-tight truncate">
                             {month.label}
                           </p>
-                          <div className="flex items-center gap-3 text-xs text-slate-500 font-medium">
-                            <span>{month.closings.length} Cortes</span>
-                            <span>• {month.totalSales} Ventas</span>
+                          <div className="flex items-center flex-wrap gap-3 text-xs text-slate-500 font-semibold">
+                            <span className="bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">{month.closings.length} Cortes</span>
+                            <span>• <span className="text-slate-800 font-bold">{month.totalSales}</span> Ventas</span>
                             {monthTopBrand && BRAND_CONFIGS[monthTopBrand] && (
                               <span
-                                className={`px-1.5 py-0.5 rounded text-[9px] font-bold text-white uppercase tracking-wide shrink-0 ${BRAND_CONFIGS[monthTopBrand].colorClass}`}
-                                style={BRAND_CONFIGS[monthTopBrand].colorClass.includes('text-black') ? { color: 'black' } : {}}
+                                className={`px-2 py-0.5 rounded-full text-[9px] font-black text-white uppercase tracking-widest shrink-0 shadow-sm ${BRAND_CONFIGS[monthTopBrand].colorClass}`}
+                                style={BRAND_CONFIGS[monthTopBrand].colorClass.includes('text-black') ? { color: 'black' } : { color: 'white' }}
                               >
                                 {BRAND_CONFIGS[monthTopBrand].label}
                               </span>
@@ -781,12 +778,12 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
                         </div>
 
                         {/* Right Side: Money */}
-                        <div className="flex flex-col items-end gap-0.5">
-                          <span className="font-bold text-slate-900 text-base">
-                            ${month.totalRevenue.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        <div className="flex flex-col items-end gap-0 pt-2 sm:pt-0 border-t sm:border-0 border-slate-100 w-full sm:w-auto">
+                          <span className="font-black text-slate-900 text-lg leading-tight">
+                            ${month.totalRevenue.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                           </span>
-                          <span className="text-[10px] text-slate-400 font-medium">
-                            Neto: ${(month.totalRevenue / 1.16).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">
+                            Neto: ${(month.totalRevenue / 1.16).toLocaleString('es-MX', { maximumFractionDigits: 0 })}
                           </span>
                         </div>
                       </div>
@@ -1066,7 +1063,7 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
                       <td className="px-6 py-4">
                         <span
                           className={`px-2 py-0.5 rounded text-[10px] font-bold text-white shadow-sm ${BRAND_CONFIGS[sale.brand].colorClass}`}
-                          style={BRAND_CONFIGS[sale.brand].colorClass.includes('text-black') ? { color: 'black' } : {}}
+                          style={BRAND_CONFIGS[sale.brand].colorClass.includes('text-black') ? { color: 'black' } : { color: 'white' }}
                         >
                           {BRAND_CONFIGS[sale.brand].label}
                         </span>

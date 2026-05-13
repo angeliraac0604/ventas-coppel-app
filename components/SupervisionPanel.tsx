@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell, Legend } from 'recharts';
-import { Building, Target, TrendingUp, Users, Smartphone, DollarSign, Calendar, Filter, ChevronRight, Award, AlertCircle, Loader2, Save, ShoppingBag, Edit2, Trophy } from 'lucide-react';
+import { Building, Target, TrendingUp, Users, Smartphone, DollarSign, Calendar, Filter, ChevronRight, Award, AlertCircle, Loader2, Save, ShoppingBag, Edit2, Trophy, Cpu } from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
 import { Store, UserProfile, Brand } from '../types';
 import { BRAND_CONFIGS } from '../constants';
@@ -31,6 +31,9 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
   }); // YYYY-MM
   const [revenueGoal, setRevenueGoal] = useState('');
   const [devicesGoal, setDevicesGoal] = useState('');
+  const [chip0Goal, setChip0Goal] = useState('');
+  const [portaGoal, setPortaGoal] = useState('');
+  const [expressGoal, setExpressGoal] = useState('');
   const [showGoalForm, setShowGoalForm] = useState(false);
 
   const fetchData = async () => {
@@ -70,9 +73,15 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
       if (editingGoal) {
         setRevenueGoal(editingGoal.revenue_goal?.toString() || '');
         setDevicesGoal(editingGoal.devices_goal?.toString() || '');
+        setChip0Goal(editingGoal.chip_0_goal?.toString() || '');
+        setPortaGoal(editingGoal.portability_goal?.toString() || '');
+        setExpressGoal(editingGoal.chip_express_goal?.toString() || '');
       } else {
         setRevenueGoal('');
         setDevicesGoal('');
+        setChip0Goal('');
+        setPortaGoal('');
+        setExpressGoal('');
       }
 
     } catch (err) {
@@ -94,7 +103,10 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
         store_id: selectedStoreId === 'all' ? null : selectedStoreId,
         month: targetMonth,
         revenue_goal: parseFloat(revenueGoal) || 0,
-        devices_goal: parseInt(devicesGoal) || 0
+        devices_goal: parseInt(devicesGoal) || 0,
+        chip_0_goal: parseInt(chip0Goal) || 0,
+        portability_goal: parseInt(portaGoal) || 0,
+        chip_express_goal: parseInt(expressGoal) || 0
       }, { onConflict: 'store_id, month' });
 
       if (error) throw error;
@@ -111,30 +123,47 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
   const currentMonthSales = sales.filter(s => s.date.startsWith(targetMonth));
   const filteredSales = selectedStoreId === 'all' ? currentMonthSales : currentMonthSales.filter(s => s.store_id === selectedStoreId);
   
-  const totalRevenue = filteredSales.reduce((acc, curr) => acc + (Number(curr.price) || 0), 0);
+  const kitOnlySales = filteredSales.filter(s => s.category === 'kit' || !s.category);
+  const totalRevenue = kitOnlySales.reduce((acc, curr) => acc + (Number(curr.price) || 0), 0);
   const totalNetRevenue = totalRevenue / 1.16;
-  const totalDevices = filteredSales.length;
+  
+  const totalKits = kitOnlySales.length;
+  const totalChip0 = filteredSales.filter(s => s.category === 'chip_0').length;
+  const totalPorta = filteredSales.filter(s => s.category === 'portability').length;
+  const totalExpress = filteredSales.filter(s => s.category === 'chip_express').length;
+  const totalDevices = totalKits;
 
   const now = new Date();
   const todayStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
   const todaySales = filteredSales.filter(s => s.date === todayStr);
-  const todayCount = todaySales.length;
-  const todayRevenue = todaySales.reduce((acc, curr) => acc + (Number(curr.price) || 0), 0);
+  const todayKitSales = todaySales.filter(s => s.category === 'kit' || !s.category);
+  const todayRevenue = todayKitSales.reduce((acc, curr) => acc + (Number(curr.price) || 0), 0);
+  
+  const todayKits = todayKitSales.length;
+  const todayChip0 = todaySales.filter(s => s.category === 'chip_0').length;
+  const todayPorta = todaySales.filter(s => s.category === 'portability').length;
+  const todayExpress = todaySales.filter(s => s.category === 'chip_express').length;
+  const todayCount = todayKits;
   const todayNetRevenue = todayRevenue / 1.16;
 
   // Seller Performance (Including Admin Angel Irak Alvarado Dávila)
   const calculatePerformance = (salesArray: any[]) => {
     return profiles
-      .filter(p => (selectedStoreId === 'all' || p.store_id === selectedStoreId) && (p.role === 'seller' || p.email === 'angelirac@alvarado.com' || p.email === 'angeliraac@gmail.com'))
+      .filter(p => (selectedStoreId === 'all' || p.store_id === selectedStoreId) && (p.role === 'seller' || p.role === 'admin' || p.role === 'supervisor'))
       .map(p => {
         const sellerSales = salesArray.filter(s => s.created_by === p.id);
+        const sellerKitSales = sellerSales.filter(s => s.category === 'kit' || !s.category);
         return {
+          id: p.id,
           sellerName: p.full_name || p.email?.split('@')[0] || 'Vendedor',
-          count: sellerSales.length,
-          revenue: sellerSales.reduce((acc, curr) => acc + (Number(curr.price) || 0), 0)
+          count: sellerKitSales.length,
+          chip0Count: sellerSales.filter(s => s.category === 'chip_0').length,
+          portaCount: sellerSales.filter(s => s.category === 'portability').length,
+          expressCount: sellerSales.filter(s => s.category === 'chip_express').length,
+          revenue: sellerKitSales.reduce((acc, curr) => acc + (Number(curr.price) || 0), 0)
         };
       })
-      .filter(sp => sp.count > 0 || (selectedStoreId !== 'all' && salesArray.length > 0))
+      .filter(sp => (sp.count + sp.chip0Count + sp.portaCount + sp.expressCount) > 0 || (selectedStoreId !== 'all' && salesArray.length > 0))
       .sort((a, b) => b.revenue - a.revenue);
   };
 
@@ -143,7 +172,7 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
 
   // Brand Performance
   const brandPerformance = Object.values(Brand).map(brand => {
-    const brandSales = filteredSales.filter(s => s.brand === brand);
+    const brandSales = filteredSales.filter(s => s.brand === brand && (s.category === 'kit' || !s.category));
     const rev = brandSales.reduce((acc, curr) => acc + (Number(curr.price) || 0), 0);
     const conf = brand === Brand.REALME 
       ? { label: 'Realme', hex: '#FFC700', logoUrl: 'https://www.vectorlogo.zone/logos/realme/realme-icon.svg' } 
@@ -160,7 +189,7 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
   }).filter(b => b.count > 0).sort((a, b) => b.count - a.count);
 
   const brandPerformanceToday = Object.values(Brand).map(brand => {
-    const brandSales = todaySales.filter(s => s.brand === brand);
+    const brandSales = todaySales.filter(s => s.brand === brand && (s.category === 'kit' || !s.category));
     const rev = brandSales.reduce((acc, curr) => acc + (Number(curr.price) || 0), 0);
     const conf = brand === Brand.REALME 
       ? { label: 'Realme', hex: '#FFC700', logoUrl: 'https://www.vectorlogo.zone/logos/realme/realme-icon.svg' } 
@@ -181,15 +210,24 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
   const currentGoal = selectedStoreId === 'all' 
     ? {
         revenue_goal: relevantGoals.reduce((sum, g) => sum + Number(g.revenue_goal), 0),
-        devices_goal: relevantGoals.reduce((sum, g) => sum + Number(g.devices_goal), 0)
+        devices_goal: relevantGoals.reduce((sum, g) => sum + Number(g.devices_goal), 0),
+        chip_0_goal: relevantGoals.reduce((sum, g) => sum + Number(g.chip_0_goal || 0), 0),
+        portability_goal: relevantGoals.reduce((sum, g) => sum + Number(g.portability_goal || 0), 0),
+        chip_express_goal: relevantGoals.reduce((sum, g) => sum + Number(g.chip_express_goal || 0), 0)
       }
     : goals.find(g => g.month === targetMonth && g.store_id === selectedStoreId);
   
   const revenueGoalNum = Number(currentGoal?.revenue_goal) || 0;
   const devicesGoalNum = Number(currentGoal?.devices_goal) || 0;
+  const chip0GoalNum = Number(currentGoal?.chip_0_goal) || 0;
+  const portaGoalNum = Number(currentGoal?.portability_goal) || 0;
+  const expressGoalNum = Number(currentGoal?.chip_express_goal) || 0;
   
   const revenueProgress = (revenueGoalNum > 0) ? (totalNetRevenue / revenueGoalNum) * 100 : 0;
-  const devicesProgress = (devicesGoalNum > 0) ? (totalDevices / devicesGoalNum) * 100 : 0;
+  const devicesProgress = (devicesGoalNum > 0) ? (totalKits / devicesGoalNum) * 100 : 0;
+  const chip0Progress = (chip0GoalNum > 0) ? (totalChip0 / chip0GoalNum) * 100 : 0;
+  const portaProgress = (portaGoalNum > 0) ? (totalPorta / portaGoalNum) * 100 : 0;
+  const expressProgress = (expressGoalNum > 0) ? (totalExpress / expressGoalNum) * 100 : 0;
 
   // Daily Trend Data
   const nowForTrend = new Date();
@@ -208,7 +246,9 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
     return {
       day: (i + 1).toString(),
       revenue: daySales.reduce((acc, curr) => acc + (Number(curr.price) || 0), 0),
-      devices: daySales.length
+      kits: daySales.filter(s => s.category === 'kit' || !s.category).length,
+      chip0: daySales.filter(s => s.category === 'chip_0').length,
+      services: daySales.filter(s => s.category === 'portability' || s.category === 'chip_express').length
     };
   });
 
@@ -301,8 +341,9 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
               </div>
            </div>
 
-           {/* 2. MONTHLY SUMMARY GRID */}
+           {/* 2. MONTHLY SUMMARY GRID (ENHANCED GOALS) */}
            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* REVENUE GOAL CARD */}
               <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 relative overflow-hidden group">
                   <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110"></div>
                   <div className="relative z-10">
@@ -310,26 +351,63 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
                        <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl">
                           <DollarSign className="w-6 h-6" />
                        </div>
-                     <span className="text-[10px] font-black uppercase text-slate-400">Ventas Mes (Bruto)</span>
+                       <div className="flex flex-col items-end">
+                          <span className="text-[10px] font-black uppercase text-slate-400">Progreso de Meta</span>
+                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase mt-1 ${revenueProgress >= 100 ? 'bg-emerald-100 text-emerald-600' : 'bg-indigo-100 text-indigo-600'}`}>
+                             {revenueProgress >= 100 ? 'Meta Cumplida' : 'En Progreso'}
+                          </span>
+                       </div>
                     </div>
-                    <div className="text-4xl font-black text-slate-800 tracking-tighter mb-1">
-                       ${totalRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                    
+                    <div className="flex items-baseline gap-2 mb-1">
+                       <span className="text-4xl font-black text-slate-800 tracking-tighter">
+                          ${totalRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                       </span>
+                       <span className="text-sm font-bold text-slate-400 uppercase">Bruto</span>
                     </div>
+
                     <div className="flex items-center gap-3 mb-4">
                        <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full uppercase tracking-tighter">
-                          Neto: ${totalNetRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                          Neto (sin IVA): ${totalNetRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                        </span>
                     </div>
-                    <div className="flex items-center gap-2">
-                       <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-                          <div className="h-full bg-indigo-500 transition-all duration-1000" style={{ width: `${Math.min(revenueProgress, 100)}%` }}></div>
-                       </div>
-                       <span className="text-[10px] font-black text-indigo-600">{revenueProgress.toFixed(0)}%</span>
+
+                    <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">
+                       <span>$0</span>
+                       <span>Meta Neto: ${revenueGoalNum.toLocaleString()}</span>
                     </div>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase mt-4">Meta: ${revenueGoalNum.toLocaleString()}</p>
+
+                    <div className="relative h-4 bg-slate-100 rounded-full overflow-hidden mb-4 shadow-inner">
+                       <div 
+                         className={`h-full transition-all duration-1000 rounded-full ${revenueProgress >= 100 ? 'bg-gradient-to-r from-emerald-400 to-emerald-600' : 'bg-gradient-to-r from-indigo-500 to-blue-600'}`} 
+                         style={{ width: `${Math.min(revenueProgress, 100)}%` }}
+                       >
+                          {revenueProgress > 15 && (
+                            <div className="w-full h-full flex items-center justify-end px-2">
+                               <div className="w-1 h-1 bg-white/50 rounded-full animate-pulse"></div>
+                            </div>
+                          )}
+                       </div>
+                    </div>
+
+                    <div className="flex justify-between items-center">
+                       <div className="flex flex-col">
+                          <span className="text-[10px] font-black text-slate-800 uppercase leading-none">{revenueProgress.toFixed(1)}%</span>
+                          <span className="text-[9px] font-bold text-slate-400 uppercase">Cumplimiento</span>
+                       </div>
+                       <div className="text-right">
+                          <span className="text-[10px] font-black text-indigo-600 uppercase leading-none">
+                             {revenueGoalNum - totalNetRevenue > 0 
+                                ? `Faltan $${(revenueGoalNum - totalNetRevenue).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                                : 'Objetivo Superado'}
+                          </span>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase">Para alcanzar la meta</p>
+                       </div>
+                    </div>
                   </div>
               </div>
 
+              {/* DEVICES GOAL CARD */}
               <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 relative overflow-hidden group">
                   <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-50 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110"></div>
                   <div className="relative z-10">
@@ -337,18 +415,140 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
                        <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl">
                           <Smartphone className="w-6 h-6" />
                        </div>
-                       <span className="text-[10px] font-black uppercase text-slate-400">Celulares Mes (Unid)</span>
-                    </div>
-                    <div className="text-4xl font-black text-slate-800 tracking-tighter mb-2">
-                       {totalDevices}
-                    </div>
-                    <div className="flex items-center gap-2">
-                       <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-                          <div className="h-full bg-emerald-500 transition-all duration-1000" style={{ width: `${Math.min(devicesProgress, 100)}%` }}></div>
+                       <div className="flex flex-col items-end">
+                          <span className="text-[10px] font-black uppercase text-slate-400">Equipos Kit</span>
+                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase mt-1 ${devicesProgress >= 100 ? 'bg-emerald-100 text-emerald-600' : 'bg-emerald-100 text-emerald-600 animate-pulse'}`}>
+                             {devicesProgress >= 100 ? 'Meta Cumplida' : 'Objetivo Mensual'}
+                          </span>
                        </div>
-                       <span className="text-[10px] font-black text-emerald-600">{devicesProgress.toFixed(0)}%</span>
                     </div>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase mt-4">Meta: {currentGoal?.devices_goal || 0} equipos</p>
+
+                    <div className="flex items-baseline gap-2 mb-1">
+                       <span className="text-4xl font-black text-slate-800 tracking-tighter">
+                          {totalKits}
+                       </span>
+                       <span className="text-sm font-bold text-slate-400 uppercase">Equipos</span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">
+                       <span>0 un.</span>
+                       <span>Meta: {devicesGoalNum} un.</span>
+                    </div>
+
+                    <div className="relative h-4 bg-slate-100 rounded-full overflow-hidden mb-4 shadow-inner">
+                       <div 
+                         className={`h-full transition-all duration-1000 rounded-full ${devicesProgress >= 100 ? 'bg-gradient-to-r from-emerald-400 to-emerald-600' : 'bg-gradient-to-r from-emerald-500 to-teal-600'}`} 
+                         style={{ width: `${Math.min(devicesProgress, 100)}%` }}
+                       ></div>
+                    </div>
+
+                    <div className="flex justify-between items-center">
+                       <div className="flex flex-col">
+                          <span className="text-[10px] font-black text-slate-800 uppercase leading-none">{devicesProgress.toFixed(1)}%</span>
+                          <span className="text-[9px] font-bold text-slate-400 uppercase">Cumplimiento</span>
+                       </div>
+                       <div className="text-right">
+                          <span className="text-[10px] font-black text-emerald-600 uppercase leading-none">
+                             {devicesGoalNum - totalKits > 0 
+                                ? `Faltan ${devicesGoalNum - totalKits} equipos`
+                                : 'Objetivo Superado'}
+                          </span>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase">Para la meta</p>
+                       </div>
+                    </div>
+                  </div>
+              </div>
+
+              {/* CHIP 0 GOAL CARD */}
+              <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-purple-50 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110"></div>
+                  <div className="relative z-10">
+                    <div className="flex items-center justify-between mb-6">
+                       <div className="p-3 bg-purple-50 text-purple-600 rounded-2xl">
+                          <Cpu className="w-6 h-6" />
+                       </div>
+                       <div className="flex flex-col items-end">
+                          <span className="text-[10px] font-black uppercase text-slate-400">Chip 0</span>
+                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase mt-1 ${chip0Progress >= 100 ? 'bg-purple-100 text-purple-600' : 'bg-purple-100 text-purple-600 animate-pulse'}`}>
+                             {chip0Progress >= 100 ? 'Meta Cumplida' : 'Objetivo Mensual'}
+                          </span>
+                       </div>
+                    </div>
+
+                    <div className="flex items-baseline gap-2 mb-1">
+                       <span className="text-4xl font-black text-slate-800 tracking-tighter">
+                          {totalChip0}
+                       </span>
+                       <span className="text-sm font-bold text-slate-400 uppercase">Chips</span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">
+                       <span>0 un.</span>
+                       <span>Meta: {chip0GoalNum} un.</span>
+                    </div>
+
+                    <div className="relative h-4 bg-slate-100 rounded-full overflow-hidden mb-4 shadow-inner">
+                       <div 
+                         className={`h-full transition-all duration-1000 rounded-full ${chip0Progress >= 100 ? 'bg-gradient-to-r from-purple-400 to-purple-600' : 'bg-gradient-to-r from-purple-500 to-indigo-600'}`} 
+                         style={{ width: `${Math.min(chip0Progress, 100)}%` }}
+                       ></div>
+                    </div>
+
+                    <div className="flex justify-between items-center">
+                       <div className="flex flex-col">
+                          <span className="text-[10px] font-black text-slate-800 uppercase leading-none">{chip0Progress.toFixed(1)}%</span>
+                          <span className="text-[9px] font-bold text-slate-400 uppercase">Cumplimiento</span>
+                       </div>
+                       <div className="text-right">
+                          <span className="text-[10px] font-black text-purple-600 uppercase leading-none">
+                             {chip0GoalNum - totalChip0 > 0 
+                                ? `Faltan ${chip0GoalNum - totalChip0} chips`
+                                : 'Objetivo Superado'}
+                          </span>
+                       </div>
+                    </div>
+                  </div>
+              </div>
+
+              {/* SERVICES GOAL CARD */}
+              <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-orange-50 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110"></div>
+                  <div className="relative z-10">
+                    <div className="flex items-center justify-between mb-6">
+                       <div className="p-3 bg-orange-50 text-orange-600 rounded-2xl">
+                          <ShoppingBag className="w-6 h-6" />
+                       </div>
+                       <div className="flex flex-col items-end">
+                          <span className="text-[10px] font-black uppercase text-slate-400">Porta & Express</span>
+                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase mt-1 ${((totalPorta + totalExpress)/(portaGoalNum + expressGoalNum || 1) * 100) >= 100 ? 'bg-orange-100 text-orange-600' : 'bg-orange-100 text-orange-600'}`}>
+                             Servicios
+                          </span>
+                       </div>
+                    </div>
+
+                    <div className="flex items-baseline gap-2 mb-1">
+                       <span className="text-4xl font-black text-slate-800 tracking-tighter">
+                          {totalPorta + totalExpress}
+                       </span>
+                       <span className="text-sm font-bold text-slate-400 uppercase">Total</span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">
+                       <span>P: {totalPorta} | E: {totalExpress}</span>
+                       <span>Meta: {portaGoalNum + expressGoalNum}</span>
+                    </div>
+
+                    <div className="relative h-4 bg-slate-100 rounded-full overflow-hidden mb-4 shadow-inner">
+                       <div 
+                         className="h-full transition-all duration-1000 rounded-full bg-gradient-to-r from-orange-400 to-orange-600"
+                         style={{ width: `${Math.min(((totalPorta + totalExpress)/(portaGoalNum + expressGoalNum || 1) * 100), 100)}%` }}
+                       ></div>
+                    </div>
+
+                    <div className="flex justify-between items-center text-[9px] font-bold text-slate-400 uppercase">
+                       <span>Porta: {totalPorta}/{portaGoalNum}</span>
+                       <span>Express: {totalExpress}/{expressGoalNum}</span>
+                    </div>
                   </div>
               </div>
            </div>
@@ -363,7 +563,7 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
                  <TrendingUp className="w-5 h-5 text-indigo-600" />
               </div>
               <div className="h-[300px] w-full min-w-0">
-                 <ResponsiveContainer width="100%" height="100%">
+                 <ResponsiveContainer width="100%" height="100%" debounce={100}>
                     <AreaChart data={dailyData}>
                        <defs>
                           <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
@@ -399,7 +599,7 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
                {todayCount > 0 ? (
                  <div className="flex flex-col xl:flex-row items-center gap-8">
                     <div className="h-[200px] w-full xl:w-1/3 min-w-0">
-                      <ResponsiveContainer width="100%" height="100%">
+                      <ResponsiveContainer width="100%" height="100%" debounce={100}>
                         <PieChart>
                           <Pie
                             data={brandPerformanceToday}
@@ -461,7 +661,7 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
                
                <div className="flex flex-col xl:flex-row items-center gap-8">
                   <div className="h-[250px] w-full xl:w-1/2 min-w-0">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" debounce={100}>
                       <PieChart>
                         <Pie
                           data={brandPerformance}
@@ -535,48 +735,60 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
                       </button>
                    </div>
 
-                   {showGoalForm ? (
-                     <form onSubmit={(e) => { handleSaveGoal(e); setShowGoalForm(false); }} className="space-y-5 mt-6 animate-in slide-in-from-top-4 duration-300">
-                        <div>
-                           <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-2 px-1">Presupuesto ($)</label>
-                           <input 
-                             type="number" 
-                             value={revenueGoal} 
-                             onChange={(e) => setRevenueGoal(e.target.value)}
-                             placeholder="0.00"
-                             className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-sm font-black text-white outline-none focus:ring-4 focus:ring-indigo-500/20 transition-all" 
-                           />
-                        </div>
-                        <div>
-                           <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest block mb-2 px-1">Equipos (Qty)</label>
-                           <input 
-                             type="number" 
-                             value={devicesGoal} 
-                             onChange={(e) => setDevicesGoal(e.target.value)}
-                             placeholder="0"
-                             className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-sm font-black text-white outline-none focus:ring-4 focus:ring-indigo-500/20 transition-all" 
-                           />
-                        </div>
-                        <button 
-                          type="submit" 
-                          disabled={isSavingGoal}
-                          className="w-full bg-indigo-600 hover:bg-white hover:text-indigo-600 text-white font-black py-4 rounded-2xl transition-all shadow-lg shadow-indigo-900/40 text-[10px] uppercase tracking-widest mt-2 flex items-center justify-center gap-2"
-                        >
-                          {isSavingGoal ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Save className="w-4 h-4" /> Guardar</>}
-                        </button>
-                     </form>
-                   ) : (
-                     <div className="mt-4 flex flex-col gap-2">
-                        <div className="flex justify-between items-center text-[10px] font-bold uppercase text-slate-400">
-                           <span>Presupuesto</span>
-                           <span className="text-white">${revenueGoalNum.toLocaleString()}</span>
-                        </div>
-                        <div className="flex justify-between items-center text-[10px] font-bold uppercase text-slate-400">
-                           <span>Equipos</span>
-                           <span className="text-white">{devicesGoalNum} un.</span>
-                        </div>
-                     </div>
-                   )}
+                    {showGoalForm ? (
+                      <form onSubmit={(e) => { handleSaveGoal(e); setShowGoalForm(false); }} className="space-y-4 mt-6 animate-in slide-in-from-top-4 duration-300">
+                         <div className="grid grid-cols-2 gap-3">
+                           <div>
+                              <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest block mb-1.5 px-1">Presupuesto ($)</label>
+                              <input type="number" value={revenueGoal} onChange={(e) => setRevenueGoal(e.target.value)} placeholder="0.00" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs font-black text-white outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all" />
+                           </div>
+                           <div>
+                              <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest block mb-1.5 px-1">Equipos Kit</label>
+                              <input type="number" value={devicesGoal} onChange={(e) => setDevicesGoal(e.target.value)} placeholder="0" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs font-black text-white outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all" />
+                           </div>
+                         </div>
+                         <div className="grid grid-cols-3 gap-2">
+                           <div>
+                              <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest block mb-1.5 px-1">Chip 0</label>
+                              <input type="number" value={chip0Goal} onChange={(e) => setChip0Goal(e.target.value)} placeholder="0" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-3 text-xs font-black text-white outline-none focus:ring-2 focus:ring-purple-500/50 transition-all" />
+                           </div>
+                           <div>
+                              <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest block mb-1.5 px-1">Porta</label>
+                              <input type="number" value={portaGoal} onChange={(e) => setPortaGoal(e.target.value)} placeholder="0" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-3 text-xs font-black text-white outline-none focus:ring-2 focus:ring-rose-500/50 transition-all" />
+                           </div>
+                           <div>
+                              <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest block mb-1.5 px-1">Express</label>
+                              <input type="number" value={expressGoal} onChange={(e) => setExpressGoal(e.target.value)} placeholder="0" className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-3 text-xs font-black text-white outline-none focus:ring-2 focus:ring-orange-500/50 transition-all" />
+                           </div>
+                         </div>
+                         <button 
+                           type="submit" 
+                           disabled={isSavingGoal}
+                           className="w-full bg-indigo-600 hover:bg-white hover:text-indigo-600 text-white font-black py-4 rounded-xl transition-all shadow-lg shadow-indigo-900/40 text-[9px] uppercase tracking-widest mt-2 flex items-center justify-center gap-2"
+                         >
+                           {isSavingGoal ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Save className="w-4 h-4" /> Actualizar Todo</>}
+                         </button>
+                      </form>
+                    ) : (
+                      <div className="mt-4 grid grid-cols-2 gap-y-3 gap-x-6">
+                         <div className="flex flex-col">
+                            <span className="text-[8px] font-bold uppercase text-slate-400">Presupuesto</span>
+                            <span className="text-sm font-black text-white">${revenueGoalNum.toLocaleString()}</span>
+                         </div>
+                         <div className="flex flex-col">
+                            <span className="text-[8px] font-bold uppercase text-slate-400">Equipos Kit</span>
+                            <span className="text-sm font-black text-white">{devicesGoalNum}</span>
+                         </div>
+                         <div className="flex flex-col">
+                            <span className="text-[8px] font-bold uppercase text-slate-400">Chip 0</span>
+                            <span className="text-xs font-black text-purple-300">{chip0GoalNum}</span>
+                         </div>
+                         <div className="flex flex-col">
+                            <span className="text-[8px] font-bold uppercase text-slate-400">Servicios</span>
+                            <span className="text-xs font-black text-orange-300">{portaGoalNum + expressGoalNum}</span>
+                         </div>
+                      </div>
+                    )}
                 </div>
              </div>
            )}
@@ -593,7 +805,7 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
                  </div>
                  <div className="space-y-4">
                     {sellerPerformanceToday.slice(0, 3).map((seller, index) => (
-                       <div key={`today-rank-${seller.sellerName}`} className="flex items-center gap-4">
+                       <div key={`today-rank-${seller.id || index}`} className="flex items-center gap-4">
                           <div className="w-6 h-6 bg-white/20 rounded-lg flex items-center justify-center text-[10px] font-black">
                              {index + 1}
                           </div>
@@ -621,7 +833,7 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
               </div>
               <div className="space-y-4">
                  {sellerPerformance.map((seller, index) => (
-                    <div key={seller.sellerName} className="flex items-center gap-4 group">
+                    <div key={`monthly-rank-${seller.id || index}`} className="flex items-center gap-4 group">
                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black ${
                           index === 0 ? 'bg-amber-100 text-amber-600' :
                           index === 1 ? 'bg-slate-200 text-slate-600' :
@@ -643,6 +855,38 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
                  ))}
                  {sellerPerformance.length === 0 && (
                    <div className="py-10 text-center opacity-30 text-[10px] font-black uppercase italic">Sin ventas este mes</div>
+                 )}
+              </div>
+           </div>
+
+           {/* SERVICES PERFORMANCE (NEW) */}
+           <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex-1">
+              <div className="flex items-center gap-3 mb-8">
+                 <Cpu className="w-5 h-5 text-purple-500" />
+                 <h3 className="text-base font-black text-slate-800 uppercase tracking-tight">Servicios Mes</h3>
+              </div>
+              <div className="space-y-6">
+                 {sellerPerformance.map((seller, index) => (
+                   <div key={`services-${seller.id || index}`} className="space-y-3 pb-4 border-b border-slate-50 last:border-0 last:pb-0">
+                      <div className="text-[10px] font-black text-slate-800 uppercase tracking-tight">{seller.sellerName}</div>
+                      <div className="grid grid-cols-3 gap-2">
+                         <div className="bg-purple-50 p-2 rounded-xl border border-purple-100 flex flex-col items-center">
+                            <span className="text-[8px] font-black text-purple-400 uppercase tracking-tighter">Chip 0</span>
+                            <span className="text-xs font-black text-purple-700">{seller.chip0Count}</span>
+                         </div>
+                         <div className="bg-rose-50 p-2 rounded-xl border border-rose-100 flex flex-col items-center">
+                            <span className="text-[8px] font-black text-rose-400 uppercase tracking-tighter">Porta</span>
+                            <span className="text-xs font-black text-rose-700">{seller.portaCount}</span>
+                         </div>
+                         <div className="bg-orange-50 p-2 rounded-xl border border-orange-100 flex flex-col items-center">
+                            <span className="text-[8px] font-black text-orange-400 uppercase tracking-tighter">Express</span>
+                            <span className="text-xs font-black text-orange-700">{seller.expressCount}</span>
+                         </div>
+                      </div>
+                   </div>
+                 ))}
+                 {sellerPerformance.length === 0 && (
+                   <div className="py-10 text-center opacity-30 text-[10px] font-black uppercase italic">Sin servicios registrados</div>
                  )}
               </div>
            </div>

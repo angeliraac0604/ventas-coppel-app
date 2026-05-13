@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Plus, Camera, Loader2, Save, X, Trash2, Smartphone, Edit2, Eye, Share2, FolderOpen, Wand2 } from 'lucide-react'; // Added Eye and Share2 icons
+import { Plus, Camera, Loader2, Save, X, Trash2, Smartphone, Edit2, Eye, Share2, FolderOpen, Wand2, Phone, Cpu, Image as ImageIcon, Barcode } from 'lucide-react'; // Added icons for new categories
 import { Brand, Sale } from '../types';
 import { BRAND_CONFIGS } from '../constants';
 import { supabase } from '../services/supabaseClient';
 import { uploadImageToDriveScript, deleteImageFromDriveScript } from '../services/googleAppsScriptService';
 import { uploadToSupabaseStorage, smartImageUpload } from '../services/storageService';
 import { analyzeTicketImage } from '../services/geminiService';
+import BarcodeScanner from './BarcodeScanner';
 
 
 interface SalesFormProps {
@@ -18,6 +19,8 @@ interface SalesFormProps {
   stores?: any[];
   activeStoreId?: string;
 }
+
+type SaleCategory = 'kit' | 'chip_0' | 'portability' | 'chip_express';
 
 interface SaleItem {
   tempId: number;
@@ -44,27 +47,35 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
     const prefix = getCurrentPrefix();
     if (!prefix) return val.replace(/[^0-9]/g, '');
 
-    if (!val) return `${prefix}-`;
+    // Si el valor está vacío, no autocompletar nada por defecto
+    if (!val || val === `${prefix}-`) return '';
 
     let clean = val.replace(/[^0-9-]/g, ''); 
 
+    // Si ya empieza con el prefijo correcto, mantenerlo
     if (clean.startsWith(`${prefix}-`)) {
       return clean;
     }
 
+    // Si el usuario escribió el prefijo pero sin el guión, poner el guión
     const digits = clean.replace(/\D/g, '');
     if (digits.startsWith(prefix) && digits.length > prefix.length) {
       return `${prefix}-` + digits.substring(prefix.length);
     }
 
+    // Si escribió algo que no empieza con el prefijo, forzar el prefijo
     return `${prefix}-` + digits;
   };
 
   // Common fields for the whole ticket
   const [commonData, setCommonData] = useState({
-    invoiceNumber: initialData?.invoiceNumber ? initialData.invoiceNumber : (getCurrentPrefix() ? `${getCurrentPrefix()}-` : ''),
+    invoiceNumber: initialData?.invoiceNumber ? initialData.invoiceNumber : '',
     customerName: initialData?.customerName || '',
     date: initialData?.date || defaultDateStr,
+    category: (initialData?.category as SaleCategory) || 'kit',
+    iccid: initialData?.iccid || '',
+    phoneNumber: initialData?.phone_number || '',
+    portabilityScreenshot: initialData?.portability_screenshot || null
   });
 
   // List of devices in this ticket
@@ -75,11 +86,17 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
   );
 
   const [ticketImage, setTicketImage] = useState<string | null>(initialData?.ticketImage || null);
+  const [portabilityImage, setPortabilityImage] = useState<string | null>(initialData?.portability_screenshot || null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [showFullImage, setShowFullImage] = useState(false); // New state for modal
+  const [selectedPortabilityFile, setSelectedPortabilityFile] = useState<File | null>(null);
+  const [showFullImage, setShowFullImage] = useState(false); 
+  const [showFullPortabilityImage, setShowFullPortabilityImage] = useState(false);
+
+  const portabilityFileInputRef = useRef<HTMLInputElement>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
 
@@ -142,26 +159,32 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
     // Validation: Prefix dynamic logic
     if (name === 'invoiceNumber') {
       const prefix = getCurrentPrefix();
-      // Remove prefix if present to get just the user input part
+      if (!prefix) {
+        setCommonData(prev => ({ ...prev, [name]: value.replace(/[^0-9]/g, '') }));
+        return;
+      }
+
+      // Si borra todo, dejarlo vacío
+      if (!value) {
+        setCommonData(prev => ({ ...prev, [name]: '' }));
+        return;
+      }
+
       let inputVal = value;
 
-      // If user tries to delete the prefix, enforce it back
+      // Si empieza a escribir y no tiene el prefijo, ponérselo
       if (!inputVal.startsWith(`${prefix}-`)) {
-        // Check if they deleted the dash or part of prefix
-        const digits = inputVal.replace(/\D/g, ''); // all digits
-        // If they have enough digits to match prefix
-        if (digits.startsWith(prefix) && digits.length >= prefix.length) {
+        const digits = inputVal.replace(/\D/g, '');
+        if (digits.startsWith(prefix)) {
           inputVal = `${prefix}-` + digits.slice(prefix.length);
         } else {
-          inputVal = `${prefix}-` + digits.replace(new RegExp(`^${prefix}`), '');
+          inputVal = `${prefix}-` + digits;
         }
       }
 
-      // Extract suffix (everything after prefix-)
-      const prefixPattern = new RegExp(`^${prefix}-`);
-      let suffix = inputVal.replace(prefixPattern, '').replace(/\D/g, '');
-
-      // Limit to 6 digits
+      // Limitar a 6 dígitos después del guión
+      const parts = inputVal.split('-');
+      let suffix = (parts[1] || '').replace(/\D/g, '');
       if (suffix.length > 6) suffix = suffix.slice(0, 6);
 
       setCommonData(prev => ({ ...prev, [name]: `${prefix}-` + suffix }));
@@ -202,9 +225,7 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      setSelectedFile(file); // Keep track that a file was selected
-
-      // Compress image
+      setSelectedFile(file);
       const reader = new FileReader();
       reader.readAsDataURL(file);
       reader.onload = (event) => {
@@ -215,8 +236,6 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
           let width = img.width;
           let height = img.height;
           const maxDimension = 1000;
-
-          // Resize logic
           if (width > height) {
             if (width > maxDimension) {
               height = Math.round((height * maxDimension) / width);
@@ -228,19 +247,48 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
               height = maxDimension;
             }
           }
-
           canvas.width = width;
           canvas.height = height;
           const ctx = canvas.getContext('2d');
           ctx?.drawImage(img, 0, 0, width, height);
-
-          // Compress to JPEG 0.7 quality (good balance)
-          // This significantly reduces size for upload
           const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
           setTicketImage(compressedBase64);
+        };
+      };
+    }
+  };
 
-          // Trigger AI Analysis
-          // handleAnalyzeTicket(compressedBase64); // DISABLED: User wants manual trigger only
+  const handlePortabilityFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedPortabilityFile(file);
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          const maxDimension = 1000;
+          if (width > height) {
+            if (width > maxDimension) {
+              height = Math.round((height * maxDimension) / width);
+              width = maxDimension;
+            }
+          } else {
+            if (height > maxDimension) {
+              width = Math.round((width * maxDimension) / height);
+              height = maxDimension;
+            }
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, width, height);
+          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+          setPortabilityImage(compressedBase64);
         };
       };
     }
@@ -255,7 +303,7 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
       const storeName = storeData?.name || 'Sucursal';
       const chainName = storeData?.type || 'Coppel';
 
-      const result = await analyzeTicketImage(base64Image, storeName, chainName);
+      const result = await analyzeTicketImage(base64Image, storeName, chainName, commonData.category);
 
       // Update fields if we got results
       if (result) {
@@ -291,8 +339,17 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
     e.preventDefault();
 
     // Validate Common Fields
-    if (!commonData.invoiceNumber.trim() || !commonData.customerName.trim()) {
-      alert("Por favor complete los campos obligatorios: Número de Factura y Nombre del Cliente.");
+    const prefix = getCurrentPrefix();
+    const invoiceValue = commonData.invoiceNumber;
+    const suffix = invoiceValue.includes('-') ? invoiceValue.split('-')[1] : '';
+
+    if (!invoiceValue.trim() || !commonData.customerName.trim()) {
+      alert("⚠️ Por favor complete los campos obligatorios: Número de Factura y Nombre del Cliente.");
+      return;
+    }
+
+    if (prefix && suffix.length !== 6) {
+      alert(`⚠️ El número de factura debe tener exactamente 6 dígitos después del prefijo ${prefix}.\nEjemplo: ${prefix}-123456`);
       return;
     }
 
@@ -363,12 +420,22 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
       }
     } catch (err) {
       console.warn("Could not verify duplicates:", err);
-      // Proceed cautiously even if check fails, or stop?
-      // Let's proceed to avoid blocking offline usage (though Supabase client handles offline somewhat? No, standard client doesn't).
-      // If offline, this check might fail. We should probably let it pass or warn.
     }
     // -----------------------
+
+    // REQUIRED FIELD VALIDATION
+    if (commonData.category === 'portability' && !portabilityImage) {
+      alert("❌ La captura de portabilidad es obligatoria para esta categoría.");
+      return;
+    }
+
+    if ((commonData.category === 'portability' || commonData.category === 'chip_express' || commonData.category === 'chip_0') && commonData.iccid.length !== 19) {
+      alert("❌ El ICCID debe tener exactamente 19 números.");
+      return;
+    }
+
     let finalImageUrl: string | undefined = ticketImage || undefined;
+    let finalPortabilityUrl: string | undefined = portabilityImage || undefined;
 
     // 📸 NEW ROBUST UPLOAD LOGIC (Supabase + Background Drive Sync)
     if (ticketImage && ticketImage.startsWith('data:')) {
@@ -385,13 +452,52 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
         const monthIndex = parseInt(m) - 1;
         const formattedMonth = monthNames[monthIndex];
         
-        // Set global hint for background sync
-        (window as any)._customMonthName = formattedMonth;
+        // Determine sub-folder based on category
+        let specificFolder: string = 'Ventas Kit';
+        if (commonData.category === 'chip_0') specificFolder = 'Chip Cero';
+        if (commonData.category === 'portability') specificFolder = 'Portabilidad';
+        if (commonData.category === 'chip_express') specificFolder = 'Ventas Express';
 
-        finalImageUrl = await smartImageUpload(ticketImage, filename, commonData.date, storeName, 'sales', userProfile?.fullName || 'Vendedor', chainName);
+        finalImageUrl = await smartImageUpload(
+          ticketImage, 
+          filename, 
+          commonData.date, 
+          storeName, 
+          'sales', 
+          (userProfile?.fullName || 'Vendedor').trim(), // Trim to avoid duplicates
+          chainName,
+          specificFolder // New parameter for sub-folder
+        );
       } catch (error) {
         console.error("Error crítico en guardado de foto:", error);
-        alert("⚠️ No se pudo guardar la foto en el servidor. Verifica tu conexión.");
+        alert("⚠️ No se pudo guardar la foto del ticket. Verifica tu conexión.");
+        setIsSubmitting(false);
+        return;
+      }
+    }
+
+    // Portability Screenshot Upload
+    if (commonData.category === 'portability' && portabilityImage && portabilityImage.startsWith('data:')) {
+      try {
+        const storeIdToUse = activeStoreId || userProfile?.storeId;
+        const storeData = stores?.find((s: any) => s.id === storeIdToUse);
+        const storeName = storeData?.name || 'Sucursal Desconocida';
+        const chainName = storeData?.type || 'Coppel';
+        const filename = `Portabilidad - ${commonData.phoneNumber} - ${commonData.customerName.toUpperCase()}`;
+        
+        finalPortabilityUrl = await smartImageUpload(
+          portabilityImage, 
+          filename, 
+          commonData.date, 
+          storeName, 
+          'portability', 
+          (userProfile?.fullName || 'Vendedor').trim(), 
+          chainName,
+          'Portabilidad' // Explicitly Portabilidad folder
+        );
+      } catch (error) {
+        console.error("Error en subida de screenshot:", error);
+        alert("⚠️ No se pudo guardar la captura de portabilidad.");
         setIsSubmitting(false);
         return;
       }
@@ -411,11 +517,15 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
           })(),
           customerName: commonData.customerName.toUpperCase(),
           date: commonData.date,
-          price: parseFloat(items[0].price),
+          price: (commonData.category === 'portability' || commonData.category === 'chip_express') ? 0 : parseFloat(items[0].price),
           brand: items[0].brand,
           ticketImage: finalImageUrl || initialData.ticketImage,
           createdBy: initialData.createdBy,
-          storeId: initialData.storeId
+          storeId: initialData.storeId,
+          category: commonData.category,
+          iccid: (commonData.category !== 'kit') ? commonData.iccid : null,
+          phone_number: (commonData.category === 'portability' || commonData.category === 'chip_express') ? commonData.phoneNumber : null,
+          portability_screenshot: commonData.category === 'portability' ? finalPortabilityUrl : null
         });
       } else {
         // CREATE MODE: Submit all items
@@ -430,9 +540,13 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
             })(),
             customerName: commonData.customerName.toUpperCase(),
             date: commonData.date,
-            price: parseFloat(item.price),
+            price: (commonData.category === 'portability' || commonData.category === 'chip_express') ? 0 : parseFloat(item.price),
             brand: item.brand,
-            ticketImage: finalImageUrl
+            ticketImage: finalImageUrl,
+            category: commonData.category,
+            iccid: (commonData.category !== 'kit') ? commonData.iccid : null,
+            phone_number: (commonData.category === 'portability' || commonData.category === 'chip_express') ? commonData.phoneNumber : null,
+            portability_screenshot: commonData.category === 'portability' ? finalPortabilityUrl : null
           });
         }));
         clearDraft(); // Success! Clear saved state
@@ -460,47 +574,150 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
         </button>
       </div>
 
+      <div className="flex flex-wrap gap-2 mb-8 bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
+        {(userProfile?.canSellKit !== false) && (
+          <button 
+            type="button"
+            onClick={() => setCommonData(prev => ({ ...prev, category: 'kit' }))}
+            className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-xs font-black uppercase transition-all ${commonData.category === 'kit' ? 'bg-white text-blue-600 shadow-sm border border-blue-100' : 'text-slate-400 hover:text-slate-600'}`}
+          >
+            <Smartphone className="w-4 h-4" />
+            Kit
+          </button>
+        )}
+        {(userProfile?.canSellChip0 || role === 'admin') && (
+          <button 
+            type="button"
+            onClick={() => {
+              setCommonData(prev => ({ ...prev, category: 'chip_0' }));
+              setItems(prev => [{ ...prev[0], brand: Brand.OTRO }]);
+            }}
+            className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-xs font-black uppercase transition-all ${commonData.category === 'chip_0' ? 'bg-white text-purple-600 shadow-sm border border-purple-100' : 'text-slate-400 hover:text-slate-600'}`}
+          >
+            <Cpu className="w-4 h-4" />
+            Chip 0
+          </button>
+        )}
+        {(userProfile?.canSellPortability || role === 'admin') && (
+          <button 
+            type="button"
+            onClick={() => {
+              setCommonData(prev => ({ ...prev, category: 'portability' }));
+              setItems(prev => [{ ...prev[0], brand: Brand.OTRO }]);
+            }}
+            className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-xs font-black uppercase transition-all ${commonData.category === 'portability' ? 'bg-white text-rose-600 shadow-sm border border-rose-100' : 'text-slate-400 hover:text-slate-600'}`}
+          >
+            <Phone className="w-4 h-4" />
+            Porta
+          </button>
+        )}
+        {(userProfile?.canSellChipExpress || role === 'admin') && (
+          <button 
+            type="button"
+            onClick={() => {
+              setCommonData(prev => ({ ...prev, category: 'chip_express' }));
+              setItems(prev => [{ ...prev[0], brand: Brand.OTRO }]);
+            }}
+            className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-xs font-black uppercase transition-all ${commonData.category === 'chip_express' ? 'bg-white text-orange-600 shadow-sm border border-orange-100' : 'text-slate-400 hover:text-slate-600'}`}
+          >
+            <Cpu className="w-4 h-4" />
+            Express
+          </button>
+        )}
+      </div>
+
       <form onSubmit={handleSubmit} className="space-y-8">
 
         {/* SECTION 1: COMMON DATA */}
         <div className="bg-slate-50 p-5 rounded-xl border border-slate-200">
           <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2">
             <Smartphone className="w-4 h-4" />
-            Datos Generales del Ticket
+            Datos Generales de la Venta
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="block text-sm font-medium text-slate-700">
-                Número de Factura <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                inputMode="numeric"
-                name="invoiceNumber"
-                value={commonData.invoiceNumber}
-                onChange={handleCommonChange}
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-900"
-                placeholder="1053-XXXXXX"
-                required
-              />
-            </div>
+            {(commonData.category === 'kit' || commonData.category === 'chip_0') && (
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-slate-700">
+                  Número de Factura <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  name="invoiceNumber"
+                  value={commonData.invoiceNumber}
+                  onChange={handleCommonChange}
+                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-900"
+                  placeholder="1053-XXXXXX"
+                  required
+                />
+              </div>
+            )}
+
+            {(commonData.category === 'portability' || commonData.category === 'chip_express' || commonData.category === 'chip_0') && (
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-slate-700">
+                  Número de ICCID <span className="text-red-500">*</span>
+                </label>
+                <div className="relative group">
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                    <Smartphone className="w-4 h-4" />
+                  </div>
+                  <input
+                    type="text"
+                    maxLength={19}
+                    value={commonData.iccid}
+                    onChange={(e) => setCommonData(prev => ({ ...prev, iccid: e.target.value.replace(/\D/g, '') }))}
+                    className="w-full pl-9 pr-12 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-900 font-mono tracking-wider text-sm shadow-sm transition-all"
+                    placeholder="Ingrese ICCID..."
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setIsScanning(true)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg transition-all border border-blue-100 shadow-sm active:scale-95"
+                    title="Escanear Código de Barras"
+                  >
+                    <Barcode className="w-6 h-6" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {commonData.category !== 'chip_express' && (
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-slate-700">
+                  Nombre del Cliente <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  name="customerName"
+                  value={commonData.customerName}
+                  onChange={(e) => setCommonData(prev => ({ ...prev, customerName: e.target.value }))}
+                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-900 uppercase placeholder:normal-case"
+                  placeholder="Nombre completo"
+                  required
+                />
+              </div>
+            )}
+
+            {(commonData.category === 'portability' || commonData.category === 'chip_express') && (
+              <div className="space-y-1">
+                <label className="block text-sm font-medium text-slate-700">
+                  Número de Teléfono <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="tel"
+                  maxLength={10}
+                  value={commonData.phoneNumber}
+                  onChange={(e) => setCommonData(prev => ({ ...prev, phoneNumber: e.target.value.replace(/\D/g, '') }))}
+                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-900"
+                  placeholder="10 dígitos"
+                  required
+                />
+              </div>
+            )}
 
             <div className="space-y-1">
-              <label className="block text-sm font-medium text-slate-700">
-                Nombre del Cliente <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                name="customerName"
-                value={commonData.customerName}
-                onChange={(e) => setCommonData(prev => ({ ...prev, customerName: e.target.value }))}
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-900 uppercase placeholder:normal-case"
-                placeholder="Nombre completo"
-                required
-              />
-            </div>
-
-            <div className="space-y-1 md:col-span-2">
               <label className="block text-sm font-medium text-slate-700">
                 Fecha <span className="text-red-500">*</span>
               </label>
@@ -516,226 +733,261 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
           </div>
         </div>
 
-        {/* SECTION 2: ITEMS LIST */}
-        <div>
-          <div className="flex justify-between items-end mb-2">
-            <label className="block text-sm font-bold text-slate-700">Equipos Vendidos ({items.length})</label>
-            <div className="text-sm text-slate-500 font-medium bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
-              Total Factura: <span className="text-slate-900 font-bold">${calculateTotal().toLocaleString('es-MX', { minimumFractionDigits: 2 })}</span>
-            </div>
-          </div>
-
-          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-            {items.map((item, index) => (
-              <div
-                key={item.tempId}
-                className={`p-4 flex flex-col md:flex-row gap-4 items-start md:items-center bg-white animate-in fade-in slide-in-from-left-2 duration-300 ${index !== 0 ? 'border-t border-slate-100' : ''}`}
-              >
-                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-100 text-slate-500 text-sm font-bold shrink-0">
-                  {index + 1}
-                </div>
-
-                <div className="flex-1 w-full grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Brand Selector */}
-                  <div className="relative">
-                    <label className="block text-xs font-bold text-slate-500 mb-1 md:hidden">Marca</label>
-                    <select
-                      value={item.brand}
-                      onChange={(e) => handleItemChange(item.tempId, 'brand', e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-900 cursor-pointer text-sm"
-                    >
-                      {Object.values(Brand).map((brand) => (
-                        <option key={brand} value={brand}>
-                          {BRAND_CONFIGS[brand].label}
-                        </option>
-                      ))}
-                    </select>
-                    {/* Brand Color Indicator */}
-                    <div
-                      className={`absolute right-8 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full ${BRAND_CONFIGS[item.brand].colorClass.split(' ')[0]} md:mt-0 mt-3`}
-                      style={{ backgroundColor: BRAND_CONFIGS[item.brand].hex }}
-                    />
-                  </div>
-
-                  {/* Price Input */}
-                  <div className="relative">
-                    <label className="block text-xs font-bold text-slate-500 mb-1 md:hidden">
-                      Precio <span className="text-red-500">*</span>
-                    </label>
-                    <span className="absolute left-3 top-2 md:top-2 text-slate-500 text-sm hidden md:block">$</span>
-                    <span className="absolute left-3 top-8 text-slate-500 text-sm md:hidden">$</span>
-                    <input
-                      type="number"
-                      value={item.price}
-                      onChange={(e) => handleItemChange(item.tempId, 'price', e.target.value)}
-                      onFocus={(e) => e.target.select()}
-                      className={`w-full pl-7 pr-3 py-2 border rounded-lg focus:ring-2 outline-none text-sm transition-all bg-white text-slate-900 placeholder:text-slate-400 ${item.error
-                        ? 'border-red-500 bg-red-50 focus:ring-red-200'
-                        : 'border-slate-300 focus:ring-blue-500'
-                        }`}
-                      placeholder="0.00"
-                      step="0.01"
-                      required
-                    />
-                    {item.error && (
-                      <span className="absolute right-3 top-2 text-red-500 text-xs font-bold md:block hidden">{item.error}</span>
-                    )}
-                    {item.error && (
-                      <span className="text-red-500 text-xs font-bold md:hidden block mt-1">{item.error}</span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Remove Button */}
-                {items.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveItem(item.tempId)}
-                    className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors self-end md:self-auto"
-                    title="Quitar equipo"
-                  >
-                    <Trash2 className="w-5 h-5" />
-                  </button>
-                )}
+        {/* SECTION 2: ITEMS LIST (Only for Kit and Chip 0) */}
+        {(commonData.category === 'kit' || commonData.category === 'chip_0') && (
+          <div>
+            <div className="flex justify-between items-end mb-2">
+              <label className="block text-sm font-bold text-slate-700">Equipos Vendidos ({items.length})</label>
+              <div className="text-sm text-slate-500 font-medium bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
+                Total Factura: <span className="text-slate-900 font-bold">${calculateTotal().toLocaleString('es-MX', { minimumFractionDigits: 2 })}</span>
               </div>
-            ))}
-          </div>
+            </div>
 
-          <button
-            type="button"
-            onClick={handleAddItem}
-            disabled={!!initialData} // Disable adding items in Edit Mode
-            className={`mt-4 flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-lg transition-colors border border-dashed w-full md:w-auto justify-center ${initialData ? 'text-slate-400 border-slate-200 cursor-not-allowed' : 'text-blue-600 hover:text-blue-700 hover:bg-blue-50 border-blue-200'}`}
-          >
-            <Plus className="w-4 h-4" />
-            {initialData ? 'Edición de un solo item' : 'Agregar otro equipo al ticket'}
-          </button>
-        </div>
-
-        {/* SECTION 3: TICKET IMAGE */}
-        <div className="space-y-2 pt-4 border-t border-slate-100">
-          <label className="block text-sm font-medium text-slate-700 flex justify-between items-center">
-            <span>Foto del Ticket <span className="text-blue-600 font-bold">(Autocompletado con IA)</span></span>
-            <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full border border-blue-100 uppercase tracking-wider font-bold">Recomendado</span>
-          </label>
-          <div className="flex flex-col md:flex-row items-start gap-4">
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center gap-4">
+            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+              {items.map((item, index) => (
                 <div
-                  className={`
-                    relative w-32 h-32 rounded-lg border-2 border-dashed flex flex-col items-center justify-center overflow-hidden bg-white shrink-0
-                    ${ticketImage ? 'border-blue-500' : 'border-slate-300'}
-                  `}
+                  key={item.tempId}
+                  className={`p-4 flex flex-col md:flex-row gap-4 items-start md:items-center bg-white animate-in fade-in slide-in-from-left-2 duration-300 ${index !== 0 ? 'border-t border-slate-100' : ''}`}
                 >
-                  {ticketImage ? (
-                    ticketImage.includes('google.com') || ticketImage.includes('drive.google') ? (
-                      <div className="w-full h-full flex items-center justify-center bg-slate-100 text-slate-500 text-xs text-center p-2 relative group">
-                        <span className="font-bold">Foto en la nube</span>
-                        <button
-                          type="button"
-                          className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 text-white font-bold opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={(e) => { e.stopPropagation(); setShowFullImage(true); }}
-                        >
-                          <Eye className="w-6 h-6 mb-1" />
-                          <span className="text-[10px] uppercase tracking-wider">Ver Foto</span>
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="relative w-full h-full group">
-                        <img src={ticketImage} alt="Ticket preview" className="w-full h-full object-cover" />
-                        <button
-                          type="button"
-                          className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={() => setShowFullImage(true)}
-                        >
-                          <Eye className="w-6 h-6 mb-1" />
-                          <span className="text-[10px]">Ampliar</span>
-                        </button>
-                      </div>
-                    )
-                  ) : (
-                    <>
-                      <Camera className="w-8 h-8 text-slate-400 mb-1" />
-                      <span className="text-xs text-slate-500 text-center px-1">Sin foto</span>
-                    </>
-                  )}
-                </div>
+                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-100 text-slate-500 text-sm font-bold shrink-0">
+                    {index + 1}
+                  </div>
 
-                <div className="flex flex-col gap-2">
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-bold transition-colors border border-slate-200"
-                  >
-                    {ticketImage ? 'Cambiar Foto' : 'Tomar Foto'}
-                  </button>
+                  <div className="flex-1 w-full grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Brand Selector */}
+                    <div className="relative">
+                      <label className="block text-xs font-bold text-slate-500 mb-1 md:hidden">Marca</label>
+                      <select
+                        value={item.brand}
+                        onChange={(e) => handleItemChange(item.tempId, 'brand', e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-900 cursor-pointer text-sm"
+                      >
+                        {Object.values(Brand).map((brand) => (
+                          <option key={brand} value={brand}>
+                            {BRAND_CONFIGS[brand].label}
+                          </option>
+                        ))}
+                      </select>
+                      {/* Brand Color Indicator */}
+                      <div
+                        className={`absolute right-8 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full ${BRAND_CONFIGS[item.brand].colorClass.split(' ')[0]} md:mt-0 mt-3`}
+                        style={{ backgroundColor: BRAND_CONFIGS[item.brand].hex }}
+                      />
+                    </div>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (ticketImage) {
-                        handleAnalyzeTicket(ticketImage);
-                      } else {
-                        alert("📸 Primero debes tomar una foto del ticket para poder escanearlo.");
-                      }
-                    }}
-                    disabled={isAnalyzing}
-                    className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg text-sm font-bold transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
-                  >
-                    <Wand2 className={`w-4 h-4 text-yellow-300 ${isAnalyzing ? 'animate-spin' : ''}`} />
-                    {isAnalyzing ? 'Analizando...' : 'Escanear / Autocompletar'}
-                  </button>
-                  {ticketImage && (ticketImage.includes('google.com') || ticketImage.includes('drive.google')) && (
-                    <p className="text-[10px] text-slate-400 max-w-[150px] leading-tight">
-                      La foto actual está guardada en la nube. Puedes cambiarla si lo deseas.
-                    </p>
-                  )}
+                    {/* Price Input */}
+                    <div className="relative">
+                      <label className="block text-xs font-bold text-slate-500 mb-1 md:hidden">
+                        Precio <span className="text-red-500">*</span>
+                      </label>
+                      <span className="absolute left-3 top-2 md:top-2 text-slate-500 text-sm hidden md:block">$</span>
+                      <span className="absolute left-3 top-8 text-slate-500 text-sm md:hidden">$</span>
+                      <input
+                        type="number"
+                        value={item.price}
+                        onChange={(e) => handleItemChange(item.tempId, 'price', e.target.value)}
+                        onFocus={(e) => e.target.select()}
+                        className={`w-full pl-7 pr-3 py-2 border rounded-lg focus:ring-2 outline-none text-sm transition-all bg-white text-slate-900 placeholder:text-slate-400 ${item.error
+                          ? 'border-red-500 bg-red-50 focus:ring-red-200'
+                          : 'border-slate-300 focus:ring-blue-500'
+                          }`}
+                        placeholder="0.00"
+                        step="0.01"
+                        required
+                      />
+                    </div>
+                  </div>
 
-                  {role === 'admin' && (
+                  {/* Remove Button */}
+                  {items.length > 1 && (
                     <button
                       type="button"
-                      onClick={() => galleryInputRef.current?.click()}
-                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-bold transition-colors border border-slate-200 flex items-center justify-center gap-2"
+                      onClick={() => handleRemoveItem(item.tempId)}
+                      className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors self-end md:self-auto"
+                      title="Quitar equipo"
                     >
-                      <FolderOpen className="w-4 h-4" />
-                      Desde Archivos
+                      <Trash2 className="w-5 h-5" />
                     </button>
                   )}
                 </div>
+              ))}
+            </div>
 
+            <button
+              type="button"
+              onClick={handleAddItem}
+              disabled={!!initialData} // Disable adding items in Edit Mode
+              className={`mt-4 flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-lg transition-colors border border-dashed w-full md:w-auto justify-center ${initialData ? 'text-slate-400 border-slate-200 cursor-not-allowed' : 'text-blue-600 hover:text-blue-700 hover:bg-blue-50 border-blue-200'}`}
+            >
+              <Plus className="w-4 h-4" />
+              {initialData ? 'Edición de un solo item' : 'Agregar otro equipo al ticket'}
+            </button>
+          </div>
+        )}
+
+        {/* SECTION 3: TICKET IMAGE (Only for Kit and Chip 0) */}
+        {(commonData.category === 'kit' || commonData.category === 'chip_0') && (
+          <div className="space-y-2 pt-4 border-t border-slate-100">
+            <label className="block text-sm font-medium text-slate-700 flex justify-between items-center">
+              <span>Foto del Ticket <span className="text-blue-600 font-bold">(Autocompletado con IA)</span></span>
+              <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full border border-blue-100 uppercase tracking-wider font-bold">Recomendado</span>
+            </label>
+            <div className="flex flex-col md:flex-row items-start gap-4">
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center gap-4">
+                  <div
+                    className={`
+                      relative w-32 h-32 rounded-lg border-2 border-dashed flex flex-col items-center justify-center overflow-hidden bg-white shrink-0
+                      ${ticketImage ? 'border-blue-500' : 'border-slate-300'}
+                    `}
+                  >
+                    {ticketImage ? (
+                      ticketImage.includes('google.com') || ticketImage.includes('drive.google') ? (
+                        <div className="w-full h-full flex items-center justify-center bg-slate-100 text-slate-500 text-xs text-center p-2 relative group">
+                          <span className="font-bold">Foto en la nube</span>
+                          <button
+                            type="button"
+                            className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 text-white font-bold opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={(e) => { e.stopPropagation(); setShowFullImage(true); }}
+                          >
+                            <Eye className="w-6 h-6 mb-1" />
+                            <span className="text-[10px] uppercase tracking-wider">Ver Foto</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="relative w-full h-full group">
+                          <img src={ticketImage} alt="Ticket preview" className="w-full h-full object-cover" />
+                          <button
+                            type="button"
+                            className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={() => setShowFullImage(true)}
+                          >
+                            <Eye className="w-6 h-6 mb-1" />
+                            <span className="text-[10px]">Ampliar</span>
+                          </button>
+                        </div>
+                      )
+                    ) : (
+                      <>
+                        <Camera className="w-8 h-8 text-slate-400 mb-1" />
+                        <span className="text-xs text-slate-500 text-center px-1">Sin foto</span>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-bold transition-colors border border-slate-200"
+                    >
+                      {ticketImage ? 'Cambiar Foto' : 'Tomar Foto'}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (ticketImage) {
+                          handleAnalyzeTicket(ticketImage);
+                        } else {
+                          alert("📸 Primero debes tomar una foto del ticket para poder escanearlo.");
+                        }
+                      }}
+                      disabled={isAnalyzing}
+                      className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg text-sm font-bold transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      <Wand2 className={`w-4 h-4 text-yellow-300 ${isAnalyzing ? 'animate-spin' : ''}`} />
+                      {isAnalyzing ? 'Analizando...' : 'Escanear / Autocompletar'}
+                    </button>
+                  </div>
+
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
+                  <input
+                    ref={galleryInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <p className="text-xs text-slate-500 max-w-xs leading-relaxed">
+                  Toma una foto clara del ticket. La imagen se guardará de forma segura en la nube.
+                </p>
+                {isAnalyzing && (
+                  <div className="flex items-center gap-2 text-blue-600 text-xs font-bold animate-pulse">
+                    <Wand2 className="w-3 h-3" />
+                    Analizando ticket con IA...
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {commonData.category === 'portability' && (
+          <div className="space-y-2 pt-4 border-t border-slate-100">
+            <label className="block text-sm font-black text-slate-700 flex justify-between items-center uppercase tracking-tighter">
+              <span>Captura de Portabilidad <span className="text-rose-600 font-bold">(Captura de pantalla)</span></span>
+            </label>
+            <div className="flex flex-col md:flex-row items-start gap-4">
+              <div
+                className={`
+                  relative w-32 h-32 rounded-lg border-2 border-dashed flex flex-col items-center justify-center overflow-hidden bg-white shrink-0
+                  ${portabilityImage ? 'border-rose-500' : 'border-slate-300'}
+                `}
+              >
+                {portabilityImage ? (
+                  <div className="relative w-full h-full group">
+                    <img src={portabilityImage} alt="Portability preview" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={() => setShowFullPortabilityImage(true)}
+                    >
+                      <Eye className="w-6 h-6 mb-1" />
+                      <span className="text-[10px]">Ampliar</span>
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <ImageIcon className="w-8 h-8 text-slate-400 mb-1" />
+                    <span className="text-xs text-slate-500 text-center px-1">Sin captura</span>
+                  </>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => portabilityFileInputRef.current?.click()}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-bold transition-colors border border-slate-200"
+                >
+                  {portabilityImage ? 'Cambiar Captura' : 'Subir Captura'}
+                </button>
+                <p className="text-[10px] text-slate-400 max-w-[200px] leading-tight">
+                  Sube la captura de pantalla de la portabilidad exitosa.
+                </p>
                 <input
-                  ref={fileInputRef}
+                  ref={portabilityFileInputRef}
                   type="file"
                   accept="image/*"
-                  capture="environment"
                   className="hidden"
-                  onChange={handleFileChange}
-                />
-                <input
-                  ref={galleryInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleFileChange}
+                  onChange={handlePortabilityFileChange}
                 />
               </div>
             </div>
-
-            <div className="flex flex-col gap-2">
-
-              <p className="text-xs text-slate-500 max-w-xs leading-relaxed">
-                Toma una foto clara del ticket. La imagen se guardará de forma segura en la nube.
-              </p>
-              {isAnalyzing && (
-                <div className="flex items-center gap-2 text-blue-600 text-xs font-bold animate-pulse">
-                  <Wand2 className="w-3 h-3" />
-                  Analizando ticket con IA...
-                </div>
-              )}
-            </div>
           </div>
-
-        </div>
+        )}
 
         <div className="pt-4 flex justify-end gap-3 border-t border-slate-100">
           <button
@@ -823,6 +1075,18 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
             )}
           </div>
         </div>
+      )}
+      {/* Barcode Scanner Modal */}
+      {isScanning && (
+        <BarcodeScanner 
+          title="Escanear ICCID del Chip"
+          onScan={(code) => {
+            // Remove non-digits and limit to 19
+            const cleanCode = code.replace(/\D/g, '').substring(0, 19);
+            setCommonData(prev => ({ ...prev, iccid: cleanCode }));
+          }}
+          onClose={() => setIsScanning(false)}
+        />
       )}
     </div>
   </div>

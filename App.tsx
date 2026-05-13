@@ -107,6 +107,119 @@ const App: React.FC = () => {
 
   const [copiedSql, setCopiedSql] = useState(false);
   const [saleToEdit, setSaleToEdit] = useState<Sale | null>(null);
+  const [isDeepSearching, setIsDeepSearching] = useState(false);
+
+  const handleDeepSearch = async (query: string) => {
+    if (!query || query.length < 3) return;
+    setIsDeepSearching(true);
+    try {
+      const { data, error } = await supabase
+        .from('sales')
+        .select(`
+          *,
+          profiles:created_by (
+            email,
+            full_name
+          )
+        `)
+        .or(`customer_name.ilike.%${query}%,transaction_folio.ilike.%${query}%,invoice_number.ilike.%${query}%`)
+        .order('date', { ascending: false });
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        const formatted: Sale[] = data.map((row: any) => ({
+          id: row.id,
+          invoiceNumber: row.invoice_number,
+          customerName: row.customer_name,
+          price: row.price,
+          brand: row.brand as Brand,
+          date: row.date,
+          ticketImage: row.ticket_image,
+          createdBy: row.created_by,
+          createdAt: row.created_at,
+          createdByEmail: row.profiles?.email,
+          createdByName: row.profiles?.full_name,
+          storeId: row.store_id,
+          transactionFolio: row.transaction_folio,
+          category: row.category,
+          iccid: row.iccid,
+          phoneNumber: row.phone_number,
+          portabilityScreenshot: row.portability_screenshot
+        }));
+        
+        setSales(prev => {
+          const existingIds = new Set(prev.map(s => s.id));
+          const newItems = formatted.filter(s => !existingIds.has(s.id));
+          return [...newItems, ...prev].sort((a, b) => b.date.localeCompare(a.date));
+        });
+        
+        return true; // Found something
+      }
+      return false; // Nothing found
+    } catch (err) {
+      console.error("Deep search error:", err);
+      return false;
+    } finally {
+      setIsDeepSearching(false);
+    }
+  };
+
+  const handleFetchRange = async (start: string, end: string) => {
+    if (!start || !end) return;
+    setIsDeepSearching(true);
+    try {
+      const { data, error } = await supabase
+        .from('sales')
+        .select(`
+          *,
+          profiles:created_by (
+            email,
+            full_name
+          )
+        `)
+        .gte('date', start)
+        .lte('date', end)
+        .order('date', { ascending: false });
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        const formatted: Sale[] = data.map((row: any) => ({
+          id: row.id,
+          invoiceNumber: row.invoice_number,
+          customerName: row.customer_name,
+          price: row.price,
+          brand: row.brand as Brand,
+          date: row.date,
+          ticketImage: row.ticket_image,
+          createdBy: row.created_by,
+          createdAt: row.created_at,
+          createdByEmail: row.profiles?.email,
+          createdByName: row.profiles?.full_name,
+          storeId: row.store_id,
+          transactionFolio: row.transaction_folio,
+          category: row.category,
+          iccid: row.iccid,
+          phoneNumber: row.phone_number,
+          portabilityScreenshot: row.portability_screenshot
+        }));
+        
+        setSales(prev => {
+          const existingIds = new Set(prev.map(s => s.id));
+          const newItems = formatted.filter(s => !existingIds.has(s.id));
+          return [...newItems, ...prev].sort((a, b) => b.date.localeCompare(a.date));
+        });
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error("Fetch range error:", err);
+      return false;
+    } finally {
+      setIsDeepSearching(false);
+    }
+  };
 
   // --- REAL-TIME NOTIFICATIONS ---
   useEffect(() => {
@@ -600,7 +713,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
           const newClose = {
             id: `auto-${date}-${userProfile?.storeId}`,
             date: date,
-            total_sales: daySales.length,
+            total_sales: daySales.filter(s => s.category === 'kit' || !s.category).length,
             total_revenue: revenue,
             closed_at: now.toISOString(),
             top_brand: topBrand as Brand,
@@ -667,6 +780,10 @@ create policy "Users insert store warranties" on public.warranties for insert to
 
     try {
       // 1. Fetch Sales (with profiles join for Admin view)
+      const oneMonthAgo = new Date();
+      oneMonthAgo.setDate(oneMonthAgo.getDate() - 30);
+      const dateLimit = oneMonthAgo.toISOString().split('T')[0];
+
       const { data: salesData, error: salesError } = await supabase
         .from('sales')
         .select(`
@@ -676,8 +793,9 @@ create policy "Users insert store warranties" on public.warranties for insert to
             full_name
           )
         `)
+        .gte('date', dateLimit)
         .order('date', { ascending: false })
-        .range(0, 4999); // Increased range to fetch more than 1000 records
+        .range(0, 4999); 
 
       if (salesError) {
         if (salesError.code === '42P01') {
@@ -700,7 +818,11 @@ create policy "Users insert store warranties" on public.warranties for insert to
         createdByEmail: row.profiles?.email,
         createdByName: row.profiles?.full_name,
         storeId: row.store_id,
-        transactionFolio: row.transaction_folio
+        transactionFolio: row.transaction_folio,
+        category: row.category,
+        iccid: row.iccid,
+        phoneNumber: row.phone_number,
+        portabilityScreenshot: row.portability_screenshot
       }));
 
       setSales(formattedSales);
@@ -855,11 +977,29 @@ create policy "Users insert store warranties" on public.warranties for insert to
                 ticketImage: payload.new.ticket_image,
                 createdBy: payload.new.created_by,
                 createdAt: payload.new.created_at,
-                storeId: payload.new.store_id
+                storeId: payload.new.store_id,
+                category: payload.new.category,
+                iccid: payload.new.iccid,
+                phoneNumber: payload.new.phone_number,
+                portabilityScreenshot: payload.new.portability_screenshot
               };
               setSales(prev => [newSale, ...prev]);
             } else if (payload.eventType === 'DELETE') {
               setSales(prev => prev.filter(s => s.id !== payload.old.id));
+            } else if (payload.eventType === 'UPDATE') {
+              setSales(prev => prev.map(s => s.id === payload.new.id ? {
+                ...s,
+                invoiceNumber: payload.new.invoice_number,
+                customerName: payload.new.customer_name,
+                price: payload.new.price,
+                brand: payload.new.brand as Brand,
+                date: payload.new.date,
+                ticketImage: payload.new.ticket_image,
+                category: payload.new.category,
+                iccid: payload.new.iccid,
+                phoneNumber: payload.new.phone_number,
+                portabilityScreenshot: payload.new.portability_screenshot
+              } : s));
             }
           }
         )
@@ -910,6 +1050,10 @@ create policy "Users insert store warranties" on public.warranties for insert to
         ticket_image: newSaleData.ticketImage || null,
         created_by: session.user.id,
         store_id: finalStoreId,
+        category: (newSaleData as any).category || 'kit',
+        iccid: (newSaleData as any).iccid || null,
+        phone_number: (newSaleData as any).phone_number || null,
+        portability_screenshot: (newSaleData as any).portability_screenshot || null,
         transaction_folio: `VNT-${newSaleData.date.replace(/-/g, '')}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`
       };
 
@@ -932,6 +1076,10 @@ create policy "Users insert store warranties" on public.warranties for insert to
           ticketImage: row.ticket_image,
           createdBy: row.created_by,
           storeId: row.store_id,
+          category: row.category,
+          iccid: row.iccid,
+          phoneNumber: row.phone_number,
+          portabilityScreenshot: row.portability_screenshot,
           transactionFolio: row.transaction_folio
         };
         // Update local state ONLY if not already added by realtime subscription
@@ -1035,8 +1183,12 @@ create policy "Users insert store warranties" on public.warranties for insert to
         price: updatedSale.price,
         brand: updatedSale.brand,
         date: updatedSale.date,
-        ticket_image: updatedSale.ticketImage, // Can be null or URL
-        store_id: updatedSale.storeId || userProfile?.storeId
+        ticket_image: updatedSale.ticketImage,
+        store_id: updatedSale.storeId || userProfile?.storeId,
+        category: updatedSale.category,
+        iccid: updatedSale.iccid,
+        phone_number: updatedSale.phoneNumber,
+        portability_screenshot: updatedSale.portabilityScreenshot
       };
 
       const { error } = await supabase
@@ -1414,7 +1566,6 @@ create policy "Users insert store warranties" on public.warranties for insert to
         <div className="flex items-center gap-3 font-bold text-lg">
           <img src="/pwa-icon.png" alt="Logo" className="w-8 h-8 object-contain drop-shadow-sm rounded-full" />
           <span>Ventas Telcel</span>
-          <span className="bg-red-600 text-[10px] px-1.5 py-0.5 rounded-md font-black uppercase text-white animate-pulse">Beta</span>
         </div>
         <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="text-slate-300 hover:text-white">
           {isMobileMenuOpen ? <X /> : <Menu />}
@@ -1433,7 +1584,6 @@ create policy "Users insert store warranties" on public.warranties for insert to
             <div className="flex items-center gap-3 px-2">
               <img src="/pwa-icon.png" alt="Logo" className="w-12 h-12 object-contain drop-shadow-lg rounded-full" />
               <span className="text-xl font-bold text-white tracking-tight">Ventas Telcel</span>
-              <span className="bg-red-600 text-[10px] px-1.5 py-0.5 rounded-md font-black uppercase text-white animate-pulse">Beta</span>
             </div>
             <p className="text-slate-500 text-[10px] font-bold tracking-widest text-center mt-4">PANEL DE CONTROL</p>
           </div>
@@ -1456,7 +1606,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
             </>
           )}
           
-          {(userProfile?.role === 'admin' || userProfile?.role === 'supervisor' || userProfile?.email === 'jeissonjessy@gmail.com' || userProfile?.id === 'b4ba233c-afa9-42fc-9bed-afa0e9be3f8c') && userProfile?.role !== 'viewer' && (
+          {(userProfile?.role === 'admin' || userProfile?.role === 'supervisor') && userProfile?.role !== 'viewer' && (
             <>
               <div className="text-[10px] font-bold text-slate-500 px-4 py-2 mt-4 uppercase tracking-wider">Administración</div>
               {userProfile?.role === 'admin' && (
@@ -1592,7 +1742,13 @@ create policy "Users insert store warranties" on public.warranties for insert to
 
               {currentView === 'list' && (userProfile?.role === 'admin' || userProfile?.role === 'seller') && (
                 <button
-                  onClick={() => setCurrentView('form')}
+                  onClick={() => {
+                    if (selectedStoreId === 'all' && (userProfile?.role === 'admin' || userProfile?.role === 'supervisor' || userProfile?.role === 'viewer')) {
+                      alert("⚠️ Por favor, selecciona una sucursal específica antes de agregar una venta.");
+                      return;
+                    }
+                    setCurrentView('form');
+                  }}
                   className="hidden md:flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-semibold shadow-lg shadow-blue-200 transition-all hover:-translate-y-0.5"
                 >
                   <Plus className="w-5 h-5" />
@@ -1683,8 +1839,15 @@ create policy "Users insert store warranties" on public.warranties for insert to
                     setCurrentView('form');
                   }
                 }}
+                onDeepSearch={handleDeepSearch}
+                onFetchRange={handleFetchRange}
+                isDeepSearching={isDeepSearching}
                 onAdd={() => {
                   if (userProfile?.role === 'admin' || userProfile?.role === 'seller') {
+                    if (selectedStoreId === 'all' && (userProfile?.role === 'admin' || userProfile?.role === 'supervisor' || userProfile?.role === 'viewer')) {
+                      alert("⚠️ Por favor, selecciona una sucursal específica antes de agregar una venta.");
+                      return;
+                    }
                     setSaleToEdit(null);
                     setCurrentView('form');
                   }
@@ -1755,7 +1918,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
                 storeName={stores.find(s => s.id === userProfile?.storeId)?.name}
               />
             )}
-            {currentView === 'attendance-report' && (
+            {currentView === 'attendance-report' && (userProfile?.role === 'admin' || userProfile?.role === 'supervisor') && (
               <AttendanceReport 
                 selectedStoreId={selectedStoreId}
                 stores={stores}
@@ -1794,6 +1957,10 @@ create policy "Users insert store warranties" on public.warranties for insert to
       {currentView === 'list' && (userProfile?.role === 'admin' || userProfile?.role === 'seller') && (
         <button
           onClick={() => {
+            if (selectedStoreId === 'all' && (userProfile?.role === 'admin' || userProfile?.role === 'supervisor' || userProfile?.role === 'viewer')) {
+              alert("⚠️ Por favor, selecciona una sucursal específica antes de agregar una venta.");
+              return;
+            }
             setSaleToEdit(null);
             setCurrentView('form');
           }}

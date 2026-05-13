@@ -5,7 +5,8 @@ export const uploadImageToDriveScript = async (
     date?: string, 
     folderType: 'sales' | 'warranties' | 'attendance' = 'sales',
     userName: string = 'Usuario',
-    chainName: string = 'Coppel'
+    chainName: string = 'Coppel',
+    subFolder: string = ''
 ): Promise<string> => {
     const scriptUrl = import.meta.env.VITE_GOOGLE_SCRIPT_URL;
 
@@ -31,7 +32,8 @@ export const uploadImageToDriveScript = async (
                 userName: userName,
                 storeName: (window as any)._activeStoreName || 'Sucursal Desconocida',
                 chainName: chainName || (window as any)._activeStoreChain || 'Coppel',
-                monthName: (window as any)._customMonthName // New hint
+                monthName: (window as any)._customMonthName,
+                subFolder: subFolder
             }),
             headers: {
                 'Content-Type': 'text/plain;charset=utf-8',

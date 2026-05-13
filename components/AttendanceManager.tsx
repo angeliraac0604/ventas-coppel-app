@@ -78,7 +78,8 @@ const AttendanceManager: React.FC<AttendanceManagerProps> = ({ user, storeName }
       let finalImageUrl = '';
       let finalScreenshotUrl = '';
 
-      const storeName = (window as any)._activeStoreName || 'Sucursal';
+      const activeStoreName = storeName || (window as any)._activeStoreName || 'Sucursal';
+      const cleanUserName = (user.fullName || user.email).trim();
       
       // 1. Upload Selfie
       if (imageBase64) {
@@ -86,23 +87,25 @@ const AttendanceManager: React.FC<AttendanceManagerProps> = ({ user, storeName }
           imageBase64, 
           `Selfie_${type}`, 
           todayStr, 
-          storeName, 
+          activeStoreName, 
           'attendance',
-          user.fullName || user.email,
-          storeConfig?.type || 'Coppel'
+          cleanUserName,
+          storeConfig?.type || 'Coppel',
+          'Check Asistencia' // Sub-folder for entrance/exit
         );
       }
-
+ 
       // 2. Upload Screenshot
       if (screenshotBase64) {
         finalScreenshotUrl = await smartImageUpload(
           screenshotBase64, 
           `Screenshot_${type}`, 
           todayStr, 
-          storeName, 
+          activeStoreName, 
           'attendance',
-          user.fullName || user.email,
-          storeConfig?.type || 'Coppel'
+          cleanUserName,
+          storeConfig?.type || 'Coppel',
+          'Check Asistencia'
         );
       }
 

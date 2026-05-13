@@ -43,9 +43,10 @@ export const smartImageUpload = async (
   filename: string, 
   date: string, 
   storeName: string, 
-  folderType: 'sales' | 'warranties' | 'attendance' = 'sales',
+  folderType: 'sales' | 'warranties' | 'attendance' | 'portability' = 'sales',
   userName: string = 'Usuario',
-  chainName: string = 'Coppel'
+  chainName: string = 'Coppel',
+  subFolder: string = ''
 ): Promise<string> => {
   // 1. UPLOAD TO SUPABASE (Immediate & Reliable)
   const dateObj = date ? new Date(date + "T12:00:00") : new Date();
@@ -68,8 +69,6 @@ export const smartImageUpload = async (
   const supabaseUrl = await uploadToSupabaseStorage(base64Image, supabasePath);
   
   // 2. BACKGROUND SYNC (Non-blocking for the UI)
-  // We return the Supabase URL immediately so the user doesn't wait.
-  // The transfer to Drive and cleanup happens in the background.
   setTimeout(async () => {
     try {
       const { uploadImageToDriveScript } = await import('./googleAppsScriptService');
@@ -79,7 +78,7 @@ export const smartImageUpload = async (
       (window as any)._activeStoreChain = chainName;
       (window as any)._customMonthName = m;
       
-      const driveUrl = await uploadImageToDriveScript(base64Image, filename, date, folderType as any, userName, chainName);
+      const driveUrl = await uploadImageToDriveScript(base64Image, filename, date, folderType as any, userName, chainName, subFolder);
       
       if (driveUrl) {
         console.log(`✅ [Background] Photo synced to Drive: ${driveUrl}`);

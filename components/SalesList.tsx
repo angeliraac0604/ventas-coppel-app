@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import html2canvas from 'html2canvas';
-import { Search, Image as ImageIcon, Calendar, User, Tag, Trash2, Eye, DollarSign, TrendingUp, Smartphone, MoreHorizontal, Edit2, X, Share2, Clock } from 'lucide-react';
+import { Search, Image as ImageIcon, Calendar, User, Tag, Trash2, Eye, DollarSign, TrendingUp, Smartphone, MoreHorizontal, Edit2, X, Share2, Clock, Cpu, Phone, Database, Loader2, RefreshCcw } from 'lucide-react';
 import { Sale, Brand, UserProfile } from '../types';
 import { BRAND_CONFIGS } from '../constants';
 import { supabase } from '../services/supabaseClient';
@@ -14,9 +14,14 @@ interface SalesListProps {
   role?: string;
   storeName?: string;
   userProfile?: UserProfile | null;
+  onDeepSearch?: (query: string) => Promise<boolean>;
+  onFetchRange?: (start: string, end: string) => Promise<boolean>;
+  isDeepSearching?: boolean;
 }
 
-const SalesList: React.FC<SalesListProps> = ({ sales, onDelete, onEdit, onAdd, role, storeName, userProfile }) => {
+const SalesList: React.FC<SalesListProps> = ({ 
+  sales, onDelete, onEdit, onAdd, role, storeName, userProfile, onDeepSearch, onFetchRange, isDeepSearching 
+}) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterBrand, setFilterBrand] = useState<Brand | 'ALL'>('ALL');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -24,6 +29,8 @@ const SalesList: React.FC<SalesListProps> = ({ sales, onDelete, onEdit, onAdd, r
   const [requestReason, setRequestReason] = useState('');
   const [isRequesting, setIsRequesting] = useState(false);
   const [suggestedData, setSuggestedData] = useState<Partial<Sale>>({});
+  const [activeTab, setActiveTab] = useState<'KIT' | 'CHIP_0' | 'PORTABILITY' | 'EXPRESS'>('KIT');
+  const [displayLimit, setDisplayLimit] = useState(50);
   const summaryRef = useRef<HTMLDivElement>(null);
 
   const handleSendRequest = async () => {
@@ -99,8 +106,9 @@ const SalesList: React.FC<SalesListProps> = ({ sales, onDelete, onEdit, onAdd, r
     String(todayDateObj.getDate()).padStart(2, '0');
 
   const todaysSales = sales.filter(s => s.date === todayStr);
-  const todayRevenue = todaysSales.reduce((sum, s) => sum + s.price, 0);
-  const todayCount = todaysSales.length;
+  const kitTodaysSales = todaysSales.filter(s => s.category === 'kit' || !s.category);
+  const todayRevenue = kitTodaysSales.reduce((sum, s) => sum + s.price, 0);
+  const todayCount = kitTodaysSales.length;
   const todayNet = todayRevenue / 1.16;
 
   // --- FILTER LOGIC ---
@@ -122,9 +130,15 @@ const SalesList: React.FC<SalesListProps> = ({ sales, onDelete, onEdit, onAdd, r
       if (dateRange.start && sale.date < dateRange.start) matchesDate = false;
       if (dateRange.end && sale.date > dateRange.end) matchesDate = false;
     }
-    // if 'all', matchesDate remains true
 
-    return matchesSearch && matchesBrand && matchesDate;
+    // Category filtering
+    let matchesTab = true;
+    if (activeTab === 'KIT') matchesTab = (sale.category === 'kit' || !sale.category);
+    else if (activeTab === 'CHIP_0') matchesTab = (sale.category === 'chip_0');
+    else if (activeTab === 'PORTABILITY') matchesTab = (sale.category === 'portability');
+    else if (activeTab === 'EXPRESS') matchesTab = (sale.category === 'chip_express');
+
+    return matchesSearch && matchesBrand && matchesDate && matchesTab;
   }).sort((a, b) => {
     // 1. Sort by Date Descending first (most recent)
     const dateDiff = b.date.localeCompare(a.date);
@@ -229,6 +243,29 @@ const SalesList: React.FC<SalesListProps> = ({ sales, onDelete, onEdit, onAdd, r
         </div>
       </div>
 
+      {/* TAB NAVIGATION */}
+      <div className="flex overflow-x-auto pb-1 gap-2 scrollbar-hide">
+        {[
+          { id: 'KIT', label: 'Equipos Kit', icon: Smartphone },
+          { id: 'CHIP_0', label: 'Chip 0', icon: Cpu },
+          { id: 'PORTABILITY', label: 'Portabilidad', icon: Share2 },
+          { id: 'EXPRESS', label: 'Chip Express', icon: Phone }
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id as any)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap border-2 ${
+              activeTab === tab.id
+                ? 'bg-slate-900 text-white border-slate-900 shadow-md scale-105'
+                : 'bg-white text-slate-500 border-slate-100 hover:border-slate-200'
+            }`}
+          >
+            <tab.icon className={`w-3.5 h-3.5 ${activeTab === tab.id ? 'text-blue-400' : 'text-slate-400'}`} />
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       {/* --- LIST HEADER & CONTROLS --- */}
       <div className="flex flex-col gap-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -262,25 +299,38 @@ const SalesList: React.FC<SalesListProps> = ({ sales, onDelete, onEdit, onAdd, r
 
         {/* Custom Date Inputs */}
         {viewMode === 'custom' && (
-          <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-500">Desde:</span>
-              <input
-                type="date"
-                value={dateRange.start}
-                onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
-                className="px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
-              />
+          <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex flex-col sm:flex-row items-center gap-4 animate-in fade-in slide-in-from-top-2">
+            <div className="flex flex-col sm:flex-row items-center gap-3 w-full">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-500">Desde:</span>
+                <input
+                  type="date"
+                  value={dateRange.start}
+                  onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
+                  className="px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-500">Hasta:</span>
+                <input
+                  type="date"
+                  value={dateRange.end}
+                  onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
+                  className="px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                />
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-500">Hasta:</span>
-              <input
-                type="date"
-                value={dateRange.end}
-                onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
-                className="px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
-              />
-            </div>
+            
+            {dateRange.start && dateRange.end && (
+               <button 
+                onClick={() => onFetchRange?.(dateRange.start, dateRange.end)}
+                disabled={isDeepSearching}
+                className="w-full sm:w-auto px-4 py-2 bg-indigo-600 text-white rounded-lg font-black text-[10px] uppercase tracking-widest shadow-md hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {isDeepSearching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCcw className="w-3.5 h-3.5" />}
+                Cargar del Historial
+              </button>
+            )}
           </div>
         )}
 
@@ -319,10 +369,11 @@ const SalesList: React.FC<SalesListProps> = ({ sales, onDelete, onEdit, onAdd, r
               <Search className="w-8 h-8 text-slate-300" />
             </div>
             <h3 className="text-slate-800 font-bold mb-1">No se encontraron ventas</h3>
-            <p className="text-slate-500 text-sm">Intenta ajustar los filtros de búsqueda.</p>
+            <p className="text-slate-500 text-sm">Mostrando el último mes de actividad.</p>
           </div>
         ) : (
-          filteredSales.map((sale) => (
+          <>
+            {filteredSales.slice(0, displayLimit).map((sale) => (
             <div key={sale.id} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md hover:border-blue-100 transition-all group">
               <div className="flex flex-col md:flex-row justify-between gap-4 items-start md:items-center">
                 {/* Left: Main Info */}
@@ -338,6 +389,37 @@ const SalesList: React.FC<SalesListProps> = ({ sales, onDelete, onEdit, onAdd, r
                       {sale.invoiceNumber}
                     </span>
 
+                    {/* CATEGORY BADGE */}
+                    <div className="flex items-center gap-1.5">
+                      <span className={`
+                        px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-tighter border flex items-center gap-1
+                        ${sale.category === 'chip_0' ? 'bg-purple-100 text-purple-700 border-purple-200' : 
+                          sale.category === 'portability' ? 'bg-rose-100 text-rose-700 border-rose-200' :
+                          sale.category === 'chip_express' ? 'bg-orange-100 text-orange-700 border-orange-200' :
+                          'bg-blue-100 text-blue-700 border-blue-200'}
+                      `}>
+                        {sale.category === 'chip_0' ? <><Cpu className="w-2.5 h-2.5" /> CHIP 0</> : 
+                         sale.category === 'portability' ? <><Phone className="w-2.5 h-2.5" /> PORTA</> :
+                         sale.category === 'chip_express' ? <><Cpu className="w-2.5 h-2.5" /> EXPRESS</> : <><Smartphone className="w-2.5 h-2.5" /> KIT</>}
+                      </span>
+
+                      {/* EXTRA DATA INDICATORS (ICCID / PHONE) */}
+                      {(sale.category === 'portability' || sale.category === 'chip_express' || sale.category === 'chip_0') && (
+                        <div className="flex items-center gap-1">
+                          {sale.phoneNumber && (
+                            <span className="bg-slate-800 text-white text-[9px] px-1.5 py-0.5 rounded font-bold">
+                              {sale.phoneNumber}
+                            </span>
+                          )}
+                          {sale.iccid && (
+                            <span className="bg-slate-100 text-slate-500 text-[8px] px-1.5 py-0.5 rounded border border-slate-200 font-mono">
+                              {sale.iccid.slice(-4)}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
                     {/* ETIQUETA DE SUCURSAL */}
                     {sale.storeId && (
                       <span className="ml-auto md:ml-0 text-[9px] font-black text-slate-400 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-md uppercase tracking-tighter">
@@ -348,13 +430,30 @@ const SalesList: React.FC<SalesListProps> = ({ sales, onDelete, onEdit, onAdd, r
 
                   <div>
                     <div className="flex items-center gap-2 mb-1">
-                      <h3 className="font-bold text-slate-800 text-lg leading-tight">{sale.customerName.toUpperCase()}</h3>
+                      <h3 className="font-bold text-slate-800 text-lg leading-tight flex items-center gap-2">
+                        {sale.customerName.toUpperCase()}
+                        {sale.portabilityScreenshot && (
+                          <div className="bg-rose-500 w-1.5 h-1.5 rounded-full animate-pulse" title="Tiene captura de porta" />
+                        )}
+                      </h3>
                     </div>
-                    <div className="flex items-center gap-4 text-xs text-slate-500 font-medium">
+                    <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 font-medium">
                       <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {sale.date}</span>
                       <span className="flex items-center gap-1 bg-slate-50 px-2 py-0.5 rounded text-slate-600">
                         <Tag className="w-3 h-3" /> ${sale.price.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
                       </span>
+                      
+                      {/* Detailed data for chips */}
+                      {sale.phoneNumber && (
+                        <span className="flex items-center gap-1 text-slate-400">
+                          <Phone className="w-3 h-3" /> {sale.phoneNumber}
+                        </span>
+                      )}
+                      {sale.iccid && (
+                        <span className="flex items-center gap-1 text-slate-400">
+                          <Cpu className="w-3 h-3" /> ICCID: {sale.iccid}
+                        </span>
+                      )}
                     </div>
                     {/* Admin only info */}
                     {role === 'admin' && (
@@ -443,7 +542,41 @@ const SalesList: React.FC<SalesListProps> = ({ sales, onDelete, onEdit, onAdd, r
                 </div>
               </div>
             </div>
-          ))
+          ))}
+          
+          {filteredSales.length > displayLimit && (
+            <button 
+              onClick={() => setDisplayLimit(prev => prev + 50)}
+              className="mt-4 w-full py-4 bg-white border border-slate-200 rounded-2xl text-blue-600 font-black text-[10px] uppercase tracking-widest hover:bg-blue-50 transition-all shadow-sm"
+            >
+              Ver más ventas ({filteredSales.length - displayLimit} restantes)
+            </button>
+          )}
+          </>
+        )}
+
+        {/* Muestra el botón de búsqueda profunda si no hay resultados locales o si el usuario está buscando algo específico */}
+        {searchTerm.length >= 3 && (
+          <div className="mt-8 p-6 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200 text-center">
+            <Database className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+            <p className="text-slate-600 font-bold mb-2">
+              {filteredSales.length === 0 
+                ? "No se encontraron resultados en los últimos 30 días." 
+                : "¿Buscando algo más antiguo?"}
+            </p>
+            <p className="text-[10px] text-slate-400 uppercase font-black mb-4">Puedes buscar en el historial completo de la base de datos</p>
+            <button 
+              onClick={() => onDeepSearch?.(searchTerm)}
+              disabled={isDeepSearching}
+              className="px-6 py-3 bg-white border border-slate-200 text-blue-600 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-sm hover:bg-blue-50 transition-all flex items-center gap-2 mx-auto disabled:opacity-50"
+            >
+              {isDeepSearching ? (
+                <> <Loader2 className="w-4 h-4 animate-spin" /> Buscando en archivos... </>
+              ) : (
+                <> <Search className="w-4 h-4" /> Buscar en historial completo </>
+              )}
+            </button>
+          </div>
         )}
       </div>
 

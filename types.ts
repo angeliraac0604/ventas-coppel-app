@@ -28,6 +28,10 @@ export interface Sale {
   createdByName?: string;
   storeId?: string; // UUID of store
   transactionFolio?: string; // System generated unique folio (e.g. VNT-20240501-ABCD)
+  category?: 'kit' | 'chip_0' | 'portabilidad' | 'chip_express';
+  iccid?: string;
+  phoneNumber?: string;
+  portabilityScreenshot?: string;
 }
 
 export interface BrandConfig {
@@ -85,6 +89,10 @@ export interface UserProfile {
   canManageRestDays?: boolean;
   canForceAttendance?: boolean;
   canSetSchedules?: boolean;
+  canSellKit?: boolean;
+  canSellChip0?: boolean;
+  canSellPortability?: boolean;
+  canSellChipExpress?: boolean;
 }
 
 export type AttendanceType = 'entry' | 'lunch_start' | 'lunch_end' | 'exit' | 'excused' | 'rest_day' | 'vacation' | 'attended';
@@ -106,6 +114,9 @@ export interface MonthlyGoal {
   month: string; // YYYY-MM
   revenue_goal: number;
   devices_goal: number;
+  chip_0_goal?: number;
+  portability_goal?: number;
+  chip_express_goal?: number;
 }
 
 export interface Warranty {

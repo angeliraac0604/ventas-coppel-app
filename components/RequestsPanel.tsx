@@ -299,6 +299,16 @@ const RequestsPanel: React.FC<RequestsPanelProps> = ({ onBack, onRefresh, stores
                        <div className="space-y-1">
                           <p className="text-[8px] font-black text-slate-300 uppercase tracking-tighter">Venta Original</p>
                           <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-[9px] font-bold text-slate-600 space-y-1">
+                             <div className="flex items-center gap-1.5 mb-1">
+                                <span className={`px-1.5 py-0.5 rounded text-[7px] font-black uppercase border ${
+                                   (req.sale?.category || req.sale_data_snapshot?.category) === 'chip_0' ? 'bg-purple-50 text-purple-600 border-purple-100' : 
+                                   (req.sale?.category || req.sale_data_snapshot?.category) === 'portability' ? 'bg-rose-50 text-rose-600 border-rose-100' :
+                                   (req.sale?.category || req.sale_data_snapshot?.category) === 'chip_express' ? 'bg-orange-50 text-orange-600 border-orange-100' :
+                                   'bg-blue-50 text-blue-600 border-blue-100'
+                                }`}>
+                                   {(req.sale?.category || req.sale_data_snapshot?.category || 'kit').toUpperCase()}
+                                </span>
+                             </div>
                              <div className="truncate"><Hash className="inline w-2.5 h-2.5 mr-1" />{req.sale?.invoice_number || req.sale_data_snapshot?.invoice_number || req.sale_data_snapshot?.invoiceNumber}</div>
                              <div className="truncate"><User className="inline w-2.5 h-2.5 mr-1" />{req.sale?.customer_name || req.sale_data_snapshot?.customer_name || req.sale_data_snapshot?.customerName}</div>
                              <div className="truncate text-indigo-600"><DollarSign className="inline w-2.5 h-2.5 mr-1" />${req.sale?.price || req.sale_data_snapshot?.price}</div>

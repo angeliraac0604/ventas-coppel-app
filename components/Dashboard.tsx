@@ -1,7 +1,7 @@
 // Deployment Version: 2026-04-11 - Official Identity Configured
 import React, { useState, useEffect } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid, ComposedChart, Line } from 'recharts';
-import { Target, Edit2, Check, TrendingUp, Trophy, PartyPopper, DollarSign, Smartphone, Trash2, AlertTriangle, FileDown, Calendar, Calculator } from 'lucide-react';
+import { Target, Edit2, Check, TrendingUp, Trophy, PartyPopper, DollarSign, Smartphone, Trash2, AlertTriangle, FileDown, Calendar, Calculator, Cpu, Phone, Image as ImageIcon } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { Sale, Brand, DailyClose } from '../types';
@@ -49,13 +49,24 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
   // --- GOALS STATE (SYNCED WITH DB) ---
   const [monthlyGoal, setMonthlyGoal] = useState<number>(0);
   const [devicesGoal, setDevicesGoal] = useState<number>(0);
-  // Goals are now "locked" implicitly by being set in DB, but we allow admin to always edit (upsert)
+  const [chip0Goal, setChip0Goal] = useState<number>(0);
+  const [portaGoal, setPortaGoal] = useState<number>(0);
+  const [expressGoal, setExpressGoal] = useState<number>(0);
 
   const [isEditingGoal, setIsEditingGoal] = useState(false);
   const [tempGoal, setTempGoal] = useState(monthlyGoal.toString());
 
   const [isEditingDevices, setIsEditingDevices] = useState(false);
   const [tempDevicesGoal, setTempDevicesGoal] = useState(devicesGoal.toString());
+
+  const [isEditingChip0, setIsEditingChip0] = useState(false);
+  const [tempChip0Goal, setTempChip0Goal] = useState(chip0Goal.toString());
+
+  const [isEditingPorta, setIsEditingPorta] = useState(false);
+  const [tempPortaGoal, setTempPortaGoal] = useState(portaGoal.toString());
+
+  const [isEditingExpress, setIsEditingExpress] = useState(false);
+  const [tempExpressGoal, setTempExpressGoal] = useState(expressGoal.toString());
 
   const now = new Date();
   const [selectedMonth, setSelectedMonth] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
@@ -84,13 +95,22 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
           if (isGlobal) {
             setMonthlyGoal(goalData.reduce((sum, g) => sum + Number(g.revenue_goal || 0), 0));
             setDevicesGoal(goalData.reduce((sum, g) => sum + Number(g.devices_goal || 0), 0));
+            setChip0Goal(goalData.reduce((sum, g) => sum + Number(g.chip_0_goal || 0), 0));
+            setPortaGoal(goalData.reduce((sum, g) => sum + Number(g.portability_goal || 0), 0));
+            setExpressGoal(goalData.reduce((sum, g) => sum + Number(g.chip_express_goal || 0), 0));
           } else {
             setMonthlyGoal(goalData[0].revenue_goal !== null ? Number(goalData[0].revenue_goal) : 0);
             setDevicesGoal(goalData[0].devices_goal !== null ? Number(goalData[0].devices_goal) : 0);
+            setChip0Goal(goalData[0].chip_0_goal !== null ? Number(goalData[0].chip_0_goal) : 0);
+            setPortaGoal(goalData[0].portability_goal !== null ? Number(goalData[0].portability_goal) : 0);
+            setExpressGoal(goalData[0].chip_express_goal !== null ? Number(goalData[0].chip_express_goal) : 0);
           }
         } else {
           setMonthlyGoal(0);
           setDevicesGoal(0);
+          setChip0Goal(0);
+          setPortaGoal(0);
+          setExpressGoal(0);
         }
 
         // 2. Fetch Sales for specifically this month to bypass row limits
@@ -111,7 +131,8 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
             price: s.price,
             brand: s.brand as Brand,
             date: s.date,
-            storeId: s.store_id
+            storeId: s.store_id,
+            category: s.category
           }));
           setMonthlySales(formatted);
         } else {
@@ -146,7 +167,13 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
     todayCount,
     todayRevenue,
     todayNet,
-    todayStr
+    todayStr,
+    kitRevenue,
+    kitCount,
+    chip0Revenue,
+    chip0Count,
+    portaCount,
+    expressCount
   } = React.useMemo(() => {
     // 🟠 REAL-TIME MERGE: Combine state from DB fetch with the realtime 'sales' prop
     const combinedSales = Array.isArray(monthlySales) ? [...monthlySales] : [];
@@ -166,15 +193,27 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
     }
 
     const safeSales = combinedSales;
-    const totalRev = safeSales.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
+    // Solo los Kits cuentan para ingresos totales según nueva instrucción
+    const kitOnlySales = safeSales.filter(s => s.category === 'kit' || !s.category);
+    const totalRev = kitOnlySales.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
     
     const today = new Date();
     const tStr = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
     
     const monthSales = safeSales; // monthlySales is already month-filtered, and we added realtime ones above
-    const monthRev = monthSales.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
+    
+    // Split by category
+    const kitSales = monthSales.filter(s => s.category === 'kit' || !s.category);
+    const chip0Sales = monthSales.filter(s => s.category === 'chip_0');
+    const portaSales = monthSales.filter(s => s.category === 'portability');
+    const expressSales = monthSales.filter(s => s.category === 'chip_express');
+
+    const kitRev = kitSales.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
+    const chip0Rev = chip0Sales.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
+    
+    const monthRev = kitSales.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
     const monthNet = monthRev / 1.16;
-    const monthCount = monthSales.length;
+    const monthCount = kitSales.length; // Solo Kit cuenta como equipo vendido
 
     // Goals Safety
     const safeGoal = (monthlyGoal && monthlyGoal > 0) ? monthlyGoal : 1;
@@ -185,7 +224,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
 
     // Brand Mapping Monthly
     const bData = Object.values(Brand).map(brand => {
-      const bSales = monthSales.filter(s => s.brand === brand);
+      const bSales = kitSales.filter(s => s.brand === brand);
       const rev = bSales.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
       let conf = BRAND_CONFIGS[brand] || { label: 'Desconocido', hex: '#ccc' };
       if (brand === Brand.REALME) {
@@ -202,8 +241,11 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
 
     // Brand Mapping Today
     const todaySales = safeSales.filter(s => s.date === tStr);
+    const kitTodaySales = todaySales.filter(s => s.category === 'kit' || !s.category);
+    const todayRev = kitTodaySales.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
+    
     const bDataToday = Object.values(Brand).map(brand => {
-      const bSales = todaySales.filter(s => s.brand === brand);
+      const bSales = kitTodaySales.filter(s => s.brand === brand);
       const conf = BRAND_CONFIGS[brand] || { label: 'Desconocido', hex: '#ccc' };
       return {
         name: conf.label,
@@ -212,7 +254,6 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
         logoUrl: (conf as any).logoUrl
       };
     }).filter(item => item.value > 0);
-    const todayRev = todaySales.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
 
     // Timeline 7 days
     const tLineData = Array.from({ length: 7 }, (_, i) => {
@@ -222,13 +263,14 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
       
       const isFuture = dateStr > tStr;
       const dailySales = safeSales.filter(s => s.date === dateStr);
-      const dRev = dailySales.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
+      const kitDailySales = dailySales.filter(s => s.category === 'kit' || !s.category);
+      const dRev = kitDailySales.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
       
       return {
         date: dateStr,
         amount: isFuture ? null : dRev,
         netAmount: isFuture ? null : (dRev / 1.16),
-        count: isFuture ? null : dailySales.length
+        count: isFuture ? null : dailySales.filter(s => s.category === 'kit' || !s.category).length
       };
     });
 
@@ -247,12 +289,20 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
       brandData: bData,
       brandDataToday: bDataToday,
       timelineData: tLineData,
-      todayCount: todaySales.length,
+      todayCount: todaySales.filter(s => s.category === 'kit' || !s.category).length,
       todayRevenue: todayRev,
       todayNet: todayRev / 1.16,
-      todayStr: tStr
+      todayStr: tStr,
+      
+      // Category specific
+      kitRevenue: kitRev,
+      kitCount: kitSales.length,
+      chip0Revenue: chip0Rev,
+      chip0Count: chip0Sales.length,
+      portaCount: portaSales.length,
+      expressCount: expressSales.length
     };
-  }, [monthlySales, monthlyGoal, devicesGoal, sales, selectedMonth, storeId]);
+  }, [monthlySales, monthlyGoal, devicesGoal, chip0Goal, portaGoal, expressGoal, sales, selectedMonth, storeId]);
 
   const radius = 40;
   const circumference = 2 * Math.PI * radius; 
@@ -285,7 +335,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
 
   const handleSaveDevicesGoal = async () => {
     const val = parseInt(tempDevicesGoal);
-    if (!isNaN(val) && val > 0) {
+    if (!isNaN(val) && val >= 0) {
       if (!storeId || storeId === 'all') {
         alert("Selecciona una tienda específica para editar sus metas.");
         return;
@@ -297,6 +347,81 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
         month: selectedMonth,
         revenue_goal: monthlyGoal,
         devices_goal: val,
+        chip_0_goal: chip0Goal,
+        portability_goal: portaGoal,
+        chip_express_goal: expressGoal,
+        store_id: storeId
+      }, { onConflict: 'month,store_id' });
+
+      if (error) alert("Error al guardar meta: " + error.message);
+    }
+  };
+
+  const handleSaveChip0Goal = async () => {
+    const val = parseInt(tempChip0Goal);
+    if (!isNaN(val) && val >= 0) {
+      if (!storeId || storeId === 'all') {
+        alert("Selecciona una tienda específica para editar sus metas.");
+        return;
+      }
+      setChip0Goal(val);
+      setIsEditingChip0(false);
+
+      const { error } = await supabase.from('monthly_goals').upsert({
+        month: selectedMonth,
+        revenue_goal: monthlyGoal,
+        devices_goal: devicesGoal,
+        chip_0_goal: val,
+        portability_goal: portaGoal,
+        chip_express_goal: expressGoal,
+        store_id: storeId
+      }, { onConflict: 'month,store_id' });
+
+      if (error) alert("Error al guardar meta: " + error.message);
+    }
+  };
+
+  const handleSavePortaGoal = async () => {
+    const val = parseInt(tempPortaGoal);
+    if (!isNaN(val) && val >= 0) {
+      if (!storeId || storeId === 'all') {
+        alert("Selecciona una tienda específica para editar sus metas.");
+        return;
+      }
+      setPortaGoal(val);
+      setIsEditingPorta(false);
+
+      const { error } = await supabase.from('monthly_goals').upsert({
+        month: selectedMonth,
+        revenue_goal: monthlyGoal,
+        devices_goal: devicesGoal,
+        chip_0_goal: chip0Goal,
+        portability_goal: val,
+        chip_express_goal: expressGoal,
+        store_id: storeId
+      }, { onConflict: 'month,store_id' });
+
+      if (error) alert("Error al guardar meta: " + error.message);
+    }
+  };
+
+  const handleSaveExpressGoal = async () => {
+    const val = parseInt(tempExpressGoal);
+    if (!isNaN(val) && val >= 0) {
+      if (!storeId || storeId === 'all') {
+        alert("Selecciona una tienda específica para editar sus metas.");
+        return;
+      }
+      setExpressGoal(val);
+      setIsEditingExpress(false);
+
+      const { error } = await supabase.from('monthly_goals').upsert({
+        month: selectedMonth,
+        revenue_goal: monthlyGoal,
+        devices_goal: devicesGoal,
+        chip_0_goal: chip0Goal,
+        portability_goal: portaGoal,
+        chip_express_goal: val,
         store_id: storeId
       }, { onConflict: 'month,store_id' });
 
@@ -545,8 +670,8 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
                   <Target className="w-6 h-6 text-blue-400" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-bold text-slate-100">Meta de Ingresos</h2>
-                  <p className="text-xs text-slate-400 font-medium">Venta neta Mensual (Sin IVA)</p>
+                  <h2 className="text-lg font-bold text-slate-100">Ventas del Mes</h2>
+                  <p className="text-xs text-slate-400 font-medium">Monto Bruto (Visualización)</p>
                 </div>
               </div>
               {role === 'admin' && !isEditingGoal && (
@@ -564,11 +689,16 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
                 ) : (
                   <div className="flex flex-col gap-4">
                     <span className="text-4xl font-black text-white leading-none" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>
-                       ${currentMonthNet.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                       ${currentMonthRevenue.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                      </span>
-                    <span className="text-xs text-slate-400 font-bold tracking-wide">
-                      {monthlyGoal > 0 ? `Meta: $${monthlyGoal.toLocaleString('es-MX')}` : 'Sin meta asignada'}
-                    </span>
+                    <div className="flex flex-col gap-0.5 mt-1">
+                      <span className="text-[10px] text-blue-400 font-black uppercase tracking-tighter">
+                        Neto (Meta): ${currentMonthNet.toLocaleString('es-MX', { maximumFractionDigits: 0 })}
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-bold tracking-wide">
+                        {monthlyGoal > 0 ? `Meta Neto: $${monthlyGoal.toLocaleString('es-MX')}` : 'Sin meta asignada'}
+                      </span>
+                    </div>
                   </div>
                 )}
 
@@ -653,6 +783,177 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
                     <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" strokeDasharray={circumference} strokeDashoffset={isNaN(strokeDashoffsetDevices) ? circumference : strokeDashoffsetDevices} strokeLinecap="round" className={`transition-all duration-1000 ${isDevicesGoalMet ? 'text-emerald-500' : 'text-cyan-500'}`} />
                   </svg>
                   <div className="absolute inset-0 flex items-center justify-center text-xs font-bold">{isFinite(devicesProgress) ? devicesProgress.toFixed(0) : 0}%</div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* CARD 3: CHIP 0 */}
+        {(chip0Goal > 0 || role === 'admin') && (
+          <div className="bg-slate-900 rounded-3xl p-6 shadow-xl relative overflow-hidden text-white group flex flex-col justify-between">
+            <div className="absolute top-0 right-0 w-48 h-48 bg-purple-600 rounded-full blur-[80px] opacity-20 group-hover:opacity-30 transition-opacity"></div>
+            <div className="relative z-10 flex justify-between items-start mb-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-slate-800 rounded-lg border border-slate-700">
+                  <Cpu className="w-6 h-6 text-purple-400" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-100">Meta Chip 0</h2>
+                  <p className="text-xs text-slate-400 font-medium">Equipos Libres</p>
+                </div>
+              </div>
+              {role === 'admin' && !isEditingChip0 && (
+                <button onClick={() => { setTempChip0Goal(chip0Goal.toString()); setIsEditingChip0(true); }} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-colors"><Edit2 className="w-4 h-4" /></button>
+              )}
+            </div>
+            <div className="relative z-10 flex items-end justify-between gap-4">
+              <div className="space-y-2 flex-1">
+                {isEditingChip0 ? (
+                  <div className="flex items-center gap-2">
+                    <input type="number" value={tempChip0Goal} placeholder="0 para desactivar" onChange={(e) => setTempChip0Goal(e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-lg text-white font-bold p-2 outline-none" autoFocus />
+                    <button onClick={handleSaveChip0Goal} className="p-2 bg-purple-600 rounded-lg"><Check className="w-4 h-4" /></button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-4">
+                    <span className="text-4xl font-black text-white leading-none">
+                       {chip0Count} <span className="text-lg font-medium text-slate-400">chips</span>
+                    </span>
+                    <span className="text-xs text-slate-400 font-bold tracking-wide">
+                      {chip0Goal > 0 ? `Meta: ${chip0Goal} chips` : 'Sin meta asignada'}
+                    </span>
+                  </div>
+                )}
+                {chip0Goal > 0 && (
+                  <>
+                    <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden mt-3">
+                      <div className={`h-full rounded-full transition-all duration-1000 ${chip0Count >= chip0Goal ? 'bg-purple-400' : 'bg-purple-600'}`} style={{ width: `${Math.min((chip0Count/chip0Goal)*100, 100)}%` }}></div>
+                    </div>
+                    <p className="text-xs text-slate-400 pt-1">{chip0Goal - chip0Count > 0 ? `Faltan ${chip0Goal - chip0Count}` : '¡Meta Superada!'}</p>
+                  </>
+                )}
+              </div>
+              {chip0Goal > 0 && (
+                <div className="relative w-20 h-20 shrink-0">
+                  <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                    <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" className="text-slate-800" />
+                    <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" strokeDasharray={circumference} strokeDashoffset={circumference - (Math.min((chip0Count/chip0Goal)*100, 100) / 100) * circumference} strokeLinecap="round" className="text-purple-500 transition-all duration-1000" />
+                  </svg>
+                  <div className="absolute inset-0 flex items-center justify-center text-xs font-bold">{Math.min((chip0Count/chip0Goal)*100, 100).toFixed(0)}%</div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* CARD 4: PORTABILITY */}
+        {(portaGoal > 0 || role === 'admin') && (
+          <div className="bg-slate-900 rounded-3xl p-6 shadow-xl relative overflow-hidden text-white group flex flex-col justify-between">
+            <div className="absolute top-0 right-0 w-48 h-48 bg-rose-600 rounded-full blur-[80px] opacity-20 group-hover:opacity-30 transition-opacity"></div>
+            <div className="relative z-10 flex justify-between items-start mb-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-slate-800 rounded-lg border border-slate-700">
+                  <Phone className="w-6 h-6 text-rose-400" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-100">Meta Portabilidad</h2>
+                  <p className="text-xs text-slate-400 font-medium">Líneas Portadas</p>
+                </div>
+              </div>
+              {role === 'admin' && !isEditingPorta && (
+                <button onClick={() => { setTempPortaGoal(portaGoal.toString()); setIsEditingPorta(true); }} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-colors"><Edit2 className="w-4 h-4" /></button>
+              )}
+            </div>
+            <div className="relative z-10 flex items-end justify-between gap-4">
+              <div className="space-y-2 flex-1">
+                {isEditingPorta ? (
+                  <div className="flex items-center gap-2">
+                    <input type="number" value={tempPortaGoal} placeholder="0 para desactivar" onChange={(e) => setTempPortaGoal(e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-lg text-white font-bold p-2 outline-none" autoFocus />
+                    <button onClick={handleSavePortaGoal} className="p-2 bg-rose-600 rounded-lg"><Check className="w-4 h-4" /></button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-4">
+                    <span className="text-4xl font-black text-white leading-none">
+                       {portaCount} <span className="text-lg font-medium text-slate-400">líneas</span>
+                    </span>
+                    <span className="text-xs text-slate-400 font-bold tracking-wide">
+                      {portaGoal > 0 ? `Meta: ${portaGoal} porta` : 'Sin meta asignada'}
+                    </span>
+                  </div>
+                )}
+                {portaGoal > 0 && (
+                  <>
+                    <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden mt-3">
+                      <div className={`h-full rounded-full transition-all duration-1000 ${portaCount >= portaGoal ? 'bg-rose-400' : 'bg-rose-600'}`} style={{ width: `${Math.min((portaCount/portaGoal)*100, 100)}%` }}></div>
+                    </div>
+                    <p className="text-xs text-slate-400 pt-1">{portaGoal - portaCount > 0 ? `Faltan ${portaGoal - portaCount}` : '¡Meta Superada!'}</p>
+                  </>
+                )}
+              </div>
+              {portaGoal > 0 && (
+                <div className="relative w-20 h-20 shrink-0">
+                  <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                    <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" className="text-slate-800" />
+                    <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" strokeDasharray={circumference} strokeDashoffset={circumference - (Math.min((portaCount/portaGoal)*100, 100) / 100) * circumference} strokeLinecap="round" className="text-rose-500 transition-all duration-1000" />
+                  </svg>
+                  <div className="absolute inset-0 flex items-center justify-center text-xs font-bold">{Math.min((portaCount/portaGoal)*100, 100).toFixed(0)}%</div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* CARD 5: CHIP EXPRESS */}
+        {(expressGoal > 0 || role === 'admin') && (
+          <div className="bg-slate-900 rounded-3xl p-6 shadow-xl relative overflow-hidden text-white group flex flex-col justify-between">
+            <div className="absolute top-0 right-0 w-48 h-48 bg-orange-600 rounded-full blur-[80px] opacity-20 group-hover:opacity-30 transition-opacity"></div>
+            <div className="relative z-10 flex justify-between items-start mb-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-slate-800 rounded-lg border border-slate-700">
+                  <Cpu className="w-6 h-6 text-orange-400" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-100">Meta Chip Express</h2>
+                  <p className="text-xs text-slate-400 font-medium">Líneas Nuevas</p>
+                </div>
+              </div>
+              {role === 'admin' && !isEditingExpress && (
+                <button onClick={() => { setTempExpressGoal(expressGoal.toString()); setIsEditingExpress(true); }} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-colors"><Edit2 className="w-4 h-4" /></button>
+              )}
+            </div>
+            <div className="relative z-10 flex items-end justify-between gap-4">
+              <div className="space-y-2 flex-1">
+                {isEditingExpress ? (
+                  <div className="flex items-center gap-2">
+                    <input type="number" value={tempExpressGoal} placeholder="0 para desactivar" onChange={(e) => setTempExpressGoal(e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-lg text-white font-bold p-2 outline-none" autoFocus />
+                    <button onClick={handleSaveExpressGoal} className="p-2 bg-orange-600 rounded-lg"><Check className="w-4 h-4" /></button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-4">
+                    <span className="text-4xl font-black text-white leading-none">
+                       {expressCount} <span className="text-lg font-medium text-slate-400">chips</span>
+                    </span>
+                    <span className="text-xs text-slate-400 font-bold tracking-wide">
+                      {expressGoal > 0 ? `Meta: ${expressGoal} chips` : 'Sin meta asignada'}
+                    </span>
+                  </div>
+                )}
+                {expressGoal > 0 && (
+                  <>
+                    <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden mt-3">
+                      <div className={`h-full rounded-full transition-all duration-1000 ${expressCount >= expressGoal ? 'bg-orange-400' : 'bg-orange-600'}`} style={{ width: `${Math.min((expressCount/expressGoal)*100, 100)}%` }}></div>
+                    </div>
+                    <p className="text-xs text-slate-400 pt-1">{expressGoal - expressCount > 0 ? `Faltan ${expressGoal - expressCount}` : '¡Meta Superada!'}</p>
+                  </>
+                )}
+              </div>
+              {expressGoal > 0 && (
+                <div className="relative w-20 h-20 shrink-0">
+                  <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                    <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" className="text-slate-800" />
+                    <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" strokeDasharray={circumference} strokeDashoffset={circumference - (Math.min((expressCount/expressGoal)*100, 100) / 100) * circumference} strokeLinecap="round" className="text-orange-500 transition-all duration-1000" />
+                  </svg>
+                  <div className="absolute inset-0 flex items-center justify-center text-xs font-bold">{Math.min((expressCount/expressGoal)*100, 100).toFixed(0)}%</div>
                 </div>
               )}
             </div>

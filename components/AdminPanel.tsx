@@ -64,6 +64,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
   const [inviteCanManageRestDays, setInviteCanManageRestDays] = useState(false);
   const [inviteCanForceAttendance, setInviteCanForceAttendance] = useState(false);
   const [inviteCanSetSchedules, setInviteCanSetSchedules] = useState(false);
+  const [inviteCanSellKit, setInviteCanSellKit] = useState(true);
+  const [inviteCanSellChip0, setInviteCanSellChip0] = useState(false);
+  const [inviteCanSellPortability, setInviteCanSellPortability] = useState(false);
+  const [inviteCanSellChipExpress, setInviteCanSellChipExpress] = useState(false);
 
   // Direct Create Form
   const [directEmail, setDirectEmail] = useState('');
@@ -83,10 +87,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
   const [targetCanManageRestDays, setTargetCanManageRestDays] = useState(false);
   const [targetCanForceAttendance, setTargetCanForceAttendance] = useState(false);
   const [targetCanSetSchedules, setTargetCanSetSchedules] = useState(false);
+  const [targetCanSellKit, setTargetCanSellKit] = useState(true);
+  const [targetCanSellChip0, setTargetCanSellChip0] = useState(false);
+  const [targetCanSellPortability, setTargetCanSellPortability] = useState(false);
+  const [targetCanSellChipExpress, setTargetCanSellChipExpress] = useState(false);
   const [directCanJustifyAbsences, setDirectCanJustifyAbsences] = useState(false);
   const [directCanManageRestDays, setDirectCanManageRestDays] = useState(false);
   const [directCanForceAttendance, setDirectCanForceAttendance] = useState(false);
   const [directCanSetSchedules, setDirectCanSetSchedules] = useState(false);
+  const [directCanSellKit, setDirectCanSellKit] = useState(true);
+  const [directCanSellChip0, setDirectCanSellChip0] = useState(false);
+  const [directCanSellPortability, setDirectCanSellPortability] = useState(false);
+  const [directCanSellChipExpress, setDirectCanSellChipExpress] = useState(false);
   const [directAssignedStores, setDirectAssignedStores] = useState<string[]>([]);
   
   // Store Edit State
@@ -147,7 +159,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
           canJustifyAbsences: p.can_justify_absences || false,
           canManageRestDays: p.can_manage_rest_days || false,
           canForceAttendance: p.can_force_attendance || false,
-          canSetSchedules: p.can_set_schedules || false
+          canSetSchedules: p.can_set_schedules || false,
+          canSellKit: p.can_sell_kit ?? true,
+          canSellChip0: p.can_sell_chip_0 || false,
+          canSellPortability: p.can_sell_portability || false,
+          canSellChipExpress: p.can_sell_chip_express || false
         })));
       }
 
@@ -240,7 +256,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
           can_justify_absences: inviteCanJustifyAbsences,
           can_manage_rest_days: inviteCanManageRestDays,
           can_force_attendance: inviteCanForceAttendance,
-          can_set_schedules: inviteCanSetSchedules
+          can_set_schedules: inviteCanSetSchedules,
+          can_sell_kit: inviteCanSellKit,
+          can_sell_chip_0: inviteCanSellChip0,
+          can_sell_portability: inviteCanSellPortability,
+          can_sell_chip_express: inviteCanSellChipExpress
         }
       ]);
       if (error) throw error;
@@ -280,6 +300,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
             can_manage_rest_days: directCanManageRestDays,
             can_force_attendance: directCanForceAttendance,
             can_set_schedules: directCanSetSchedules,
+            can_sell_kit: directCanSellKit,
+            can_sell_chip_0: directCanSellChip0,
+            can_sell_portability: directCanSellPortability,
+            can_sell_chip_express: directCanSellChipExpress,
             assigned_stores: (directRole === 'supervisor' || directRole === 'viewer') ? directAssignedStores : null
           }
         }
@@ -298,6 +322,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
           can_manage_rest_days: directCanManageRestDays,
           can_force_attendance: directCanForceAttendance,
           can_set_schedules: directCanSetSchedules,
+          can_sell_kit: directCanSellKit,
+          can_sell_chip_0: directCanSellChip0,
+          can_sell_portability: directCanSellPortability,
+          can_sell_chip_express: directCanSellChipExpress,
           assigned_stores: (directRole === 'supervisor' || directRole === 'viewer') ? directAssignedStores : null
         })
         .eq('id', authData.user.id);
@@ -335,7 +363,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
         can_justify_absences: targetCanJustifyAbsences,
         can_manage_rest_days: targetCanManageRestDays,
         can_force_attendance: targetCanForceAttendance,
-        can_set_schedules: targetCanSetSchedules
+        can_set_schedules: targetCanSetSchedules,
+        can_sell_kit: targetCanSellKit,
+        can_sell_chip_0: targetCanSellChip0,
+        can_sell_portability: targetCanSellPortability,
+        can_sell_chip_express: targetCanSellChipExpress
       }).eq('id', editingUserId);
 
       if (error) throw error;
@@ -621,6 +653,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
                       setTargetCanManageRestDays(profile.can_manage_rest_days || profile.canManageRestDays || false);
                       setTargetCanForceAttendance(profile.can_force_attendance || profile.canForceAttendance || false);
                       setTargetCanSetSchedules(profile.can_set_schedules || profile.canSetSchedules || false);
+                      setTargetCanSellKit(profile.canSellKit ?? true);
+                      setTargetCanSellChip0(profile.canSellChip0 || false);
+                      setTargetCanSellPortability(profile.canSellPortability || false);
+                      setTargetCanSellChipExpress(profile.canSellChipExpress || false);
                       setActiveModal('profile-edit');
                     }} className="p-3 hover:bg-indigo-50 text-slate-300 hover:text-indigo-600 rounded-xl transition-all"><Edit2 className="w-5 h-5" /></button>
                     <button onClick={() => handleDeleteUser(profile.id)} className="p-3 hover:bg-red-50 text-slate-300 hover:text-red-500 rounded-xl transition-all"><Trash2 className="w-5 h-5" /></button>
@@ -826,6 +862,28 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
                         </div>
                       )}
 
+                      <div className="space-y-4 border-t border-slate-100 pt-6">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Especialidades de Venta</p>
+                        <div className="grid grid-cols-2 gap-3">
+                           <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${directCanSellKit ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                             <span className={`text-[10px] font-black uppercase ${directCanSellKit ? 'text-blue-700' : 'text-slate-500'}`}>Equipos Kit</span>
+                             <input type="checkbox" checked={directCanSellKit} onChange={(e) => setDirectCanSellKit(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-blue-600" />
+                           </label>
+                           <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${directCanSellChip0 ? 'bg-purple-50 border-purple-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                             <span className={`text-[10px] font-black uppercase ${directCanSellChip0 ? 'text-purple-700' : 'text-slate-500'}`}>Chip 0</span>
+                             <input type="checkbox" checked={directCanSellChip0} onChange={(e) => setDirectCanSellChip0(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-purple-600" />
+                           </label>
+                           <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${directCanSellPortability ? 'bg-rose-50 border-rose-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                             <span className={`text-[10px] font-black uppercase ${directCanSellPortability ? 'text-rose-700' : 'text-slate-500'}`}>Portabilidad</span>
+                             <input type="checkbox" checked={directCanSellPortability} onChange={(e) => setDirectCanSellPortability(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-rose-600" />
+                           </label>
+                           <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${directCanSellChipExpress ? 'bg-orange-50 border-orange-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                             <span className={`text-[10px] font-black uppercase ${directCanSellChipExpress ? 'text-orange-700' : 'text-slate-500'}`}>Chip Express</span>
+                             <input type="checkbox" checked={directCanSellChipExpress} onChange={(e) => setDirectCanSellChipExpress(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-orange-600" />
+                           </label>
+                        </div>
+                      </div>
+
                       <button type="submit" disabled={isDirectLoading} className="w-full bg-indigo-600 text-white font-black py-7 rounded-[1.5rem] shadow-2xl shadow-indigo-200 uppercase tracking-[0.2em] text-xs hover:scale-[1.02] active:scale-95 transition-all">Activar Cuenta</button>
                    </form>
                  )}
@@ -916,28 +974,27 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
                         </div>
                       )}
 
-                      {(inviteRole === 'supervisor' || inviteRole === 'viewer') && inviteStoreId === '' && (
-                        <div className="bg-slate-50 p-6 rounded-[1.5rem] border border-slate-100">
-                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 px-1">Tiendas a Supervisar</p>
-                           <p className="text-[8px] text-slate-400 font-bold uppercase mb-4 px-1 leading-tight">Deja vacío para Supervisor General (todas las tiendas)</p>
-                           <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
-                              {stores.map(s => (
-                                <label key={s.id} className="flex items-center gap-3 px-4 py-3 bg-white border border-slate-100 rounded-xl cursor-pointer hover:border-indigo-200 transition-all">
-                                   <input 
-                                     type="checkbox" 
-                                     checked={inviteAssignedStores.includes(s.id)}
-                                     onChange={(e) => {
-                                       if (e.target.checked) setInviteAssignedStores([...inviteAssignedStores, s.id]);
-                                       else setInviteAssignedStores(inviteAssignedStores.filter(id => id !== s.id));
-                                     }}
-                                     className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                                   />
-                                   <span className="text-[10px] font-black text-slate-600 uppercase">{s.name}</span>
-                                </label>
-                              ))}
-                           </div>
+                      <div className="space-y-4 border-t border-slate-100 pt-6">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Especialidades de Venta</p>
+                        <div className="grid grid-cols-2 gap-3">
+                           <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${inviteCanSellKit ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                             <span className={`text-[10px] font-black uppercase ${inviteCanSellKit ? 'text-blue-700' : 'text-slate-500'}`}>Equipos Kit</span>
+                             <input type="checkbox" checked={inviteCanSellKit} onChange={(e) => setInviteCanSellKit(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-blue-600" />
+                           </label>
+                           <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${inviteCanSellChip0 ? 'bg-purple-50 border-purple-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                             <span className={`text-[10px] font-black uppercase ${inviteCanSellChip0 ? 'text-purple-700' : 'text-slate-500'}`}>Chip 0</span>
+                             <input type="checkbox" checked={inviteCanSellChip0} onChange={(e) => setInviteCanSellChip0(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-purple-600" />
+                           </label>
+                           <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${inviteCanSellPortability ? 'bg-rose-50 border-rose-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                             <span className={`text-[10px] font-black uppercase ${inviteCanSellPortability ? 'text-rose-700' : 'text-slate-500'}`}>Portabilidad</span>
+                             <input type="checkbox" checked={inviteCanSellPortability} onChange={(e) => setInviteCanSellPortability(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-rose-600" />
+                           </label>
+                           <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${inviteCanSellChipExpress ? 'bg-orange-50 border-orange-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                             <span className={`text-[10px] font-black uppercase ${inviteCanSellChipExpress ? 'text-orange-700' : 'text-slate-500'}`}>Chip Express</span>
+                             <input type="checkbox" checked={inviteCanSellChipExpress} onChange={(e) => setInviteCanSellChipExpress(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-orange-600" />
+                           </label>
                         </div>
-                      )}
+                      </div>
                       <button type="submit" disabled={isLoading} className="w-full bg-blue-600 text-white font-black py-7 rounded-[1.5rem] shadow-2xl shadow-blue-200 uppercase tracking-[0.2em] text-xs hover:scale-[1.02] active:scale-95 transition-all">Enviar Invitación</button>
                    </form>
                  )}
@@ -1125,6 +1182,29 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
                   </div>
                 </div>
               )}
+
+              {/* Sales Specializations - FOR EVERYONE */}
+              <div className="space-y-4 border-t border-slate-100 pt-6">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Especialidades de Venta</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${targetCanSellKit ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                    <span className={`text-[10px] font-black uppercase ${targetCanSellKit ? 'text-blue-700' : 'text-slate-500'}`}>Equipos Kit</span>
+                    <input type="checkbox" checked={targetCanSellKit} onChange={(e) => setTargetCanSellKit(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-blue-600" />
+                  </label>
+                  <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${targetCanSellChip0 ? 'bg-purple-50 border-purple-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                    <span className={`text-[10px] font-black uppercase ${targetCanSellChip0 ? 'text-purple-700' : 'text-slate-500'}`}>Chip 0</span>
+                    <input type="checkbox" checked={targetCanSellChip0} onChange={(e) => setTargetCanSellChip0(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-purple-600" />
+                  </label>
+                  <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${targetCanSellPortability ? 'bg-rose-50 border-rose-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                    <span className={`text-[10px] font-black uppercase ${targetCanSellPortability ? 'text-rose-700' : 'text-slate-500'}`}>Portabilidad</span>
+                    <input type="checkbox" checked={targetCanSellPortability} onChange={(e) => setTargetCanSellPortability(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-rose-600" />
+                  </label>
+                  <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${targetCanSellChipExpress ? 'bg-orange-50 border-orange-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                    <span className={`text-[10px] font-black uppercase ${targetCanSellChipExpress ? 'text-orange-700' : 'text-slate-500'}`}>Chip Express</span>
+                    <input type="checkbox" checked={targetCanSellChipExpress} onChange={(e) => setTargetCanSellChipExpress(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-orange-600" />
+                  </label>
+                </div>
+              </div>
 
               {/* Multi-Store Access (ONLY if Global) */}
               {(targetRole === 'supervisor' || targetRole === 'viewer') && targetStoreId === '' && (
