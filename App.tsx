@@ -101,6 +101,16 @@ const App: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
+  // --- SECURITY: Force redirect unauthorized users from admin views ---
+  useEffect(() => {
+    if (userProfile && userProfile.role === 'seller') {
+      const adminViews = ['attendance-report', 'admin', 'supervision', 'requests', 'warranties'];
+      if (adminViews.includes(currentView)) {
+        setCurrentView('list');
+      }
+    }
+  }, [userProfile, currentView]);
+
   // States for Error Handling & Setup
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [isSetupNeeded, setIsSetupNeeded] = useState(false);
@@ -1606,7 +1616,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
             </>
           )}
           
-          {(userProfile?.role === 'admin' || userProfile?.role === 'supervisor') && userProfile?.role !== 'viewer' && (
+          {(userProfile?.role === 'admin' || userProfile?.role === 'supervisor') && (
             <>
               <div className="text-[10px] font-bold text-slate-500 px-4 py-2 mt-4 uppercase tracking-wider">Administración</div>
               {userProfile?.role === 'admin' && (
