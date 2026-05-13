@@ -16,10 +16,13 @@ export default defineConfig(({ mode }) => {
       react(),
       VitePWA({
         registerType: 'autoUpdate',
+        workbox: {
+          maximumFileSizeToCacheInBytes: 5000000, // 5MB
+        },
         includeAssets: ['pwa-icon.png'],
         manifest: {
-          name: 'Registro de Ventas Coppel (BETA)',
-          short_name: 'Ventas Beta',
+          name: 'Registro de Ventas Coppel',
+          short_name: 'Ventas Coppel',
           description: 'Aplicación de registro de ventas y cierres',
           theme_color: '#2563eb',
           background_color: '#ffffff',
