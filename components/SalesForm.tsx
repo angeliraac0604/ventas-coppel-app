@@ -363,10 +363,10 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
     const invoiceValue = commonData.invoiceNumber;
     const suffix = invoiceValue.includes('-') ? invoiceValue.split('-')[1] : '';
 
-    // Solo Kit y Chip 0 requieren Factura y Nombre del cliente estrictamente
-    const isKitOrChip0 = commonData.category === 'kit' || commonData.category === 'chip_0';
+    // Solo el Kit (Equipos) requiere Factura y Nombre del cliente estrictamente
+    const isKit = commonData.category === 'kit';
     
-    if (isKitOrChip0) {
+    if (isKit) {
       if (!invoiceValue.trim() || !commonData.customerName.trim()) {
         alert("⚠️ Por favor complete los campos obligatorios: Número de Factura y Nombre del Cliente.");
         return;
@@ -386,7 +386,7 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
 
     // Validate Items (Only for Kit and Chip 0)
     let allValid = true;
-    const isPriceRequired = commonData.category === 'kit' || commonData.category === 'chip_0';
+    const isPriceRequired = commonData.category === 'kit';
     
     const validatedItems = items.map(item => {
       if (!isPriceRequired) return { ...item, error: undefined };
