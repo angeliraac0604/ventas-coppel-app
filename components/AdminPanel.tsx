@@ -27,7 +27,8 @@ import {
   Bell,
   MessageSquare,
   Undo2,
-  ShieldCheck
+  ShieldCheck,
+  ArrowUpDown
 } from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
 import { Store, UserProfile, UserRole } from '../types';
@@ -44,10 +45,68 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
   const [isLoading, setIsLoading] = useState(false);
   const [isDirectLoading, setIsDirectLoading] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
+  const [sortConfig, setSortConfig] = useState<{ key: 'name' | 'role' | 'store', direction: 'asc' | 'desc' } | null>(null);
 
   const [stores, setStores] = useState<Store[]>([]);
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [invites, setInvites] = useState<any[]>([]);
+
+  const ROLE_HIERARCHY: Record<string, number> = {
+    admin: 1,
+    supervisor: 2,
+    seller: 3,
+    viewer: 4
+  };
+
+  const handleSort = (key: 'name' | 'role' | 'store') => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const getSortedProfiles = () => {
+    let items = [...profiles];
+    
+    // First apply existing filters (search and store)
+    items = items.filter(profile => (storeFilter === 'all' || profile.storeId === storeFilter))
+                 .filter(profile => (
+                   profile.fullName?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                   profile.email.toLowerCase().includes(searchQuery.toLowerCase())
+                 ));
+
+    if (sortConfig) {
+      items.sort((a, b) => {
+        if (sortConfig.key === 'name') {
+          const nameA = (a.fullName || '').toLowerCase();
+          const nameB = (b.fullName || '').toLowerCase();
+          if (nameA === nameB) return 0;
+          const result = nameA.localeCompare(nameB);
+          return sortConfig.direction === 'asc' ? result : -result;
+        }
+        
+        if (sortConfig.key === 'role') {
+          const rankA = ROLE_HIERARCHY[a.role] || 99;
+          const rankB = ROLE_HIERARCHY[b.role] || 99;
+          if (rankA === rankB) return 0;
+          return sortConfig.direction === 'asc' ? rankA - rankB : rankB - rankA;
+        }
+
+        if (sortConfig.key === 'store') {
+          const storeA = stores.find(s => s.id === a.storeId)?.name || 'GLOBAL';
+          const storeB = stores.find(s => s.id === b.storeId)?.name || 'GLOBAL';
+          if (storeA === storeB) return 0;
+          const result = storeA.localeCompare(storeB);
+          return sortConfig.direction === 'asc' ? result : -result;
+        }
+
+        return 0;
+      });
+    }
+    
+    return items;
+  };
 
   // Store Form
   const [newStoreName, setNewStoreName] = useState('');
@@ -538,9 +597,27 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
         <div className="bg-white">
           {/* Desktop Header (Hidden on Mobile) */}
           <div className="hidden md:grid md:grid-cols-[2fr_1fr_1.5fr_1fr] bg-slate-50/50 border-b border-slate-50 px-10 py-6">
-            <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Colaborador</div>
-            <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Rol / Nivel</div>
-            <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Sucursal Asignada</div>
+            <button 
+              onClick={() => handleSort('name')}
+              className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] hover:text-indigo-600 transition-colors w-fit"
+            >
+              Colaborador
+              <ArrowUpDown className={`w-3 h-3 ${sortConfig?.key === 'name' ? 'text-indigo-600' : 'text-slate-300'}`} />
+            </button>
+            <button 
+              onClick={() => handleSort('role')}
+              className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] hover:text-indigo-600 transition-colors w-fit"
+            >
+              Rol / Nivel
+              <ArrowUpDown className={`w-3 h-3 ${sortConfig?.key === 'role' ? 'text-indigo-600' : 'text-slate-300'}`} />
+            </button>
+            <button 
+              onClick={() => handleSort('store')}
+              className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] hover:text-indigo-600 transition-colors w-fit"
+            >
+              Sucursal Asignada
+              <ArrowUpDown className={`w-3 h-3 ${sortConfig?.key === 'store' ? 'text-indigo-600' : 'text-slate-300'}`} />
+            </button>
             <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] text-right">Acciones</div>
           </div>
 
@@ -564,14 +641,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
               </div>
             ))}
             
-            {/* FILTERED PROFILES */}
-            {profiles
-              .filter(profile => (storeFilter === 'all' || profile.storeId === storeFilter))
-              .filter(profile => (
-                profile.fullName?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                profile.email.toLowerCase().includes(searchQuery.toLowerCase())
-              ))
-              .map(profile => (
+            {/* FILTERED & SORTED PROFILES */}
+            {getSortedProfiles().map(profile => (
               <div key={profile.id} className="grid grid-cols-1 md:grid-cols-[2fr_1fr_1.5fr_1fr] hover:bg-slate-50/80 group transition-colors px-6 md:px-10 py-6 gap-4 items-center">
                 {/* Colaborador */}
                 <div className="flex flex-col">
