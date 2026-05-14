@@ -102,8 +102,15 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
   const [items, setItems] = useState<SaleItem[]>(
     initialData
       ? [{ tempId: Date.now(), brand: initialData.brand, price: initialData.price.toString() }]
-      : [{ tempId: Date.now(), brand: Brand.SAMSUNG, price: '' }]
+      : [{ tempId: Date.now(), brand: Brand.OTRO, price: '' }]
   );
+
+  // Sync category if permissions change or load
+  useEffect(() => {
+    if (availableCategories.length > 0 && !availableCategories.includes(commonData.category)) {
+      setCommonData(prev => ({ ...prev, category: availableCategories[0] }));
+    }
+  }, [availableCategories, commonData.category]);
 
   const [ticketImage, setTicketImage] = useState<string | null>(initialData?.ticketImage || null);
   const [portabilityImage, setPortabilityImage] = useState<string | null>(initialData?.portability_screenshot || null);
