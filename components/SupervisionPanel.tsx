@@ -149,7 +149,7 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
   // Seller Performance (Including Admin Angel Irak Alvarado Dávila)
   const calculatePerformance = (salesArray: any[]) => {
     return profiles
-      .filter(p => (selectedStoreId === 'all' || p.store_id === selectedStoreId) && (p.role === 'seller' || p.role === 'admin' || p.role === 'supervisor'))
+      .filter(p => (selectedStoreId === 'all' || p.store_id === selectedStoreId) && (p.role === 'seller' || p.role === 'admin'))
       .map(p => {
         const sellerSales = salesArray.filter(s => s.created_by === p.id);
         const sellerKitSales = sellerSales.filter(s => s.category === 'kit' || !s.category);
