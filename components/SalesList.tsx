@@ -131,7 +131,7 @@ const SalesList: React.FC<SalesListProps> = ({
   const currentTabSales = todaysSales.filter(s => {
     if (activeTab === 'KIT') return (s.category === 'kit' || !s.category);
     if (activeTab === 'CHIP_0') return (s.category === 'chip_0');
-    if (activeTab === 'PORTABILITY') return (s.category === 'portability');
+    if (activeTab === 'PORTABILITY') return (s.category === 'portabilidad');
     if (activeTab === 'EXPRESS') return (s.category === 'chip_express');
     return false;
   });
@@ -167,7 +167,7 @@ const SalesList: React.FC<SalesListProps> = ({
     let matchesTab = true;
     if (activeTab === 'KIT') matchesTab = (sale.category === 'kit' || !sale.category);
     else if (activeTab === 'CHIP_0') matchesTab = (sale.category === 'chip_0');
-    else if (activeTab === 'PORTABILITY') matchesTab = (sale.category === 'portability');
+    else if (activeTab === 'PORTABILITY') matchesTab = (sale.category === 'portabilidad');
     else if (activeTab === 'EXPRESS') matchesTab = (sale.category === 'chip_express');
 
     return matchesSearch && matchesBrand && matchesDate && matchesTab;
@@ -249,27 +249,31 @@ const SalesList: React.FC<SalesListProps> = ({
               </div>
             </div>
 
-            {/* Stat 2: Revenue */}
-            <div className="flex items-center gap-4 px-2 md:pl-6">
-              <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 text-emerald-400">
-                <DollarSign className="w-6 h-6" />
+            {/* Stat 2: Revenue - Only for KITs */}
+            {activeTab === 'KIT' && (
+              <div className="flex items-center gap-4 px-2 md:pl-6">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 text-emerald-400">
+                  <DollarSign className="w-6 h-6" />
+                </div>
+                <div>
+                  <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-0.5">Venta Total</p>
+                  <p className="text-3xl font-black text-white">${todayRevenue.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
+                </div>
               </div>
-              <div>
-                <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-0.5">Venta Total</p>
-                <p className="text-3xl font-black text-white">${todayRevenue.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
-              </div>
-            </div>
+            )}
 
-            {/* Stat 3: Net */}
-            <div className="flex items-center gap-4 px-2 md:pl-6">
-              <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 flex items-center justify-center border border-indigo-500/20 text-indigo-400">
-                <TrendingUp className="w-6 h-6" />
+            {/* Stat 3: Net - Only for KITs */}
+            {activeTab === 'KIT' && (
+              <div className="flex items-center gap-4 px-2 md:pl-6">
+                <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 flex items-center justify-center border border-indigo-500/20 text-indigo-400">
+                  <TrendingUp className="w-6 h-6" />
+                </div>
+                <div>
+                  <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-0.5">Sin IVA (Base)</p>
+                  <p className="text-3xl font-black text-white">${todayNet.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
+                </div>
               </div>
-              <div>
-                <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-0.5">Sin IVA (Base)</p>
-                <p className="text-3xl font-black text-white">${todayNet.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
-              </div>
-            </div>
+            )}
 
           </div>
         </div>
@@ -401,8 +405,8 @@ const SalesList: React.FC<SalesListProps> = ({
         ) : (
           <>
             {filteredSales.slice(0, displayLimit).map((sale) => (
-            <div key={sale.id} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md hover:border-blue-100 transition-all group">
-              <div className="flex flex-col md:flex-row justify-between gap-4 items-start md:items-center">
+            <div key={sale.id} className="bg-white p-4 md:p-5 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md hover:border-blue-100 transition-all group overflow-hidden">
+              <div className="flex flex-col md:flex-row justify-between gap-3 items-start md:items-center">
                 {/* Left: Main Info */}
                 <div className="flex-1 space-y-3 w-full">
                   <div className="flex items-center justify-between md:justify-start gap-3">
@@ -412,26 +416,31 @@ const SalesList: React.FC<SalesListProps> = ({
                     >
                       {BRAND_CONFIGS[sale.brand].label}
                     </span>
-                    <span className="text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded text-xs font-mono font-bold tracking-wide">
-                      {sale.invoiceNumber}
-                    </span>
+                    {sale.invoiceNumber && 
+                     sale.invoiceNumber.length > 7 && 
+                     sale.category !== 'chip_express' && 
+                     sale.category !== 'portabilidad' && (
+                      <span className="text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded text-[10px] md:text-xs font-mono font-bold tracking-wide">
+                        {sale.invoiceNumber}
+                      </span>
+                    )}
 
                     {/* CATEGORY BADGE */}
                     <div className="flex items-center gap-1.5">
                       <span className={`
                         px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-tighter border flex items-center gap-1
                         ${sale.category === 'chip_0' ? 'bg-purple-100 text-purple-700 border-purple-200' : 
-                          sale.category === 'portability' ? 'bg-rose-100 text-rose-700 border-rose-200' :
+                          sale.category === 'portabilidad' ? 'bg-rose-100 text-rose-700 border-rose-200' :
                           sale.category === 'chip_express' ? 'bg-orange-100 text-orange-700 border-orange-200' :
                           'bg-blue-100 text-blue-700 border-blue-200'}
                       `}>
                         {sale.category === 'chip_0' ? <><Cpu className="w-2.5 h-2.5" /> CHIP 0</> : 
-                         sale.category === 'portability' ? <><Phone className="w-2.5 h-2.5" /> PORTA</> :
+                         sale.category === 'portabilidad' ? <><Phone className="w-2.5 h-2.5" /> PORTA</> :
                          sale.category === 'chip_express' ? <><Cpu className="w-2.5 h-2.5" /> EXPRESS</> : <><Smartphone className="w-2.5 h-2.5" /> KIT</>}
                       </span>
 
                       {/* EXTRA DATA INDICATORS (ICCID / PHONE) */}
-                      {(sale.category === 'portability' || sale.category === 'chip_express' || sale.category === 'chip_0') && (
+                      {(sale.category === 'portabilidad' || sale.category === 'chip_express' || sale.category === 'chip_0') && (
                         <div className="flex items-center gap-1">
                           {sale.phoneNumber && (
                             <span className="bg-slate-800 text-white text-[9px] px-1.5 py-0.5 rounded font-bold">
@@ -449,7 +458,7 @@ const SalesList: React.FC<SalesListProps> = ({
 
                     {/* ETIQUETA DE SUCURSAL */}
                     {sale.storeId && (
-                      <span className="ml-auto md:ml-0 text-[9px] font-black text-slate-400 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-md uppercase tracking-tighter">
+                      <span className="hidden sm:inline-block ml-auto md:ml-0 text-[9px] font-black text-slate-400 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-md uppercase tracking-tighter">
                         {sale.storeId === '00000000-0000-0000-0000-000000000000' ? 'TIENDA PRINCIPAL' : 'SUCURSAL'}
                       </span>
                     )}
@@ -466,9 +475,11 @@ const SalesList: React.FC<SalesListProps> = ({
                     </div>
                     <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 font-medium">
                       <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {sale.date}</span>
-                      <span className="flex items-center gap-1 bg-slate-50 px-2 py-0.5 rounded text-slate-600">
-                        <Tag className="w-3 h-3" /> ${sale.price.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
-                      </span>
+                      {sale.category !== 'chip_express' && sale.category !== 'portabilidad' && (
+                        <span className="flex items-center gap-1 bg-slate-50 px-2 py-0.5 rounded text-slate-600">
+                          <Tag className="w-3 h-3" /> ${sale.price.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                        </span>
+                      )}
                       
                       {/* Detailed data for chips */}
                       {sale.phoneNumber && (
@@ -511,10 +522,12 @@ const SalesList: React.FC<SalesListProps> = ({
                       Ver Ticket
                     </button>
                   ) : (
-                    <span className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 bg-slate-50 select-none">
-                      <ImageIcon className="w-4 h-4" />
-                      Sin foto
-                    </span>
+                    sale.category !== 'chip_express' && sale.category !== 'portabilidad' && (
+                      <span className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 bg-slate-50 select-none">
+                        <ImageIcon className="w-4 h-4" />
+                        Sin foto
+                      </span>
+                    )
                   )}
 
                   <div className="w-px h-8 bg-slate-100 mx-1 hidden md:block"></div>

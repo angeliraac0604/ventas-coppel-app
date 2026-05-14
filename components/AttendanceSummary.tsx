@@ -10,8 +10,10 @@ import {
   User, 
   ShieldCheck,
   MapPin,
-  CheckCircle
+  CheckCircle,
+  ImageOff
 } from 'lucide-react';
+import { transformImageUrl } from '../services/imageUtils';
 
 interface AttendanceSummaryProps {
   stores: Store[];
@@ -354,8 +356,32 @@ const AttendanceSummary: React.FC<AttendanceSummaryProps> = ({ stores, profiles,
                                 <span className="text-[10px] font-bold text-slate-400">{new Date(rec.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                              </div>
                              <div className="grid grid-cols-2 gap-2">
-                                {rec.imageUrl && <img src={rec.imageUrl} onClick={() => setZoomedImage(rec.imageUrl!)} className="w-full aspect-square object-cover rounded-xl border border-slate-100 cursor-zoom-in" />}
-                                {rec.screenshotUrl && <img src={rec.screenshotUrl} onClick={() => setZoomedImage(rec.screenshotUrl!)} className="w-full aspect-square object-cover rounded-xl border border-slate-100 cursor-zoom-in" />}
+                                {rec.imageUrl && (
+                                  <div className="relative group">
+                                    <img 
+                                      src={transformImageUrl(rec.imageUrl)} 
+                                      onClick={() => setZoomedImage(transformImageUrl(rec.imageUrl))} 
+                                      onError={(e) => {
+                                        (e.target as HTMLImageElement).src = 'https://placehold.co/400x400/f1f5f9/94a3b8?text=Error+de+Imagen';
+                                      }}
+                                      className="w-full aspect-square object-cover rounded-xl border border-slate-100 cursor-zoom-in" 
+                                      alt="Selfie"
+                                    />
+                                  </div>
+                                )}
+                                {rec.screenshotUrl && (
+                                  <div className="relative group">
+                                    <img 
+                                      src={transformImageUrl(rec.screenshotUrl)} 
+                                      onClick={() => setZoomedImage(transformImageUrl(rec.screenshotUrl))} 
+                                      onError={(e) => {
+                                        (e.target as HTMLImageElement).src = 'https://placehold.co/400x400/f1f5f9/94a3b8?text=Error+de+Captura';
+                                      }}
+                                      className="w-full aspect-square object-cover rounded-xl border border-slate-100 cursor-zoom-in" 
+                                      alt="Screenshot"
+                                    />
+                                  </div>
+                                )}
                              </div>
                              {rec.locationCoords && <div className="flex items-center gap-1"><MapPin className="w-3 h-3 text-red-400" /><span className="text-[8px] font-bold text-slate-400 truncate">{rec.locationCoords}</span></div>}
                           </div>
@@ -428,7 +454,7 @@ const AttendanceSummary: React.FC<AttendanceSummaryProps> = ({ stores, profiles,
       {zoomedImage && (
         <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-4 animate-in fade-in" onClick={() => setZoomedImage(null)}>
            <X className="absolute top-6 right-6 w-8 h-8 text-white cursor-pointer" />
-           <img src={zoomedImage} className="max-w-full max-h-[90vh] object-contain rounded-lg" />
+           <img src={transformImageUrl(zoomedImage)} className="max-w-full max-h-[90vh] object-contain rounded-lg" />
         </div>
       )}
     </div>

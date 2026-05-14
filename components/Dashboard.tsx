@@ -173,7 +173,11 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
     chip0Revenue,
     chip0Count,
     portaCount,
-    expressCount
+    expressCount,
+    kitTodayCount,
+    chip0TodayCount,
+    portaTodayCount,
+    expressTodayCount
   } = React.useMemo(() => {
     // 🟠 REAL-TIME MERGE: Combine state from DB fetch with the realtime 'sales' prop
     const combinedSales = Array.isArray(monthlySales) ? [...monthlySales] : [];
@@ -205,7 +209,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
     // Split by category
     const kitSales = monthSales.filter(s => s.category === 'kit' || !s.category);
     const chip0Sales = monthSales.filter(s => s.category === 'chip_0');
-    const portaSales = monthSales.filter(s => s.category === 'portability');
+    const portaSales = monthSales.filter(s => s.category === 'portabilidad');
     const expressSales = monthSales.filter(s => s.category === 'chip_express');
 
     const kitRev = kitSales.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
@@ -300,7 +304,13 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
       chip0Revenue: chip0Rev,
       chip0Count: chip0Sales.length,
       portaCount: portaSales.length,
-      expressCount: expressSales.length
+      expressCount: expressSales.length,
+      
+      // Today specific categories
+      kitTodayCount: kitTodaySales.length,
+      chip0TodayCount: todaySales.filter(s => s.category === 'chip_0').length,
+      portaTodayCount: todaySales.filter(s => s.category === 'portabilidad').length,
+      expressTodayCount: todaySales.filter(s => s.category === 'chip_express').length
     };
   }, [monthlySales, monthlyGoal, devicesGoal, chip0Goal, portaGoal, expressGoal, sales, selectedMonth, storeId]);
 
@@ -659,7 +669,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
       <div className={`grid grid-cols-1 gap-6 ${monthlyGoal > 0 && devicesGoal > 0 ? 'lg:grid-cols-2' : ''}`}>
 
         {/* CARD 1: REVENUE (Active if monthlyGoal > 0 or if admin/viewer/supervisor) */}
-        {((monthlyGoal > 0 || role === 'admin' || role === 'viewer' || role === 'supervisor') || (role === 'seller' && userProfile?.canSellKit !== false)) && (
+        {(role === 'admin' || role === 'supervisor' || role === 'viewer' || userProfile?.canSellKit === true) && (
           <div id="revenue-goal-card" className="bg-slate-900 rounded-3xl p-6 shadow-xl relative overflow-hidden text-white group flex flex-col justify-between">
             <div className="absolute top-0 right-0 w-48 h-48 bg-blue-600 rounded-full blur-[80px] opacity-20 group-hover:opacity-30 transition-opacity"></div>
             <div className="absolute bottom-0 left-0 w-48 h-48 bg-purple-600 rounded-full blur-[80px] opacity-10 group-hover:opacity-20 transition-opacity"></div>
@@ -727,7 +737,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
         )}
 
         {/* CARD 2: DEVICES (Active if devicesGoal > 0 or if admin/viewer/supervisor) */}
-        {((devicesGoal > 0 || role === 'admin' || role === 'viewer' || role === 'supervisor') || (role === 'seller' && userProfile?.canSellKit !== false)) && (
+        {(role === 'admin' || role === 'supervisor' || role === 'viewer' || userProfile?.canSellKit === true) && (
           <div id="devices-goal-card" className="bg-slate-900 rounded-3xl p-6 shadow-xl relative overflow-hidden text-white group flex flex-col justify-between">
             <div className="absolute top-0 right-0 w-48 h-48 bg-emerald-600 rounded-full blur-[80px] opacity-20 group-hover:opacity-30 transition-opacity"></div>
             <div className="absolute bottom-0 left-0 w-48 h-48 bg-cyan-600 rounded-full blur-[80px] opacity-10 group-hover:opacity-20 transition-opacity"></div>
@@ -971,7 +981,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
       )}
 
       {/* --- TARGET PER DAY CARD (NEW) - Only if monthlyGoal is set --- */}
-      {monthlyGoal > 0 && (
+      {monthlyGoal > 0 && (role === 'admin' || role === 'supervisor' || userProfile?.canSellKit === true) && (
         <div className="bg-gradient-to-r from-indigo-900 to-blue-900 rounded-2xl p-6 shadow-xl border border-blue-800 relative overflow-hidden">
           <div className="absolute right-0 top-0 p-4 opacity-5">
             <Trophy className="w-48 h-48" />
@@ -1025,24 +1035,24 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
       <div className="grid grid-cols-2 md:grid-cols-2 xl:grid-cols-5 gap-4 md:gap-6">
 
         {/* TODAY Stats */}
-        {(role === 'admin' || role === 'supervisor' || userProfile?.canSellKit !== false) && (
+        {(role === 'admin' || role === 'supervisor' || userProfile?.canSellKit === true) && (
           <div className="bg-white rounded-2xl p-4 md:p-6 shadow-sm border border-slate-100 hover:shadow-md transition-shadow relative overflow-hidden">
             <div className="absolute top-0 right-0 w-16 h-16 bg-orange-500 rounded-full blur-[40px] opacity-20"></div>
             <div className="flex items-center gap-2 md:gap-3 mb-2 md:mb-3 relative z-10">
               <div className="p-1.5 md:p-2 bg-orange-50 rounded-lg">
                 <PartyPopper className="w-4 h-4 md:w-5 md:h-5 text-orange-600" />
               </div>
-              <p className="text-slate-500 text-[10px] md:text-sm font-bold truncate">Ventas Hoy</p>
+              <p className="text-slate-500 text-[10px] md:text-sm font-bold truncate">Equipos Hoy</p>
             </div>
-            <h3 className="text-xl md:text-3xl font-extrabold text-slate-800 relative z-10">{todayCount}</h3>
+            <h3 className="text-xl md:text-3xl font-extrabold text-slate-800 relative z-10">{kitTodayCount}</h3>
             <p className="text-[9px] md:text-xs text-orange-500 font-medium mt-0.5 md:mt-1 relative z-10 truncate">
-              {todayCount > 0 ? "¡Sigue así!" : "Sin ventas aún"}
+              {kitTodayCount > 0 ? "¡Sigue así!" : "Sin ventas aún"}
             </p>
           </div>
         )}
 
         {/* TODAY REVENUE (NEW) */}
-        {(role === 'admin' || role === 'supervisor' || userProfile?.canSellKit !== false) && (
+        {(role === 'admin' || role === 'supervisor' || userProfile?.canSellKit === true) && (
           <div className="bg-white rounded-2xl p-4 md:p-6 shadow-sm border border-slate-100 hover:shadow-md transition-shadow relative overflow-hidden">
             <div className="absolute top-0 right-0 w-16 h-16 bg-blue-500 rounded-full blur-[40px] opacity-10"></div>
             <div className="flex items-center gap-2 md:gap-3 mb-2 md:mb-3 relative z-10">
@@ -1058,7 +1068,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
           </div>
         )}
 
-        {(role === 'admin' || role === 'supervisor' || userProfile?.canSellKit !== false) && (
+        {(role === 'admin' || role === 'supervisor' || userProfile?.canSellKit === true) && (
           <div className="bg-white rounded-2xl p-4 md:p-6 shadow-sm border border-slate-100 hover:shadow-md transition-shadow relative overflow-hidden">
             <div className="flex items-center gap-2 md:gap-3 mb-2 md:mb-3">
               <div className="p-1.5 md:p-2 bg-indigo-50 rounded-lg">
@@ -1073,7 +1083,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
           </div>
         )}
 
-        {(role === 'admin' || role === 'supervisor' || userProfile?.canSellKit !== false) && (
+        {(role === 'admin' || role === 'supervisor' || userProfile?.canSellKit === true) && (
           <div className="bg-white rounded-2xl p-4 md:p-6 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
             <div className="flex items-center gap-2 md:gap-3 mb-2 md:mb-3">
               <div className="p-1.5 md:p-2 bg-blue-50 rounded-lg">
@@ -1086,7 +1096,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
           </div>
         )}
 
-        {(role === 'admin' || role === 'supervisor' || userProfile?.canSellKit !== false) && (
+        {(role === 'admin' || role === 'supervisor' || userProfile?.canSellKit === true) && (
           <div className="bg-white rounded-2xl p-4 md:p-6 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
             <div className="flex items-center gap-2 md:gap-3 mb-2 md:mb-3">
               <div className="p-1.5 md:p-2 bg-emerald-50 rounded-lg">
@@ -1102,7 +1112,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
         )}
 
         {/* TICKET PROMEDIO CARD */}
-        {(role === 'admin' || role === 'supervisor' || userProfile?.canSellKit !== false) && (
+        {(role === 'admin' || role === 'supervisor' || userProfile?.canSellKit === true) && (
           <div className="bg-white rounded-2xl p-4 md:p-6 shadow-sm border border-slate-100 hover:shadow-md transition-shadow relative overflow-hidden">
             <div className="absolute bottom-0 right-0 w-16 h-16 bg-purple-500 rounded-full blur-[40px] opacity-10"></div>
             <div className="flex items-center gap-2 md:gap-3 mb-2 md:mb-3">
@@ -1115,6 +1125,54 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
               ${(currentMonthCount > 0 ? (currentMonthRevenue / currentMonthCount) : 0).toLocaleString('es-MX', { maximumFractionDigits: 0 })}
             </h3>
             <p className="text-[9px] md:text-xs text-slate-400 mt-0.5 md:mt-1">Promedio</p>
+          </div>
+        )}
+
+        {/* CHIP 0 Stats */}
+        {(role === 'admin' || role === 'supervisor' || userProfile?.canSellChip0 !== false) && (
+          <div className="bg-white rounded-2xl p-4 md:p-6 shadow-sm border border-slate-100 hover:shadow-md transition-shadow relative overflow-hidden">
+            <div className="flex items-center gap-2 md:gap-3 mb-2 md:mb-3">
+              <div className="p-1.5 md:p-2 bg-emerald-50 rounded-lg">
+                <Cpu className="w-4 h-4 md:w-5 md:h-5 text-emerald-600" />
+              </div>
+              <p className="text-slate-500 text-[10px] md:text-sm font-bold truncate">Chip 0</p>
+            </div>
+            <h3 className="text-xl md:text-2xl font-bold text-slate-800">{chip0Count}</h3>
+            <p className="text-[9px] md:text-xs text-slate-400 mt-0.5 md:mt-1">
+              Mes: {chip0Count} | <span className="text-emerald-600 font-bold">Hoy: {chip0TodayCount}</span>
+            </p>
+          </div>
+        )}
+
+        {/* PORTABILITY Stats */}
+        {(role === 'admin' || role === 'supervisor' || userProfile?.canSellPortability !== false) && (
+          <div className="bg-white rounded-2xl p-4 md:p-6 shadow-sm border border-slate-100 hover:shadow-md transition-shadow relative overflow-hidden">
+            <div className="flex items-center gap-2 md:gap-3 mb-2 md:mb-3">
+              <div className="p-1.5 md:p-2 bg-purple-50 rounded-lg">
+                <Phone className="w-4 h-4 md:w-5 md:h-5 text-purple-600" />
+              </div>
+              <p className="text-slate-500 text-[10px] md:text-sm font-bold truncate">Portabilidad</p>
+            </div>
+            <h3 className="text-xl md:text-2xl font-bold text-slate-800">{portaCount}</h3>
+            <p className="text-[9px] md:text-xs text-slate-400 mt-0.5 md:mt-1">
+              Mes: {portaCount} | <span className="text-purple-600 font-bold">Hoy: {portaTodayCount}</span>
+            </p>
+          </div>
+        )}
+
+        {/* CHIP EXPRESS Stats */}
+        {(role === 'admin' || role === 'supervisor' || userProfile?.canSellChipExpress !== false) && (
+          <div className="bg-white rounded-2xl p-4 md:p-6 shadow-sm border border-slate-100 hover:shadow-md transition-shadow relative overflow-hidden">
+            <div className="flex items-center gap-2 md:gap-3 mb-2 md:mb-3">
+              <div className="p-1.5 md:p-2 bg-orange-50 rounded-lg">
+                <Cpu className="w-4 h-4 md:w-5 md:h-5 text-orange-600" />
+              </div>
+              <p className="text-slate-500 text-[10px] md:text-sm font-bold truncate">Chip Express</p>
+            </div>
+            <h3 className="text-xl md:text-2xl font-bold text-slate-800">{expressCount}</h3>
+            <p className="text-[9px] md:text-xs text-slate-400 mt-0.5 md:mt-1">
+              Mes: {expressCount} | <span className="text-orange-600 font-bold">Hoy: {expressTodayCount}</span>
+            </p>
           </div>
         )}
       </div>
@@ -1348,37 +1406,39 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
 
 
         {/* 4. Timeline Bar Chart (Restored) */}
-        <div id="revenue-chart-card" className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 min-h-[400px] xl:col-span-2 min-w-0">
-          <h3 className="text-base sm:text-lg font-bold text-slate-800 mb-6">Ingresos (Últimos 7 días)</h3>
-          <ResponsiveContainer width="100%" height={300} key={`timeline-chart-${storeId}-${selectedMonth}`}>
-            <ComposedChart data={timelineData}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-              <XAxis
-                dataKey="date"
-                tick={{ fill: '#64748b', fontSize: 12 }}
-                tickFormatter={(val) => val.slice(5)} // Show MM-DD
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis
-                tick={{ fill: '#64748b', fontSize: 12 }}
-                axisLine={false}
-                tickLine={false}
-                tickFormatter={(val) => `$${val}`}
-              />
-              <Tooltip
-                cursor={{ fill: '#f8fafc' }}
-                contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                formatter={(value: number, name: string) => {
-                  if (name === 'netAmount') return [`$${value.toFixed(2)}`, 'Sin IVA'];
-                  return [`$${value}`, 'Total (Con IVA)'];
-                }}
-              />
-              <Bar dataKey="amount" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={20} />
-              <Line type="monotone" dataKey="netAmount" stroke="#f97316" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
-            </ComposedChart>
-          </ResponsiveContainer>
-        </div>
+        {(role === 'admin' || role === 'supervisor' || userProfile?.canSellKit === true) && (
+          <div id="revenue-chart-card" className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 min-h-[400px] xl:col-span-2 min-w-0">
+            <h3 className="text-base sm:text-lg font-bold text-slate-800 mb-6">Ingresos (Últimos 7 días)</h3>
+            <ResponsiveContainer width="100%" height={300} key={`timeline-chart-${storeId}-${selectedMonth}`}>
+              <ComposedChart data={timelineData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fill: '#64748b', fontSize: 12 }}
+                  tickFormatter={(val) => val.slice(5)} // Show MM-DD
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{ fill: '#64748b', fontSize: 12 }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={(val) => `$${val}`}
+                />
+                <Tooltip
+                  cursor={{ fill: '#f8fafc' }}
+                  contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                  formatter={(value: number, name: string) => {
+                    if (name === 'netAmount') return [`$${value.toFixed(2)}`, 'Sin IVA'];
+                    return [`$${value}`, 'Total (Con IVA)'];
+                  }}
+                />
+                <Bar dataKey="amount" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={20} />
+                <Line type="monotone" dataKey="netAmount" stroke="#f97316" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </div>
 
       {/* DANGER ZONE */}

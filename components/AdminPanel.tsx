@@ -293,7 +293,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
         password: directPassword,
         options: {
           data: {
-            full_name: directFullName.toUpperCase(),
+            full_name: `${directFirstName} ${directLastName}`.trim().toUpperCase(),
             role: directRole,
             store_id: directStoreId || null,
             can_justify_absences: directCanJustifyAbsences,
@@ -623,19 +623,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
                            <CheckCircle className="w-2.5 h-2.5" />
                            <span className="text-[7px] font-black uppercase">Asistencia</span>
                          </div>
-                       )}
+                      )}
                       {profile.canJustifyAbsences && (
                          <div className="flex items-center gap-1 text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">
                            <ShieldCheck className="w-2.5 h-2.5" />
                            <span className="text-[7px] font-black uppercase">Justificar</span>
                          </div>
-                       )}
+                      )}
                       {profile.canManageRestDays && (
                          <div className="flex items-center gap-1 text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100">
                            <Calendar className="w-2.5 h-2.5" />
                            <span className="text-[7px] font-black uppercase">Descansos</span>
                          </div>
-                       )}
+                      )}
                     </div>
                   </div>
                 </div>
@@ -774,15 +774,32 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
                             <option value="seller">VENDEDOR</option>
                             <option value="supervisor">SUPERVISOR</option>
                             <option value="admin">ADMINISTRADOR</option>
-                            <option value="viewer">LECTOR</option>
+                            <option value='viewer'>LECTOR</option>
                           </select>
                         </div>
                       </div>
 
                       {(directRole === 'supervisor' || directRole === 'viewer') && (directStoreId === '' || directStoreId === '7de1b59d-9b0e-4763-9dfc-08030c158664') && (
                         <div className="bg-slate-50 p-6 rounded-[1.5rem] border border-slate-100">
-                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 px-1">Seleccionar Área (Tiendas)</p>
-                           <p className="text-[8px] text-slate-400 font-bold uppercase mb-4 px-1 leading-tight">Deja vacío para Supervisor General (todas las tiendas)</p>
+                           <div className="flex items-center justify-between px-1 mb-2">
+                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Acceso a Sucursales</p>
+                             <label className="flex items-center gap-2 cursor-pointer group/all">
+                                <span className="text-[8px] font-black text-slate-400 uppercase group-hover/all:text-indigo-600 transition-colors">Todos</span>
+                                <input 
+                                  type="checkbox" 
+                                  checked={stores.filter(s => s.id !== '7de1b59d-9b0e-4763-9dfc-08030c158664').every(s => directAssignedStores.includes(s.id))}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setDirectAssignedStores(stores.filter(s => s.id !== '7de1b59d-9b0e-4763-9dfc-08030c158664').map(s => s.id));
+                                    } else {
+                                      setDirectAssignedStores([]);
+                                    }
+                                  }}
+                                  className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                />
+                              </label>
+                           </div>
+                           <p className="text-[8px] text-slate-400 font-bold uppercase mb-4 px-1 leading-tight">Define el área de trabajo de este supervisor</p>
                            <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
                               {stores.filter(s => s.id !== '7de1b59d-9b0e-4763-9dfc-08030c158664').map(s => (
                                 <label key={s.id} className="flex items-center gap-3 px-4 py-3 bg-white border border-slate-100 rounded-xl cursor-pointer hover:border-indigo-200 transition-all">
@@ -803,90 +820,129 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
                       )}
 
                       {directRole === 'supervisor' && (
-                        <div className="space-y-3">
-                          <div className="bg-emerald-50 border border-emerald-100 p-5 rounded-[1.2rem] flex items-center gap-4">
-                            <input 
-                              type="checkbox" 
-                              id="directForce"
-                              checked={directCanForceAttendance}
-                              onChange={(e) => setDirectCanForceAttendance(e.target.checked)}
-                              className="w-5 h-5 rounded-lg border-emerald-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
-                            />
-                            <label htmlFor="directForce" className="flex-1 cursor-pointer">
-                               <p className="text-[10px] font-black text-emerald-700 uppercase">Autorizar Asistencia Manual</p>
-                               <p className="text-[9px] text-emerald-600/70 font-bold uppercase leading-none mt-1">Este supervisor podrá marcar días como "Asistió".</p>
-                            </label>
-                          </div>
+                        <div className="space-y-4 border-t border-slate-100 pt-6">
+                            <div className="flex items-center justify-between px-1 mb-2">
+                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Permisos Especiales</p>
+                              <label className="flex items-center gap-2 cursor-pointer group/all">
+                                <span className="text-[8px] font-black text-slate-400 uppercase group-hover/all:text-indigo-600 transition-colors">Todos</span>
+                                <input 
+                                  type="checkbox" 
+                                  checked={directCanForceAttendance && directCanJustifyAbsences && directCanManageRestDays && directCanSetSchedules}
+                                  onChange={(e) => {
+                                    const val = e.target.checked;
+                                    setDirectCanForceAttendance(val);
+                                    setDirectCanJustifyAbsences(val);
+                                    setDirectCanManageRestDays(val);
+                                    setDirectCanSetSchedules(val);
+                                  }}
+                                  className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                />
+                              </label>
+                           </div>
+                          <div className="space-y-3">
+                            <div className="bg-emerald-50 border border-emerald-100 p-5 rounded-[1.2rem] flex items-center gap-4">
+                              <input 
+                                type="checkbox" 
+                                id="directForce"
+                                checked={directCanForceAttendance}
+                                onChange={(e) => setDirectCanForceAttendance(e.target.checked)}
+                                className="w-5 h-5 rounded-lg border-emerald-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                              />
+                              <label htmlFor="directForce" className="flex-1 cursor-pointer">
+                                 <p className="text-[10px] font-black text-emerald-700 uppercase">Autorizar Asistencia Manual</p>
+                                 <p className="text-[9px] text-emerald-600/70 font-bold uppercase leading-none mt-1">Este supervisor podrá marcar días como "Asistió".</p>
+                              </label>
+                            </div>
 
-                          <div className="bg-slate-900 border border-slate-800 p-5 rounded-[1.2rem] flex items-center gap-4">
-                            <input 
-                              type="checkbox" 
-                              id="directJustify"
-                              checked={directCanJustifyAbsences}
-                              onChange={(e) => setDirectCanJustifyAbsences(e.target.checked)}
-                              className="w-5 h-5 rounded-lg border-slate-700 text-white focus:ring-slate-500 cursor-pointer"
-                            />
-                            <label htmlFor="directJustify" className="flex-1 cursor-pointer">
-                               <p className="text-[10px] font-black text-white uppercase">Autorizar Justificar Faltas</p>
-                               <p className="text-[9px] text-slate-400 font-bold uppercase leading-none mt-1">Este supervisor podrá autorizar permisos en las asistencias.</p>
-                            </label>
-                          </div>
+                            <div className="bg-slate-900 border border-slate-800 p-5 rounded-[1.2rem] flex items-center gap-4">
+                              <input 
+                                type="checkbox" 
+                                id="directJustify"
+                                checked={directCanJustifyAbsences}
+                                onChange={(e) => setDirectCanJustifyAbsences(e.target.checked)}
+                                className="w-5 h-5 rounded-lg border-slate-700 text-white focus:ring-slate-500 cursor-pointer"
+                              />
+                              <label htmlFor="directJustify" className="flex-1 cursor-pointer">
+                                 <p className="text-[10px] font-black text-white uppercase">Autorizar Justificar Faltas</p>
+                                 <p className="text-[9px] text-slate-400 font-bold uppercase leading-none mt-1">Este supervisor podrá autorizar permisos en las asistencias.</p>
+                              </label>
+                            </div>
 
-                          <div className="bg-blue-50 border border-blue-100 p-5 rounded-[1.2rem] flex items-center gap-4">
-                            <input 
-                              type="checkbox" 
-                              id="directRest"
-                              checked={directCanManageRestDays}
-                              onChange={(e) => setDirectCanManageRestDays(e.target.checked)}
-                              className="w-5 h-5 rounded-lg border-blue-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                            />
-                            <label htmlFor="directRest" className="flex-1 cursor-pointer">
-                               <p className="text-[10px] font-black text-blue-700 uppercase">Autorizar Gestión de Descansos</p>
-                               <p className="text-[9px] text-blue-600/70 font-bold uppercase leading-none mt-1">Este supervisor podrá asignar días de descanso.</p>
-                            </label>
-                          </div>
+                            <div className="bg-blue-50 border border-blue-100 p-5 rounded-[1.2rem] flex items-center gap-4">
+                              <input 
+                                type="checkbox" 
+                                id="directRest"
+                                checked={directCanManageRestDays}
+                                onChange={(e) => setDirectCanManageRestDays(e.target.checked)}
+                                className="w-5 h-5 rounded-lg border-blue-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                              />
+                              <label htmlFor="directRest" className="flex-1 cursor-pointer">
+                                 <p className="text-[10px] font-black text-blue-700 uppercase">Autorizar Gestión de Descansos</p>
+                                 <p className="text-[9px] text-blue-600/70 font-bold uppercase leading-none mt-1">Este supervisor podrá asignar días de descanso.</p>
+                              </label>
+                            </div>
 
-                          <div className="bg-indigo-50 border border-indigo-100 p-5 rounded-[1.2rem] flex items-center gap-4">
-                            <input 
-                              type="checkbox" 
-                              id="directSchedules"
-                              checked={directCanSetSchedules}
-                              onChange={(e) => setDirectCanSetSchedules(e.target.checked)}
-                              className="w-5 h-5 rounded-lg border-indigo-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                            />
-                            <label htmlFor="directSchedules" className="flex-1 cursor-pointer">
-                               <p className="text-[10px] font-black text-indigo-700 uppercase">Autorizar Asignar Horarios</p>
-                               <p className="text-[9px] text-indigo-600/70 font-bold uppercase leading-none mt-1">Este supervisor podrá configurar horas de entrada/salida.</p>
-                            </label>
+                            <div className="bg-indigo-50 border border-indigo-100 p-5 rounded-[1.2rem] flex items-center gap-4">
+                              <input 
+                                type="checkbox" 
+                                id="directSchedules"
+                                checked={directCanSetSchedules}
+                                onChange={(e) => setDirectCanSetSchedules(e.target.checked)}
+                                className="w-5 h-5 rounded-lg border-indigo-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                              />
+                              <label htmlFor="directSchedules" className="flex-1 cursor-pointer">
+                                 <p className="text-[10px] font-black text-indigo-700 uppercase">Autorizar Asignar Horarios</p>
+                                 <p className="text-[9px] text-indigo-600/70 font-bold uppercase leading-none mt-1">Este supervisor podrá configurar horas de entrada/salida.</p>
+                              </label>
+                            </div>
+                          </div>
+                        </div>
+                       )}
+
+                       {directRole === 'seller' && (
+                        <div className="space-y-4 border-t border-slate-100 pt-6">
+                          <div className="flex items-center justify-between px-1">
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Especialidades de Venta</p>
+                            <label className="flex items-center gap-2 cursor-pointer group/all">
+                                <span className="text-[8px] font-black text-slate-400 uppercase group-hover/all:text-blue-600 transition-colors">Todos</span>
+                                <input 
+                                  type="checkbox" 
+                                  checked={directCanSellKit && directCanSellChip0 && directCanSellPortability && directCanSellChipExpress}
+                                  onChange={(e) => {
+                                    const val = e.target.checked;
+                                    setDirectCanSellKit(val);
+                                    setDirectCanSellChip0(val);
+                                    setDirectCanSellPortability(val);
+                                    setDirectCanSellChipExpress(val);
+                                  }}
+                                  className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                />
+                              </label>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                             <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${directCanSellKit ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                               <span className={`text-[10px] font-black uppercase ${directCanSellKit ? 'text-blue-700' : 'text-slate-500'}`}>Equipos Kit</span>
+                               <input type="checkbox" checked={directCanSellKit} onChange={(e) => setDirectCanSellKit(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-blue-600" />
+                             </label>
+                             <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${directCanSellChip0 ? 'bg-purple-50 border-purple-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                               <span className={`text-[10px] font-black uppercase ${directCanSellChip0 ? 'text-purple-700' : 'text-slate-500'}`}>Chip 0</span>
+                               <input type="checkbox" checked={directCanSellChip0} onChange={(e) => setDirectCanSellChip0(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-purple-600" />
+                             </label>
+                             <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${directCanSellPortability ? 'bg-rose-50 border-rose-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                               <span className={`text-[10px] font-black uppercase ${directCanSellPortability ? 'text-rose-700' : 'text-slate-500'}`}>Portabilidad</span>
+                               <input type="checkbox" checked={directCanSellPortability} onChange={(e) => setDirectCanSellPortability(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-rose-600" />
+                             </label>
+                             <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${directCanSellChipExpress ? 'bg-orange-50 border-orange-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                               <span className={`text-[10px] font-black uppercase ${directCanSellChipExpress ? 'text-orange-700' : 'text-slate-500'}`}>Chip Express</span>
+                               <input type="checkbox" checked={directCanSellChipExpress} onChange={(e) => setDirectCanSellChipExpress(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-orange-600" />
+                             </label>
                           </div>
                         </div>
                       )}
 
-                      <div className="space-y-4 border-t border-slate-100 pt-6">
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Especialidades de Venta</p>
-                        <div className="grid grid-cols-2 gap-3">
-                           <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${directCanSellKit ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
-                             <span className={`text-[10px] font-black uppercase ${directCanSellKit ? 'text-blue-700' : 'text-slate-500'}`}>Equipos Kit</span>
-                             <input type="checkbox" checked={directCanSellKit} onChange={(e) => setDirectCanSellKit(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-blue-600" />
-                           </label>
-                           <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${directCanSellChip0 ? 'bg-purple-50 border-purple-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
-                             <span className={`text-[10px] font-black uppercase ${directCanSellChip0 ? 'text-purple-700' : 'text-slate-500'}`}>Chip 0</span>
-                             <input type="checkbox" checked={directCanSellChip0} onChange={(e) => setDirectCanSellChip0(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-purple-600" />
-                           </label>
-                           <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${directCanSellPortability ? 'bg-rose-50 border-rose-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
-                             <span className={`text-[10px] font-black uppercase ${directCanSellPortability ? 'text-rose-700' : 'text-slate-500'}`}>Portabilidad</span>
-                             <input type="checkbox" checked={directCanSellPortability} onChange={(e) => setDirectCanSellPortability(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-rose-600" />
-                           </label>
-                           <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${directCanSellChipExpress ? 'bg-orange-50 border-orange-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
-                             <span className={`text-[10px] font-black uppercase ${directCanSellChipExpress ? 'text-orange-700' : 'text-slate-500'}`}>Chip Express</span>
-                             <input type="checkbox" checked={directCanSellChipExpress} onChange={(e) => setDirectCanSellChipExpress(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-orange-600" />
-                           </label>
-                        </div>
-                      </div>
-
                       <button type="submit" disabled={isDirectLoading} className="w-full bg-indigo-600 text-white font-black py-7 rounded-[1.5rem] shadow-2xl shadow-indigo-200 uppercase tracking-[0.2em] text-xs hover:scale-[1.02] active:scale-95 transition-all">Activar Cuenta</button>
-                   </form>
-                 )}
+                    </form>
+                  )}
 
                  {activeModal === 'invite' && (
                    <form onSubmit={handleInviteUser} className="space-y-8">
@@ -934,9 +990,26 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
                         </div>
                       </div>
 
-                      {inviteRole === 'supervisor' && (
+                       {inviteRole === 'supervisor' && (
                         <div className="space-y-4 border-t border-slate-100 pt-6">
-                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Permisos de Supervisor</p>
+                           <div className="flex items-center justify-between px-1 mb-2">
+                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Permisos de Supervisor</p>
+                             <label className="flex items-center gap-2 cursor-pointer group/all">
+                                <span className="text-[8px] font-black text-slate-400 uppercase group-hover/all:text-indigo-600 transition-colors">Todos</span>
+                                <input 
+                                  type="checkbox" 
+                                  checked={inviteCanForceAttendance && inviteCanJustifyAbsences && inviteCanManageRestDays && inviteCanSetSchedules}
+                                  onChange={(e) => {
+                                    const val = e.target.checked;
+                                    setInviteCanForceAttendance(val);
+                                    setInviteCanJustifyAbsences(val);
+                                    setInviteCanManageRestDays(val);
+                                    setInviteCanSetSchedules(val);
+                                  }}
+                                  className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                />
+                              </label>
+                           </div>
                            
                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                              <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${inviteCanForceAttendance ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
@@ -970,31 +1043,89 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
                                </div>
                                <input type="checkbox" checked={inviteCanSetSchedules} onChange={(e) => setInviteCanSetSchedules(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-blue-600" />
                              </label>
+                            </div>
+                          </div>
+                        )} {inviteRole === 'seller' && (
+                        <div className="space-y-4 border-t border-slate-100 pt-6">
+                          <div className="flex items-center justify-between px-1">
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Especialidades de Venta</p>
+                            <label className="flex items-center gap-2 cursor-pointer group/all">
+                                <span className="text-[8px] font-black text-slate-400 uppercase group-hover/all:text-blue-600 transition-colors">Todos</span>
+                                <input 
+                                  type="checkbox" 
+                                  checked={inviteCanSellKit && inviteCanSellChip0 && inviteCanSellPortability && inviteCanSellChipExpress}
+                                  onChange={(e) => {
+                                    const val = e.target.checked;
+                                    setInviteCanSellKit(val);
+                                    setInviteCanSellChip0(val);
+                                    setInviteCanSellPortability(val);
+                                    setInviteCanSellChipExpress(val);
+                                  }}
+                                  className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                />
+                              </label>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                             <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${inviteCanSellKit ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                               <span className={`text-[10px] font-black uppercase ${inviteCanSellKit ? 'text-blue-700' : 'text-slate-500'}`}>Equipos Kit</span>
+                               <input type="checkbox" checked={inviteCanSellKit} onChange={(e) => setInviteCanSellKit(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-blue-600" />
+                             </label>
+                             <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${inviteCanSellChip0 ? 'bg-purple-50 border-purple-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                               <span className={`text-[10px] font-black uppercase ${inviteCanSellChip0 ? 'text-purple-700' : 'text-slate-500'}`}>Chip 0</span>
+                               <input type="checkbox" checked={inviteCanSellChip0} onChange={(e) => setInviteCanSellChip0(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-purple-600" />
+                             </label>
+                             <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${inviteCanSellPortability ? 'bg-rose-50 border-rose-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                               <span className={`text-[10px] font-black uppercase ${inviteCanSellPortability ? 'text-rose-700' : 'text-slate-500'}`}>Portabilidad</span>
+                               <input type="checkbox" checked={inviteCanSellPortability} onChange={(e) => setInviteCanSellPortability(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-rose-600" />
+                             </label>
+                             <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${inviteCanSellChipExpress ? 'bg-orange-50 border-orange-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                               <span className={`text-[10px] font-black uppercase ${inviteCanSellChipExpress ? 'text-orange-700' : 'text-slate-500'}`}>Chip Express</span>
+                               <input type="checkbox" checked={inviteCanSellChipExpress} onChange={(e) => setInviteCanSellChipExpress(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-orange-600" />
+                             </label>
                            </div>
                         </div>
                       )}
 
-                      <div className="space-y-4 border-t border-slate-100 pt-6">
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Especialidades de Venta</p>
-                        <div className="grid grid-cols-2 gap-3">
-                           <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${inviteCanSellKit ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
-                             <span className={`text-[10px] font-black uppercase ${inviteCanSellKit ? 'text-blue-700' : 'text-slate-500'}`}>Equipos Kit</span>
-                             <input type="checkbox" checked={inviteCanSellKit} onChange={(e) => setInviteCanSellKit(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-blue-600" />
-                           </label>
-                           <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${inviteCanSellChip0 ? 'bg-purple-50 border-purple-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
-                             <span className={`text-[10px] font-black uppercase ${inviteCanSellChip0 ? 'text-purple-700' : 'text-slate-500'}`}>Chip 0</span>
-                             <input type="checkbox" checked={inviteCanSellChip0} onChange={(e) => setInviteCanSellChip0(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-purple-600" />
-                           </label>
-                           <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${inviteCanSellPortability ? 'bg-rose-50 border-rose-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
-                             <span className={`text-[10px] font-black uppercase ${inviteCanSellPortability ? 'text-rose-700' : 'text-slate-500'}`}>Portabilidad</span>
-                             <input type="checkbox" checked={inviteCanSellPortability} onChange={(e) => setInviteCanSellPortability(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-rose-600" />
-                           </label>
-                           <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${inviteCanSellChipExpress ? 'bg-orange-50 border-orange-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
-                             <span className={`text-[10px] font-black uppercase ${inviteCanSellChipExpress ? 'text-orange-700' : 'text-slate-500'}`}>Chip Express</span>
-                             <input type="checkbox" checked={inviteCanSellChipExpress} onChange={(e) => setInviteCanSellChipExpress(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-orange-600" />
-                           </label>
+                      {/* Multi-Store Access for Invitation */}
+                      {(inviteRole === 'supervisor' || inviteRole === 'viewer') && (inviteStoreId === '' || inviteStoreId === '7de1b59d-9b0e-4763-9dfc-08030c158664') && (
+                        <div className="space-y-4 border-t border-slate-100 pt-6">
+                           <div className="flex items-center justify-between px-1 mb-2">
+                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Acceso a Sucursales</p>
+                             <label className="flex items-center gap-2 cursor-pointer group/all">
+                                <span className="text-[8px] font-black text-slate-400 uppercase group-hover/all:text-indigo-600 transition-colors">Todos</span>
+                                <input 
+                                  type="checkbox" 
+                                  checked={stores.filter(s => s.id !== '7de1b59d-9b0e-4763-9dfc-08030c158664').every(s => inviteAssignedStores.includes(s.id))}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setInviteAssignedStores(stores.filter(s => s.id !== '7de1b59d-9b0e-4763-9dfc-08030c158664').map(s => s.id));
+                                    } else {
+                                      setInviteAssignedStores([]);
+                                    }
+                                  }}
+                                  className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                />
+                              </label>
+                           </div>
+                           <p className="text-[8px] text-slate-400 font-bold uppercase mb-4 px-1 leading-tight">Define el área de trabajo de este supervisor invitado</p>
+                           <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
+                              {stores.filter(s => s.id !== '7de1b59d-9b0e-4763-9dfc-08030c158664').map(s => (
+                                <label key={s.id} className={`flex items-center gap-3 px-4 py-3 border rounded-xl cursor-pointer transition-all ${inviteAssignedStores.includes(s.id) ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-slate-100 hover:border-indigo-100'}`}>
+                                  <input 
+                                    type="checkbox" 
+                                    checked={inviteAssignedStores.includes(s.id)}
+                                    onChange={(e) => {
+                                      if (e.target.checked) setInviteAssignedStores([...inviteAssignedStores, s.id]);
+                                      else setInviteAssignedStores(inviteAssignedStores.filter(id => id !== s.id));
+                                    }}
+                                    className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                  />
+                                  <span className={`text-[9px] font-black uppercase ${inviteAssignedStores.includes(s.id) ? 'text-indigo-700' : 'text-slate-500'}`}>{s.name}</span>
+                                </label>
+                              ))}
+                           </div>
                         </div>
-                      </div>
+                      )}
                       <button type="submit" disabled={isLoading} className="w-full bg-blue-600 text-white font-black py-7 rounded-[1.5rem] shadow-2xl shadow-blue-200 uppercase tracking-[0.2em] text-xs hover:scale-[1.02] active:scale-95 transition-all">Enviar Invitación</button>
                    </form>
                  )}
@@ -1128,9 +1259,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
                       onChange={(e) => {
                         const val = e.target.value;
                         setTargetStoreId(val);
-                        // If a specific store is selected, clear multi-store access
-                        if (val !== '') {
-                          setTargetAssignedStores([]);
+                        // If a specific store is selected, limit access to only that store
+                        if (val !== '' && val !== '7de1b59d-9b0e-4763-9dfc-08030c158664') {
+                          setTargetAssignedStores([val]);
+                        } else if (val === '' || val === '7de1b59d-9b0e-4763-9dfc-08030c158664') {
+                          // If global, keep whatever was there or let them choose
                         }
                       }}
                       className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-xs font-black uppercase outline-none focus:ring-4 focus:ring-blue-50 transition-all"
@@ -1145,7 +1278,24 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
               {/* Advanced Permissions - ONLY FOR SUPERVISORS */}
               {targetRole === 'supervisor' && (
                 <div className="space-y-4 border-t border-slate-100 pt-6">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Permisos Especiales</p>
+                  <div className="flex items-center justify-between px-1 mb-2">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Permisos Especiales</p>
+                    <label className="flex items-center gap-2 cursor-pointer group/all">
+                      <span className="text-[8px] font-black text-slate-400 uppercase group-hover/all:text-indigo-600 transition-colors">Todos</span>
+                      <input 
+                        type="checkbox" 
+                        checked={targetCanForceAttendance && targetCanJustifyAbsences && targetCanManageRestDays && targetCanSetSchedules}
+                        onChange={(e) => {
+                          const val = e.target.checked;
+                          setTargetCanForceAttendance(val);
+                          setTargetCanJustifyAbsences(val);
+                          setTargetCanManageRestDays(val);
+                          setTargetCanSetSchedules(val);
+                        }}
+                        className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                    </label>
+                  </div>
                   
                   <div className="space-y-3">
                     <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${targetCanForceAttendance ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
@@ -1183,35 +1333,70 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
                 </div>
               )}
 
-              {/* Sales Specializations - FOR EVERYONE */}
-              <div className="space-y-4 border-t border-slate-100 pt-6">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Especialidades de Venta</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${targetCanSellKit ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
-                    <span className={`text-[10px] font-black uppercase ${targetCanSellKit ? 'text-blue-700' : 'text-slate-500'}`}>Equipos Kit</span>
-                    <input type="checkbox" checked={targetCanSellKit} onChange={(e) => setTargetCanSellKit(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-blue-600" />
-                  </label>
-                  <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${targetCanSellChip0 ? 'bg-purple-50 border-purple-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
-                    <span className={`text-[10px] font-black uppercase ${targetCanSellChip0 ? 'text-purple-700' : 'text-slate-500'}`}>Chip 0</span>
-                    <input type="checkbox" checked={targetCanSellChip0} onChange={(e) => setTargetCanSellChip0(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-purple-600" />
-                  </label>
-                  <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${targetCanSellPortability ? 'bg-rose-50 border-rose-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
-                    <span className={`text-[10px] font-black uppercase ${targetCanSellPortability ? 'text-rose-700' : 'text-slate-500'}`}>Portabilidad</span>
-                    <input type="checkbox" checked={targetCanSellPortability} onChange={(e) => setTargetCanSellPortability(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-rose-600" />
-                  </label>
-                  <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${targetCanSellChipExpress ? 'bg-orange-50 border-orange-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
-                    <span className={`text-[10px] font-black uppercase ${targetCanSellChipExpress ? 'text-orange-700' : 'text-slate-500'}`}>Chip Express</span>
-                    <input type="checkbox" checked={targetCanSellChipExpress} onChange={(e) => setTargetCanSellChipExpress(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-orange-600" />
-                  </label>
+              {targetRole === 'seller' && (
+                <div className="space-y-4 border-t border-slate-100 pt-6">
+                  <div className="flex items-center justify-between px-1">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Especialidades de Venta</p>
+                    <label className="flex items-center gap-2 cursor-pointer group/all">
+                      <span className="text-[8px] font-black text-slate-400 uppercase group-hover/all:text-blue-600 transition-colors">Todos</span>
+                      <input 
+                        type="checkbox" 
+                        checked={targetCanSellKit && targetCanSellChip0 && targetCanSellPortability && targetCanSellChipExpress}
+                        onChange={(e) => {
+                          const val = e.target.checked;
+                          setTargetCanSellKit(val);
+                          setTargetCanSellChip0(val);
+                          setTargetCanSellPortability(val);
+                          setTargetCanSellChipExpress(val);
+                        }}
+                        className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                    </label>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${targetCanSellKit ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                      <span className={`text-[10px] font-black uppercase ${targetCanSellKit ? 'text-blue-700' : 'text-slate-500'}`}>Equipos Kit</span>
+                      <input type="checkbox" checked={targetCanSellKit} onChange={(e) => setTargetCanSellKit(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-blue-600" />
+                    </label>
+                    <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${targetCanSellChip0 ? 'bg-purple-50 border-purple-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                      <span className={`text-[10px] font-black uppercase ${targetCanSellChip0 ? 'text-purple-700' : 'text-slate-500'}`}>Chip 0</span>
+                      <input type="checkbox" checked={targetCanSellChip0} onChange={(e) => setTargetCanSellChip0(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-purple-600" />
+                    </label>
+                    <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${targetCanSellPortability ? 'bg-rose-50 border-rose-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                      <span className={`text-[10px] font-black uppercase ${targetCanSellPortability ? 'text-rose-700' : 'text-slate-500'}`}>Portabilidad</span>
+                      <input type="checkbox" checked={targetCanSellPortability} onChange={(e) => setTargetCanSellPortability(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-rose-600" />
+                    </label>
+                    <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${targetCanSellChipExpress ? 'bg-orange-50 border-orange-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                      <span className={`text-[10px] font-black uppercase ${targetCanSellChipExpress ? 'text-orange-700' : 'text-slate-500'}`}>Chip Express</span>
+                      <input type="checkbox" checked={targetCanSellChipExpress} onChange={(e) => setTargetCanSellChipExpress(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-orange-600" />
+                    </label>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Multi-Store Access (ONLY if Global) */}
               {(targetRole === 'supervisor' || targetRole === 'viewer') && targetStoreId === '' && (
                 <div className="space-y-4 border-t border-slate-100 pt-6">
-                  <div className="flex items-center justify-between px-1">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Acceso Multi-Tienda</p>
-                    <span className="text-[8px] font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full uppercase">Opcional</span>
+                  <div className="flex flex-col px-1">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Acceso Multi-Tienda</p>
+                      <label className="flex items-center gap-2 cursor-pointer group/all">
+                        <span className="text-[8px] font-black text-slate-400 uppercase group-hover/all:text-blue-600 transition-colors">Todas</span>
+                        <input 
+                          type="checkbox" 
+                          checked={stores.every(s => targetAssignedStores.includes(s.id))}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setTargetAssignedStores(stores.map(s => s.id));
+                            } else {
+                              setTargetAssignedStores([]);
+                            }
+                          }}
+                          className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                      </label>
+                    </div>
+                    <p className="text-[8px] text-slate-400 font-bold uppercase mt-1 leading-tight">Define las sucursales adicionales a las que tendrá acceso</p>
                   </div>
                   <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
                     {stores.map(s => (

@@ -3,6 +3,7 @@ import { Clock, Calendar, User, Search, Filter, ArrowRight, CheckCircle, AlertCi
 import { supabase } from '../services/supabaseClient';
 import { AttendanceRecord, UserProfile, Store, AttendanceType } from '../types';
 import AttendanceSummary from './AttendanceSummary';
+import { transformImageUrl } from '../services/imageUtils';
 
 interface AttendanceReportProps {
   selectedStoreId: string;
@@ -17,6 +18,10 @@ interface GroupedAttendance {
   userEmail: string;
   storeName: string;
   date: string;
+  entry?: string;
+  lunchStart?: string;
+  lunchEnd?: string;
+  exit?: string;
   isLate?: boolean;
   isLunchOver?: boolean;
   isAbsence?: boolean;
@@ -24,6 +29,11 @@ interface GroupedAttendance {
   isVacation?: boolean;
   isExcused?: boolean;
   excusedNotes?: string;
+  images?: Record<string, {
+    selfie?: string;
+    screenshot?: string;
+    location?: string;
+  }>;
   storeConfig?: Store;
 }
 
@@ -1036,7 +1046,14 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
                               className={`aspect-[3/4] bg-slate-100 rounded-[2rem] overflow-hidden border-2 border-slate-50 shadow-inner group relative ${selectedUser.images[activeEventType].selfie ? 'cursor-zoom-in' : ''}`}
                             >
                                {selectedUser.images[activeEventType].selfie ? (
-                                 <img src={selectedUser.images[activeEventType].selfie} alt="Selfie" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                                  <img 
+                                    src={transformImageUrl(selectedUser.images[activeEventType].selfie)} 
+                                    alt="Selfie" 
+                                    onError={(e) => {
+                                      (e.target as HTMLImageElement).src = 'https://placehold.co/400x400/f1f5f9/94a3b8?text=Error+de+Imagen';
+                                    }}
+                                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" 
+                                  />
                                ) : (
                                  <div className="w-full h-full flex flex-col items-center justify-center text-slate-300 italic p-6 text-center">
                                     <Camera className="w-8 h-8 mb-2 opacity-20" />
@@ -1062,7 +1079,14 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
                               className={`aspect-[3/4] bg-slate-100 rounded-[2rem] overflow-hidden border-2 border-slate-50 shadow-inner group relative ${selectedUser.images[activeEventType].screenshot ? 'cursor-zoom-in' : ''}`}
                             >
                                {selectedUser.images[activeEventType].screenshot ? (
-                                 <img src={selectedUser.images[activeEventType].screenshot} alt="Screenshot" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                                  <img 
+                                    src={transformImageUrl(selectedUser.images[activeEventType].screenshot)} 
+                                    alt="Screenshot" 
+                                    onError={(e) => {
+                                      (e.target as HTMLImageElement).src = 'https://placehold.co/400x400/f1f5f9/94a3b8?text=Error+de+Captura';
+                                    }}
+                                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" 
+                                  />
                                ) : (
                                  <div className="w-full h-full flex flex-col items-center justify-center text-slate-300 italic p-6 text-center">
                                     <Smartphone className="w-8 h-8 mb-2 opacity-20" />
@@ -1172,7 +1196,11 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
              <button className="absolute top-8 right-8 p-4 bg-white/10 hover:bg-white/20 text-white rounded-full transition-colors backdrop-blur-md">
                 <X className="w-8 h-8" />
              </button>
-             <img src={zoomedImage.url} alt="Full size" className="max-w-full max-h-[85vh] object-contain rounded-2xl shadow-2xl animate-in zoom-in-95 duration-500" />
+             <img 
+              src={transformImageUrl(zoomedImage.url)} 
+              alt={zoomedImage.title} 
+              className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl animate-in zoom-in-95 duration-500" 
+            />
           </div>
         )}
       </div>

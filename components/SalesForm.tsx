@@ -1,100 +1,77 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Plus, Camera, Loader2, Save, X, Trash2, Smartphone, Edit2, Eye, Share2, FolderOpen, Wand2, Phone, Cpu, Image as ImageIcon, Barcode } from 'lucide-react'; // Added icons for new categories
-import { Brand, Sale } from '../types';
+import React, { useState, useEffect, useRef } from 'react';
+import { Smartphone, Package, Tag, Calendar, User, Save, X, Loader2, Camera, Image as ImageIcon, Eye, Search, Smartphone as KitIcon, Share2, Phone, Cpu, Wand2, Calculator, Check, AlertCircle, Barcode, ClipboardCheck, Trash2, Edit2 } from 'lucide-react';
+import { Brand, Sale, BrandConfig, UserProfile, Store } from '../types';
 import { BRAND_CONFIGS } from '../constants';
 import { supabase } from '../services/supabaseClient';
-import { uploadImageToDriveScript, deleteImageFromDriveScript } from '../services/googleAppsScriptService';
-import { uploadToSupabaseStorage, smartImageUpload } from '../services/storageService';
+import { smartImageUpload } from '../services/storageService';
 import { analyzeTicketImage } from '../services/geminiService';
 import BarcodeScanner from './BarcodeScanner';
 
-
 interface SalesFormProps {
   onAddSale: (sale: Omit<Sale, 'id'>) => Promise<void>;
-  onUpdateSale?: (sale: Sale) => Promise<void>;
+  onUpdateSale: (sale: Sale) => Promise<void>;
   initialData?: Sale | null;
   onCancel: () => void;
   role?: string;
-  userProfile?: any;
-  stores?: any[];
+  userProfile?: UserProfile | null;
+  stores?: Store[];
   activeStoreId?: string;
 }
 
-type SaleCategory = 'kit' | 'chip_0' | 'portability' | 'chip_express';
+type SaleCategory = 'kit' | 'chip_0' | 'portabilidad' | 'chip_express';
 
 interface SaleItem {
   tempId: number;
   brand: Brand;
   price: string;
-  error?: string;
 }
 
-const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialData, onCancel, role, userProfile, stores, activeStoreId }) => {
-  // Construct local YYYY-MM-DD for default date to avoid UTC issues
-  const localDate = new Date();
-  const defaultDateStr = localDate.getFullYear() + '-' +
-    String(localDate.getMonth() + 1).padStart(2, '0') + '-' +
-    String(localDate.getDate()).padStart(2, '0');
-
-  // Helper to determine the current store prefix
-  const getCurrentPrefix = () => {
-    const store = stores?.find(s => s.id === activeStoreId);
-    return store?.prefix || ''; // Default to empty instead of 1053
-  };
-
-  // Helper to ensure branch-specific prefix format (Strict)
-  const formatInvoice = (val: string) => {
-    const prefix = getCurrentPrefix();
-    if (!prefix) return val.replace(/[^0-9]/g, '');
-
-    // Si el valor está vacío, no autocompletar nada por defecto
-    if (!val || val === `${prefix}-`) return '';
-
-    let clean = val.replace(/[^0-9-]/g, ''); 
-
-    // Si ya empieza con el prefijo correcto, mantenerlo
-    if (clean.startsWith(`${prefix}-`)) {
-      return clean;
-    }
-
-    // Si el usuario escribió el prefijo pero sin el guión, poner el guión
-    const digits = clean.replace(/\D/g, '');
-    if (digits.startsWith(prefix) && digits.length > prefix.length) {
-      return `${prefix}-` + digits.substring(prefix.length);
-    }
-
-    // Si escribió algo que no empieza con el prefijo, forzar el prefijo
-    return `${prefix}-` + digits;
-  };
-
-  // Helper to get available categories based on permissions
-  const getAvailableCategories = () => {
+const SalesForm: React.FC<SalesFormProps> = ({ 
+  onAddSale, 
+  onUpdateSale, 
+  initialData, 
+  onCancel, 
+  role, 
+  userProfile,
+  stores,
+  activeStoreId
+}) => {
+  // 1. Permisos de Categoría
+  const availableCategories: SaleCategory[] = React.useMemo(() => {
     const allowed: SaleCategory[] = [];
     
     // Check specific permissions (canSellKit defaults to true if not explicitly false)
     if (userProfile?.canSellKit !== false) allowed.push('kit');
     if (userProfile?.canSellChip0) allowed.push('chip_0');
-    if (userProfile?.canSellPortability) allowed.push('portability');
+    if (userProfile?.canSellPortability) allowed.push('portabilidad');
     if (userProfile?.canSellChipExpress) allowed.push('chip_express');
     
     // If absolutely no permissions are found, fallback to 'kit'
-    if (allowed.length === 0) return ['kit'];
-    
-    return allowed;
-  };
+    return allowed.length > 0 ? allowed : ['kit'];
+  }, [userProfile]);
 
-  const availableCategories = getAvailableCategories();
+  // 2. Estado del Formulario
+  const todayStr = new Date().toISOString().split('T')[0];
 
-  // Common fields for the whole ticket
   const [commonData, setCommonData] = useState({
-    invoiceNumber: initialData?.invoiceNumber ? initialData.invoiceNumber : '',
     customerName: initialData?.customerName || '',
-    date: initialData?.date || defaultDateStr,
+    date: initialData?.date || todayStr,
+    invoiceNumber: initialData?.invoiceNumber || '',
     category: (initialData?.category as SaleCategory) || (availableCategories.includes('kit') ? 'kit' : availableCategories[0] || 'kit'),
     iccid: initialData?.iccid || '',
-    phoneNumber: initialData?.phone_number || '',
-    portabilityScreenshot: initialData?.portability_screenshot || null
+    phoneNumber: initialData?.phoneNumber || '',
+    portabilityScreenshot: initialData?.portabilityScreenshot || null
   });
+
+  // Body scroll lock and refresh prevention
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    document.body.style.touchAction = 'none'; // Prevent pull-to-refresh
+    return () => {
+      document.body.style.overflow = 'unset';
+      document.body.style.touchAction = 'auto';
+    };
+  }, []);
 
   // List of devices in this ticket
   const [items, setItems] = useState<SaleItem[]>(
@@ -111,140 +88,81 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
   }, [availableCategories, commonData.category]);
 
   const [ticketImage, setTicketImage] = useState<string | null>(initialData?.ticketImage || null);
-  const [portabilityImage, setPortabilityImage] = useState<string | null>(initialData?.portability_screenshot || null);
+  const [portabilityImage, setPortabilityImage] = useState<string | null>(initialData?.portabilityScreenshot || null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedPortabilityFile, setSelectedPortabilityFile] = useState<File | null>(null);
   const [showFullImage, setShowFullImage] = useState(false); 
   const [showFullPortabilityImage, setShowFullPortabilityImage] = useState(false);
-
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
   const portabilityFileInputRef = useRef<HTMLInputElement>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const galleryInputRef = useRef<HTMLInputElement>(null);
 
-  // --- DRAFT PERSISTENCE ---
-  const clearDraft = () => localStorage.removeItem('sales_form_draft');
-
-  // Load draft on mount
+  // Draft persistence for new sales
   useEffect(() => {
     if (!initialData) {
       const draft = localStorage.getItem('sales_form_draft');
       if (draft) {
         try {
           const parsed = JSON.parse(draft);
-          // Simple validation before hydrating
-          if (parsed.commonData) setCommonData(parsed.commonData);
-          if (parsed.items && Array.isArray(parsed.items)) setItems(parsed.items);
+          setCommonData(prev => ({ ...prev, ...parsed.commonData }));
+          if (parsed.items) setItems(parsed.items);
           if (parsed.ticketImage) setTicketImage(parsed.ticketImage);
-        } catch (e) {
-          console.error("Error loading draft", e);
-        }
+        } catch (e) {}
       }
     }
-  }, []);
+  }, [initialData]);
 
-  // Save draft on change
   useEffect(() => {
     if (!initialData) {
-      const draft = { commonData, items, ticketImage };
-      const timeoutId = setTimeout(() => {
-        try {
-          localStorage.setItem('sales_form_draft', JSON.stringify(draft));
-        } catch (e) {
-          // Silent fail (usually quota exceeded for large images)
-        }
-      }, 500); // Debounce saves
-      return () => clearTimeout(timeoutId);
+      localStorage.setItem('sales_form_draft', JSON.stringify({ commonData, items, ticketImage }));
     }
   }, [commonData, items, ticketImage, initialData]);
-  // -------------------------
 
-  const calculateTotal = () => {
-    return items.reduce((sum, item) => {
-      const val = parseFloat(item.price);
-      return sum + (isNaN(val) ? 0 : val);
-    }, 0);
-  };
+  const clearDraft = () => localStorage.removeItem('sales_form_draft');
 
-  const validatePrice = (value: string): { isValid: boolean, error?: string } => {
-    if (!value) return { isValid: false, error: "Requerido" };
-    const validFormat = /^\d+(\.\d{1,2})?$/;
-    const numericValue = parseFloat(value);
-    if (isNaN(numericValue) || numericValue <= 0) return { isValid: false, error: "> 0" };
-    if (!validFormat.test(value)) return { isValid: false, error: "Formato inválido" };
-    return { isValid: true };
-  };
+  const processTicketAI = async (base64: string) => {
+    setIsAnalyzing(true);
+    try {
+      const activeStore = stores?.find(s => s.id === (activeStoreId || userProfile?.storeId));
+      const result = await analyzeTicketImage(
+        base64, 
+        activeStore?.name || 'Sucursal', 
+        'Coppel', 
+        commonData.category
+      );
 
-  const handleCommonChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
+      if (result) {
+        // Para Coppel, solo tomamos los últimos 6 dígitos del número de factura
+        let cleanInvoice = result.invoiceNumber || '';
+        if (cleanInvoice.length > 6 && (activeStore?.type === 'Coppel' || getCurrentPrefix() === '1053')) {
+          cleanInvoice = cleanInvoice.slice(-6);
+        }
 
-    // Validation: Prefix dynamic logic
-    if (name === 'invoiceNumber') {
-      const prefix = getCurrentPrefix();
-      if (!prefix) {
-        setCommonData(prev => ({ ...prev, [name]: value.replace(/[^0-9]/g, '') }));
-        return;
-      }
+        setCommonData(prev => ({
+          ...prev,
+          customerName: result.customerName || prev.customerName,
+          invoiceNumber: cleanInvoice || prev.invoiceNumber,
+          date: result.date || prev.date
+        }));
 
-      // Si borra todo, dejarlo vacío
-      if (!value) {
-        setCommonData(prev => ({ ...prev, [name]: '' }));
-        return;
-      }
-
-      let inputVal = value;
-
-      // Si empieza a escribir y no tiene el prefijo, ponérselo
-      if (!inputVal.startsWith(`${prefix}-`)) {
-        const digits = inputVal.replace(/\D/g, '');
-        if (digits.startsWith(prefix)) {
-          inputVal = `${prefix}-` + digits.slice(prefix.length);
-        } else {
-          inputVal = `${prefix}-` + digits;
+        if (result.items && result.items.length > 0) {
+          setItems(result.items.map((it: any, idx: number) => ({
+            tempId: Date.now() + idx,
+            brand: it.brand,
+            price: it.price.toString()
+          })));
         }
       }
-
-      // Limitar a 6 dígitos después del guión
-      const parts = inputVal.split('-');
-      let suffix = (parts[1] || '').replace(/\D/g, '');
-      if (suffix.length > 6) suffix = suffix.slice(0, 6);
-
-      setCommonData(prev => ({ ...prev, [name]: `${prefix}-` + suffix }));
-      return;
+    } catch (err) {
+      console.error("AI Analysis error:", err);
+    } finally {
+      setIsAnalyzing(false);
     }
-
-    setCommonData(prev => ({ ...prev, [name]: value }));
-  };
-
-  // Item management
-  const handleAddItem = () => {
-    setItems(prev => [
-      ...prev,
-      { tempId: Date.now(), brand: Brand.SAMSUNG, price: '' }
-    ]);
-  };
-
-  const handleRemoveItem = (tempId: number) => {
-    if (items.length > 1) {
-      setItems(prev => prev.filter(i => i.tempId !== tempId));
-    }
-  };
-
-  const handleItemChange = (tempId: number, field: keyof SaleItem, value: any) => {
-    setItems(prev => prev.map(item => {
-      if (item.tempId !== tempId) return item;
-
-      const updated = { ...item, [field]: value };
-
-      // Clear error if typing price
-      if (field === 'price' && item.error) {
-        updated.error = undefined;
-      }
-      return updated;
-    }));
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -252,885 +170,609 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
     if (file) {
       setSelectedFile(file);
       const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = (event) => {
-        const img = new Image();
-        img.src = event.target?.result as string;
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          let width = img.width;
-          let height = img.height;
-          const maxDimension = 1000;
-          if (width > height) {
-            if (width > maxDimension) {
-              height = Math.round((height * maxDimension) / width);
-              width = maxDimension;
-            }
-          } else {
-            if (height > maxDimension) {
-              width = Math.round((width * maxDimension) / height);
-              height = maxDimension;
-            }
-          }
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx?.drawImage(img, 0, 0, width, height);
-          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
-          setTicketImage(compressedBase64);
-        };
+      reader.onloadend = async () => {
+        const base64 = reader.result as string;
+        setTicketImage(base64);
+        
+        // Solo auto-escanear si es Kit o Chip 0
+        if (commonData.category === 'kit' || commonData.category === 'chip_0') {
+          await processTicketAI(base64);
+        }
       };
+      reader.readAsDataURL(file);
     }
   };
 
-  const handlePortabilityFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePortabilityFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setSelectedPortabilityFile(file);
       const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = (event) => {
-        const img = new Image();
-        img.src = event.target?.result as string;
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          let width = img.width;
-          let height = img.height;
-          const maxDimension = 1000;
-          if (width > height) {
-            if (width > maxDimension) {
-              height = Math.round((height * maxDimension) / width);
-              width = maxDimension;
-            }
-          } else {
-            if (height > maxDimension) {
-              width = Math.round((width * maxDimension) / height);
-              height = maxDimension;
-            }
-          }
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx?.drawImage(img, 0, 0, width, height);
-          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
-          setPortabilityImage(compressedBase64);
-        };
+      reader.onloadend = () => {
+        setPortabilityImage(reader.result as string);
       };
+      reader.readAsDataURL(file);
     }
   };
 
-  const handleAnalyzeTicket = async (base64Image: string) => {
-    setIsAnalyzing(true);
-    try {
-      // Obtener contexto de tienda para la IA
-      const storeIdToUse = activeStoreId || userProfile?.storeId;
-      const storeData = stores?.find((s: any) => s.id === storeIdToUse);
-      const storeName = storeData?.name || 'Sucursal';
-      const chainName = storeData?.type || 'Coppel';
+  const handleAddItem = () => {
+    setItems([...items, { tempId: Date.now(), brand: Brand.OTRO, price: '' }]);
+  };
 
-      const result = await analyzeTicketImage(base64Image, storeName, chainName, commonData.category);
-
-      // Update fields if we got results
-      if (result) {
-        setCommonData(prev => ({
-          ...prev,
-          invoiceNumber: result.invoiceNumber ? formatInvoice(result.invoiceNumber) : prev.invoiceNumber,
-          date: result.date || prev.date,
-          customerName: result.customerName ? result.customerName.toUpperCase() : prev.customerName
-        }));
-
-        if (result.items && result.items.length > 0) {
-          setItems(result.items.map((item, index) => ({
-            tempId: Date.now() + index,
-            brand: item.brand,
-            price: item.price !== undefined ? item.price.toString() : '',
-            error: undefined
-          })));
-          // alert("✅ ¡Datos extraídos con éxito!\n\nVerifica que la información sea correcta antes de guardar."); // REMOVED
-        } else {
-          console.warn("La IA leyó el ticket pero no encontró equipos móviles claros.");
-          // alert("⚠️ La IA leyó el ticket pero no encontró equipos móviles claros.\n\nVerifica la foto o llena los datos manualmente."); // REMOVED
-        }
-      }
-    } catch (error: any) {
-      console.error("Error analyzing ticket:", error);
-      alert(`⚠️ No se pudo analizar el ticket.\n\nDetalle: ${error.message || "Error desconocido"}`);
-    } finally {
-      setIsAnalyzing(false);
+  const handleRemoveItem = (tempId: number) => {
+    if (items.length > 1) {
+      setItems(items.filter(i => i.tempId !== tempId));
     }
   };
+
+  const handleItemChange = (tempId: number, field: keyof SaleItem, value: any) => {
+    setItems(items.map(i => i.tempId === tempId ? { ...i, [field]: value } : i));
+  };
+
+  // Helper to get prefix for current store
+  const getCurrentPrefix = () => {
+    const storeIdToUse = activeStoreId || userProfile?.storeId;
+    const store = stores?.find(s => s.id === storeIdToUse);
+    return store?.prefix || '1053'; // Default to 1053
+  };
+
+  const totalInvoice = items.reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
 
-    // Validate Common Fields
-    const prefix = getCurrentPrefix();
-    const invoiceValue = commonData.invoiceNumber;
-    const suffix = invoiceValue.includes('-') ? invoiceValue.split('-')[1] : '';
-
-    // Solo el Kit (Equipos) requiere Factura y Nombre del cliente estrictamente
-    const isKit = commonData.category === 'kit';
-    
-    if (isKit) {
-      if (!invoiceValue.trim() || !commonData.customerName.trim()) {
-        alert("⚠️ Por favor complete los campos obligatorios: Número de Factura y Nombre del Cliente.");
-        return;
-      }
-
-      if (prefix && suffix.length !== 6) {
-        alert(`⚠️ El número de factura debe tener exactamente 6 dígitos después del prefijo ${prefix}.\nEjemplo: ${prefix}-123456`);
-        return;
-      }
+    // VALIDATIONS
+    if (commonData.category === 'kit') {
+      if (!commonData.customerName.trim()) { alert("❌ El nombre del cliente es obligatorio."); return; }
+      if (!commonData.invoiceNumber.trim()) { alert("❌ El número de factura es obligatorio."); return; }
+      if (!ticketImage && !initialData) { alert("❌ La foto del ticket es obligatoria."); return; }
     }
 
-    // Para Chip Express, el nombre del cliente puede ser opcional o genérico
-    if (commonData.category === 'chip_express' && !commonData.phoneNumber) {
-      alert("⚠️ Por favor ingresa el número de teléfono para la venta Express.");
+    if (commonData.category === 'chip_0') {
+      if (commonData.iccid.length !== 19) { alert("❌ El ICCID debe tener 19 dígitos."); return; }
+    }
+
+    if (commonData.category === 'portabilidad') {
+      if (!portabilityImage) { alert("❌ La captura de portabilidad es obligatoria."); return; }
+      if (commonData.iccid.length !== 19) { alert("❌ El ICCID debe tener 19 dígitos."); return; }
+      if (!commonData.phoneNumber) { alert("❌ El número de teléfono es obligatorio."); return; }
+    }
+
+    if (commonData.category === 'chip_express') {
+      if (commonData.iccid.length !== 19) { alert("❌ El ICCID debe tener 19 dígitos."); return; }
+      if (!commonData.phoneNumber) { alert("❌ El número de teléfono es obligatorio."); return; }
+    }
+
+    const validatedItems = items.filter(i => i.price && parseFloat(i.price) >= 0);
+    if (validatedItems.length === 0 && (commonData.category === 'kit' || commonData.category === 'chip_0')) {
+      alert("❌ Debes agregar al menos un artículo con precio válido.");
       return;
-    }
-
-    // Validate Items (Only for Kit and Chip 0)
-    let allValid = true;
-    const isPriceRequired = commonData.category === 'kit';
-    
-    const validatedItems = items.map(item => {
-      if (!isPriceRequired) return { ...item, error: undefined };
-      
-      const validation = validatePrice(item.price);
-      if (!validation.isValid) {
-        allValid = false;
-        return { ...item, error: validation.error };
-      }
-      return item;
-    });
-
-    if (!allValid && isPriceRequired) {
-      setItems(validatedItems);
-      alert("Por favor ingrese un precio válido para todos los equipos.");
-      return;
-    }
-
-    // Photo check... (Solo obligatorio para Kits, opcional para chips si es Admin o si el usuario no tiene la restricción)
-    const isPhotoRequired = commonData.category === 'kit' && role !== 'admin';
-    if (!ticketImage && isPhotoRequired) {
-      alert("⚠️ La foto del ticket es obligatoria para concluir la venta de un Kit.");
-      return;
-    }
-
-    // DATE CHECK (Alert if not today)
-    const now = new Date();
-    const todayStr = now.getFullYear() + '-' +
-      String(now.getMonth() + 1).padStart(2, '0') + '-' +
-      String(now.getDate()).padStart(2, '0');
-
-    if (commonData.date !== todayStr) {
-      const confirmDate = window.confirm(
-        `⚠️ ATENCIÓN: La fecha de la venta (${commonData.date}) NO es hoy (${todayStr}).\n\n` +
-        `¿Estás seguro de que la fecha es correcta?`
-      );
-      if (!confirmDate) return;
     }
 
     setIsSubmitting(true);
 
-    // --- DUPLICATE CHECK ---
     try {
-      // Check if invoice exists (exclude current ID if editing)
-      let query = supabase.from('sales').select('id, customer_name').eq('invoice_number', commonData.invoiceNumber).limit(1);
-
-      if (initialData) {
-        query = query.neq('id', initialData.id);
-      }
-
-      const { data: existing, error: checkError } = await query;
-
-      if (checkError) throw checkError;
-
-      if (existing && existing.length > 0) {
-        const confirm = window.confirm(
-          `⚠️ ATENCIÓN: La factura #${commonData.invoiceNumber} ya existe (Cliente: ${existing[0].customer_name}).\n\n` +
-          `¿Es parte de una venta múltiple con varios equipos?\n` +
-          `[Aceptar] SÍ, agregar a la factura existente.\n` +
-          `[Cancelar] NO, corregir el número de factura.`
-        );
-
-        if (!confirm) {
-          setIsSubmitting(false);
-          return;
-        }
-      }
-    } catch (err) {
-      console.warn("Could not verify duplicates:", err);
-    }
-    // -----------------------
-
-    // REQUIRED FIELD VALIDATION
-    if (commonData.category === 'portability' && !portabilityImage) {
-      alert("❌ La captura de portabilidad es obligatoria para esta categoría.");
-      return;
-    }
-
-    if ((commonData.category === 'portability' || commonData.category === 'chip_express' || commonData.category === 'chip_0') && commonData.iccid.length !== 19) {
-      alert("❌ El ICCID debe tener exactamente 19 números.");
-      return;
-    }
-
-    let finalImageUrl: string | undefined = ticketImage || undefined;
-    let finalPortabilityUrl: string | undefined = portabilityImage || undefined;
-
-    // 📸 NEW ROBUST UPLOAD LOGIC (Supabase + Background Drive Sync)
-    if (ticketImage && ticketImage.startsWith('data:')) {
-      try {
+      // 1. Upload Ticket Image if changed
+      let finalTicketUrl = ticketImage;
+      if (selectedFile) {
         const storeIdToUse = activeStoreId || userProfile?.storeId;
-        const storeData = stores?.find((s: any) => s.id === storeIdToUse);
-        const storeName = storeData?.name || 'Sucursal Desconocida';
-        const chainName = storeData?.type || 'Coppel';
-        const filename = `Ticket Factura #${commonData.invoiceNumber} - ${commonData.customerName.toUpperCase()}`;
+        const storeName = stores?.find(s => s.id === storeIdToUse)?.name || 'Tienda';
+        const chainName = stores?.find(s => s.id === storeIdToUse)?.type || 'General';
         
-        // Month Formatting: Only Name (e.g. "Abril")
-        const [y, m, d] = commonData.date.split('-');
-        const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
-        const monthIndex = parseInt(m) - 1;
-        const formattedMonth = monthNames[monthIndex];
-        
-        // Determine sub-folder based on category
-        let specificFolder: string = 'Ventas Kit';
-        if (commonData.category === 'chip_0') specificFolder = 'Chip Cero';
-        if (commonData.category === 'portability') specificFolder = 'Portabilidad';
-        if (commonData.category === 'chip_express') specificFolder = 'Ventas Express';
+        const folder = commonData.category === 'kit' ? 'Ventas Kit' : 
+                      commonData.category === 'chip_0' ? 'Chip Cero' : 
+                      commonData.category === 'portabilidad' ? 'Portabilidad' : 'Ventas Express';
 
-        finalImageUrl = await smartImageUpload(
-          ticketImage, 
-          filename, 
-          commonData.date, 
-          storeName, 
-          'sales', 
-          (userProfile?.fullName || 'Vendedor').trim(), // Trim to avoid duplicates
+        finalTicketUrl = await smartImageUpload(
+          ticketImage!,
+          `Ticket - ${commonData.invoiceNumber || 'SinFactura'} - ${commonData.customerName || 'Express'}`,
+          commonData.date,
+          storeName,
+          (commonData.category === 'portabilidad' ? 'portability' : 'sales'),
+          userProfile?.fullName || 'Vendedor',
           chainName,
-          specificFolder // New parameter for sub-folder
+          folder
         );
-      } catch (error) {
-        console.error("Error crítico en guardado de foto:", error);
-        alert("⚠️ No se pudo guardar la foto del ticket. Verifica tu conexión.");
-        setIsSubmitting(false);
-        return;
       }
-    }
 
-    // Portability Screenshot Upload
-    if (commonData.category === 'portability' && portabilityImage && portabilityImage.startsWith('data:')) {
-      try {
+      // 2. Upload Portability Screenshot if changed
+      let finalPortabilityUrl = portabilityImage;
+      if (selectedPortabilityFile) {
         const storeIdToUse = activeStoreId || userProfile?.storeId;
-        const storeData = stores?.find((s: any) => s.id === storeIdToUse);
-        const storeName = storeData?.name || 'Sucursal Desconocida';
-        const chainName = storeData?.type || 'Coppel';
-        const filename = `Portabilidad - ${commonData.phoneNumber} - ${commonData.customerName.toUpperCase()}`;
-        
+        const storeName = stores?.find(s => s.id === storeIdToUse)?.name || 'Tienda';
+        const chainName = stores?.find(s => s.id === storeIdToUse)?.type || 'General';
+
         finalPortabilityUrl = await smartImageUpload(
-          portabilityImage, 
-          filename, 
-          commonData.date, 
-          storeName, 
-          'portability', 
-          (userProfile?.fullName || 'Vendedor').trim(), 
+          portabilityImage!,
+          `Porta - ${commonData.phoneNumber} - ${commonData.customerName || 'Cliente'}`,
+          commonData.date,
+          storeName,
+          'portability',
+          userProfile?.fullName || 'Vendedor',
           chainName,
-          'Portabilidad' // Explicitly Portabilidad folder
+          'Portabilidad'
         );
-      } catch (error) {
-        console.error("Error en subida de screenshot:", error);
-        alert("⚠️ No se pudo guardar la captura de portabilidad.");
-        setIsSubmitting(false);
-        return;
       }
-    }
 
-    // Submit logic
-    try {
-      if (initialData && onUpdateSale) {
-        // EDIT MODE: Update single item
+      // 3. Construct and Submit Data
+      if (initialData) {
+        // UPDATE MODE
         await onUpdateSale({
-          id: initialData.id,
-          invoiceNumber: (() => {
-            const prefix = getCurrentPrefix();
-            let c = commonData.invoiceNumber.replace(/[^0-9]/g, '');
-            if (c.startsWith(prefix) && c.length > prefix.length) c = c.substring(prefix.length);
-            return `#${prefix}-${c}`;
-          })(),
-          customerName: commonData.customerName.toUpperCase(),
+          ...initialData,
+          customerName: commonData.category === 'chip_express' ? "VENTA EXPRESS" : commonData.customerName.toUpperCase(),
+          invoiceNumber: (commonData.category === 'chip_express' || commonData.category === 'portabilidad') ? "" : commonData.invoiceNumber,
           date: commonData.date,
-          price: (commonData.category === 'portability' || commonData.category === 'chip_express') ? 0 : parseFloat(items[0].price),
-          brand: items[0].brand,
-          ticketImage: finalImageUrl || initialData.ticketImage,
-          createdBy: initialData.createdBy,
-          storeId: initialData.storeId,
           category: commonData.category,
-          iccid: (commonData.category !== 'kit') ? commonData.iccid : null,
-          phone_number: (commonData.category === 'portability' || commonData.category === 'chip_express') ? commonData.phoneNumber : null,
-          portability_screenshot: commonData.category === 'portability' ? finalPortabilityUrl : null
+          iccid: commonData.iccid || null,
+          phoneNumber: commonData.phoneNumber || null,
+          portabilityScreenshot: finalPortabilityUrl || null,
+          ticketImage: finalTicketUrl || undefined,
+          brand: validatedItems[0]?.brand || Brand.OTRO,
+          price: (commonData.category === 'portabilidad' || commonData.category === 'chip_express') ? 0 : (parseFloat(validatedItems[0]?.price) || 0)
         });
       } else {
-        // CREATE MODE: Submit all items
-        // We process sequentially or parallel. Parallel is fine.
-        await Promise.all(validatedItems.map(item => {
+        // CREATE MODE
+        // Handle multiple items for Kit, or single for others
+        const entries = commonData.category === 'kit' ? validatedItems : [ { brand: items[0].brand, price: items[0].price } ];
+        
+        await Promise.all(entries.map(item => {
           return onAddSale({
-            invoiceNumber: (() => {
-              const prefix = getCurrentPrefix();
-              let c = commonData.invoiceNumber.replace(/[^0-9]/g, '');
-              if (c.startsWith(prefix) && c.length > prefix.length) c = c.substring(prefix.length);
-              return `#${prefix}-${c}`;
-            })(),
-            customerName: commonData.customerName.toUpperCase(),
+            customerName: commonData.category === 'chip_express' ? "VENTA EXPRESS" : commonData.customerName.toUpperCase(),
+            invoiceNumber: (commonData.category === 'chip_express' || commonData.category === 'portabilidad') ? "" : commonData.invoiceNumber,
             date: commonData.date,
-            price: (commonData.category === 'portability' || commonData.category === 'chip_express') ? 0 : parseFloat(item.price),
-            brand: item.brand,
-            ticketImage: finalImageUrl,
             category: commonData.category,
-            iccid: (commonData.category !== 'kit') ? commonData.iccid : null,
-            phone_number: (commonData.category === 'portability' || commonData.category === 'chip_express') ? commonData.phoneNumber : null,
-            portability_screenshot: commonData.category === 'portability' ? finalPortabilityUrl : null
+            iccid: commonData.iccid || null,
+            phoneNumber: commonData.phoneNumber || null,
+            portabilityScreenshot: finalPortabilityUrl || null,
+            ticketImage: finalTicketUrl || undefined,
+            brand: item.brand as Brand,
+            price: (commonData.category === 'portabilidad' || commonData.category === 'chip_express') ? 0 : (parseFloat(item.price as string) || 0)
           });
         }));
-        clearDraft(); // Success! Clear saved state
+        clearDraft();
       }
-    } catch (err) {
-      console.error(err);
+      onCancel();
+    } catch (err: any) {
+      console.error("Submission error:", err);
+      alert("Error al guardar: " + err.message);
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="space-y-6 max-w-3xl mx-auto">
-
-      
-      <div className="bg-white rounded-xl shadow-lg p-6 border border-slate-100">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-          {initialData ? <Edit2 className="w-6 h-6 text-blue-600" /> : <Plus className="w-6 h-6 text-blue-600" />}
-          {initialData ? 'Editar Venta' : 'Nueva Venta'}
-        </h2>
-
-        <button onClick={() => { clearDraft(); onCancel(); }} className="text-slate-400 hover:text-slate-600">
-          <X className="w-6 h-6" />
-        </button>
-      </div>
-
-      <div className="flex flex-wrap gap-2 mb-8 bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
-        {availableCategories.includes('kit') && (
-          <button 
-            type="button"
-            onClick={() => setCommonData(prev => ({ ...prev, category: 'kit' }))}
-            className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-xs font-black uppercase transition-all ${commonData.category === 'kit' ? 'bg-white text-blue-600 shadow-sm border border-blue-100' : 'text-slate-400 hover:text-slate-600'}`}
-          >
-            <Smartphone className="w-4 h-4" />
-            Equipos Kit
+    <div className="fixed inset-0 z-50 flex items-start md:items-center justify-center p-0 md:p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto" style={{ overscrollBehavior: 'contain', touchAction: 'pan-y' }}>
+      <div className="bg-white rounded-t-[2.5rem] md:rounded-3xl shadow-2xl w-full max-w-2xl overflow-y-auto min-h-[90vh] md:min-h-0 md:max-h-[95vh] animate-in slide-in-from-bottom-10 md:zoom-in-95 duration-300">
+        {/* Header */}
+        <div className="bg-slate-900 p-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-blue-600 rounded-xl shadow-lg shadow-blue-500/20">
+              <Save className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-white">{initialData ? 'Editar Registro' : 'Nuevo Registro de Venta'}</h2>
+              <p className="text-blue-300 text-xs font-medium">Sucursal: {stores?.find(s => s.id === (activeStoreId || userProfile?.storeId))?.name || 'Cargando...'}</p>
+            </div>
+          </div>
+          <button onClick={onCancel} className="p-2 hover:bg-white/10 rounded-full text-slate-400 hover:text-white transition-colors">
+            <X className="w-6 h-6" />
           </button>
-        )}
-        {availableCategories.includes('chip_0') && (
-          <button 
-            type="button"
-            onClick={() => {
-              setCommonData(prev => ({ ...prev, category: 'chip_0' }));
-              setItems(prev => [{ ...prev[0], brand: Brand.OTRO }]);
-            }}
-            className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-xs font-black uppercase transition-all ${commonData.category === 'chip_0' ? 'bg-white text-purple-600 shadow-sm border border-purple-100' : 'text-slate-400 hover:text-slate-600'}`}
-          >
-            <Cpu className="w-4 h-4" />
-            Chip 0
-          </button>
-        )}
-        {availableCategories.includes('portability') && (
-          <button 
-            type="button"
-            onClick={() => {
-              setCommonData(prev => ({ ...prev, category: 'portability' }));
-              setItems(prev => [{ ...prev[0], brand: Brand.OTRO }]);
-            }}
-            className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-xs font-black uppercase transition-all ${commonData.category === 'portability' ? 'bg-white text-rose-600 shadow-sm border border-rose-100' : 'text-slate-400 hover:text-slate-600'}`}
-          >
-            <Share2 className="w-4 h-4" />
-            Portabilidad
-          </button>
-        )}
-        {availableCategories.includes('chip_express') && (
-          <button 
-            type="button"
-            onClick={() => {
-              setCommonData(prev => ({ ...prev, category: 'chip_express' }));
-              setItems(prev => [{ ...prev[0], brand: Brand.OTRO }]);
-            }}
-            className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-xs font-black uppercase transition-all ${commonData.category === 'chip_express' ? 'bg-white text-orange-600 shadow-sm border border-orange-100' : 'text-slate-400 hover:text-slate-600'}`}
-          >
-            <Phone className="w-4 h-4" />
-            Chip Express
-          </button>
-        )}
-      </div>
+        </div>
 
-      <form onSubmit={handleSubmit} className="space-y-8">
-
-        {/* SECTION 1: COMMON DATA */}
-        <div className="bg-slate-50 p-5 rounded-xl border border-slate-200">
-          <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2">
-            <Smartphone className="w-4 h-4" />
-            Datos Generales de la Venta
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {(commonData.category === 'kit' || commonData.category === 'chip_0') && (
-              <div className="space-y-1">
-                <label className="block text-sm font-medium text-slate-700">
-                  Número de Factura <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  name="invoiceNumber"
-                  value={commonData.invoiceNumber}
-                  onChange={handleCommonChange}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-900"
-                  placeholder="1053-XXXXXX"
-                  required
-                />
-              </div>
+        <form onSubmit={handleSubmit} className="p-6 md:p-8 space-y-6">
+          {/* Category Selector */}
+          <div className="bg-slate-50 p-1.5 rounded-2xl flex flex-wrap gap-1 border border-slate-200">
+            {availableCategories.includes('kit') && (
+              <button 
+                type="button"
+                onClick={() => setCommonData(prev => ({ ...prev, category: 'kit' }))}
+                className={`flex-1 min-w-[70px] flex items-center justify-center gap-1.5 px-3 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${commonData.category === 'kit' ? 'bg-white text-blue-600 shadow-sm border border-blue-100' : 'text-slate-400 hover:text-slate-600'}`}
+              >
+                <Smartphone className="w-3.5 h-3.5" />
+                Kit
+              </button>
             )}
+            {availableCategories.includes('chip_0') && (
+              <button 
+                type="button"
+                onClick={() => setCommonData(prev => ({ ...prev, category: 'chip_0' }))}
+                className={`flex-1 min-w-[70px] flex items-center justify-center gap-1.5 px-3 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${commonData.category === 'chip_0' ? 'bg-white text-emerald-600 shadow-sm border border-emerald-100' : 'text-slate-400 hover:text-slate-600'}`}
+              >
+                <Cpu className="w-3.5 h-3.5" />
+                Cero
+              </button>
+            )}
+            {availableCategories.includes('portabilidad') && (
+              <button 
+                type="button"
+                onClick={() => setCommonData(prev => ({ ...prev, category: 'portabilidad' }))}
+                className={`flex-1 min-w-[70px] flex items-center justify-center gap-1.5 px-3 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${commonData.category === 'portabilidad' ? 'bg-white text-rose-600 shadow-sm border border-rose-100' : 'text-slate-400 hover:text-slate-600'}`}
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                Porta
+              </button>
+            )}
+            {availableCategories.includes('chip_express') && (
+              <button 
+                type="button"
+                onClick={() => setCommonData(prev => ({ ...prev, category: 'chip_express' }))}
+                className={`flex-1 min-w-[70px] flex items-center justify-center gap-1.5 px-3 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${commonData.category === 'chip_express' ? 'bg-white text-orange-600 shadow-sm border border-orange-100' : 'text-slate-400 hover:text-slate-600'}`}
+              >
+                <Cpu className="w-3.5 h-3.5" />
+                Express
+              </button>
+            )}
+          </div>
 
-            {(commonData.category === 'portability' || commonData.category === 'chip_express' || commonData.category === 'chip_0') && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-6">
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-slate-700">
-                  Número de ICCID <span className="text-red-500">*</span>
+                <label className="block text-sm font-black text-slate-700 uppercase tracking-tighter flex justify-between items-center">
+                  <span>Fecha de Venta <span className="text-red-500">*</span></span>
+                  {userProfile?.role !== 'admin' && (
+                    <span className="text-[9px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded font-bold uppercase">Automático</span>
+                  )}
                 </label>
                 <div className="relative group">
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                    <Smartphone className="w-4 h-4" />
-                  </div>
+                  <Calendar className="absolute left-4 top-3.5 w-5 h-5 text-slate-400 group-focus-within:text-blue-600 transition-colors" />
                   <input
-                    type="text"
-                    maxLength={19}
-                    value={commonData.iccid}
-                    onChange={(e) => setCommonData(prev => ({ ...prev, iccid: e.target.value.replace(/\D/g, '') }))}
-                    className="w-full pl-9 pr-12 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-900 font-mono tracking-wider text-sm shadow-sm transition-all"
-                    placeholder="Ingrese ICCID..."
+                    type="date"
                     required
+                    value={commonData.date}
+                    disabled={userProfile?.role !== 'admin'}
+                    onChange={(e) => setCommonData(prev => ({ ...prev, date: e.target.value }))}
+                    className={`w-full pl-12 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-100 focus:border-blue-600 outline-none transition-all font-medium text-slate-800 ${userProfile?.role !== 'admin' ? 'bg-slate-50 cursor-not-allowed opacity-70' : 'bg-white'}`}
                   />
-                  <button
-                    type="button"
-                    onClick={() => setIsScanning(true)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg transition-all border border-blue-100 shadow-sm active:scale-95"
-                    title="Escanear Código de Barras"
-                  >
-                    <Barcode className="w-6 h-6" />
-                  </button>
                 </div>
               </div>
-            )}
 
-            {commonData.category !== 'chip_express' && (
-              <div className="space-y-1">
-                <label className="block text-sm font-medium text-slate-700">
-                  Nombre del Cliente <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  name="customerName"
-                  value={commonData.customerName}
-                  onChange={(e) => setCommonData(prev => ({ ...prev, customerName: e.target.value }))}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-900 uppercase placeholder:normal-case"
-                  placeholder="Nombre completo"
-                  required
-                />
-              </div>
-            )}
-
-            {(commonData.category === 'portability' || commonData.category === 'chip_express') && (
-              <div className="space-y-1">
-                <label className="block text-sm font-medium text-slate-700">
-                  Número de Teléfono <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="tel"
-                  maxLength={10}
-                  value={commonData.phoneNumber}
-                  onChange={(e) => setCommonData(prev => ({ ...prev, phoneNumber: e.target.value.replace(/\D/g, '') }))}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-900"
-                  placeholder="10 dígitos"
-                  required
-                />
-              </div>
-            )}
-
-            <div className="space-y-1">
-              <label className="block text-sm font-medium text-slate-700">
-                Fecha <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="date"
-                name="date"
-                value={commonData.date}
-                onChange={handleCommonChange}
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-900"
-                required
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* SECTION 2: ITEMS LIST (Only for Kit and Chip 0) */}
-        {(commonData.category === 'kit' || commonData.category === 'chip_0') && (
-          <div>
-            <div className="flex justify-between items-end mb-2">
-              <label className="block text-sm font-bold text-slate-700">Equipos Vendidos ({items.length})</label>
-              <div className="text-sm text-slate-500 font-medium bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
-                Total Factura: <span className="text-slate-900 font-bold">${calculateTotal().toLocaleString('es-MX', { minimumFractionDigits: 2 })}</span>
-              </div>
-            </div>
-
-            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-              {items.map((item, index) => (
-                <div
-                  key={item.tempId}
-                  className={`p-4 flex flex-col md:flex-row gap-4 items-start md:items-center bg-white animate-in fade-in slide-in-from-left-2 duration-300 ${index !== 0 ? 'border-t border-slate-100' : ''}`}
-                >
-                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-100 text-slate-500 text-sm font-bold shrink-0">
-                    {index + 1}
+              {commonData.category !== 'chip_express' && (
+                <div className="space-y-1">
+                  <label className="block text-sm font-black text-slate-700 uppercase tracking-tighter">
+                    Nombre del Cliente <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative group">
+                    <User className="absolute left-4 top-3.5 w-5 h-5 text-slate-400 group-focus-within:text-blue-600 transition-colors" />
+                    <input
+                      type="text"
+                      placeholder="JUAN PEREZ"
+                      value={commonData.customerName}
+                      onChange={(e) => setCommonData(prev => ({ ...prev, customerName: e.target.value.toUpperCase() }))}
+                      className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-100 focus:border-blue-600 outline-none transition-all font-bold text-slate-800 placeholder:text-slate-300"
+                    />
                   </div>
+                </div>
+              )}
 
-                  <div className="flex-1 w-full grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Brand Selector */}
-                    <div className="relative">
-                      <label className="block text-xs font-bold text-slate-500 mb-1 md:hidden">Marca</label>
-                      <select
-                        value={item.brand}
-                        onChange={(e) => handleItemChange(item.tempId, 'brand', e.target.value)}
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-900 cursor-pointer text-sm"
-                      >
-                        {Object.values(Brand).map((brand) => (
-                          <option key={brand} value={brand}>
-                            {BRAND_CONFIGS[brand].label}
-                          </option>
-                        ))}
-                      </select>
-                      {/* Brand Color Indicator */}
-                      <div
-                        className={`absolute right-8 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full ${BRAND_CONFIGS[item.brand].colorClass.split(' ')[0]} md:mt-0 mt-3`}
-                        style={{ backgroundColor: BRAND_CONFIGS[item.brand].hex }}
-                      />
-                    </div>
-
-                    {/* Price Input */}
-                    <div className="relative">
-                      <label className="block text-xs font-bold text-slate-500 mb-1 md:hidden">
-                        Precio <span className="text-red-500">*</span>
-                      </label>
-                      <span className="absolute left-3 top-2 md:top-2 text-slate-500 text-sm hidden md:block">$</span>
-                      <span className="absolute left-3 top-8 text-slate-500 text-sm md:hidden">$</span>
-                      <input
-                        type="number"
-                        value={item.price}
-                        onChange={(e) => handleItemChange(item.tempId, 'price', e.target.value)}
-                        onFocus={(e) => e.target.select()}
-                        className={`w-full pl-7 pr-3 py-2 border rounded-lg focus:ring-2 outline-none text-sm transition-all bg-white text-slate-900 placeholder:text-slate-400 ${item.error
-                          ? 'border-red-500 bg-red-50 focus:ring-red-200'
-                          : 'border-slate-300 focus:ring-blue-500'
-                          }`}
-                        placeholder="0.00"
-                        step="0.01"
-                        required
-                      />
-                    </div>
+              {commonData.category !== 'chip_express' && commonData.category !== 'portabilidad' && (
+                <div className="space-y-1">
+                  <label className="block text-sm font-black text-slate-700 flex justify-between items-center uppercase tracking-tighter">
+                    <span>Número de Factura <span className="text-red-500">*</span></span>
+                    <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-md font-bold tracking-widest">{getCurrentPrefix()}</span>
+                  </label>
+                  <div className="relative group">
+                    <Package className="absolute left-4 top-3.5 w-5 h-5 text-slate-400 group-focus-within:text-blue-600 transition-colors" />
+                    <input
+                      type="text"
+                      required
+                      placeholder="123456"
+                      value={commonData.invoiceNumber}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, '');
+                        const isCoppel = stores?.find(s => s.id === (activeStoreId || userProfile?.storeId))?.type === 'Coppel' || getCurrentPrefix() === '1053';
+                        setCommonData(prev => ({ 
+                          ...prev, 
+                          invoiceNumber: val.substring(0, isCoppel ? 6 : 10) 
+                        }));
+                      }}
+                      className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-100 focus:border-blue-600 outline-none transition-all font-mono font-bold text-slate-800 placeholder:text-slate-300"
+                    />
                   </div>
+                  <p className="text-[10px] text-slate-400 font-medium px-1">Solo ingresa los números finales. El prefijo se añade automáticamente.</p>
+                </div>
+              )}
 
-                  {/* Remove Button */}
-                  {items.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveItem(item.tempId)}
-                      className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors self-end md:self-auto"
-                      title="Quitar equipo"
+              {(commonData.category === 'portabilidad' || commonData.category === 'chip_express' || commonData.category === 'chip_0') && (
+                <div className="space-y-1">
+                  <label className="block text-sm font-black text-slate-700 flex justify-between items-center uppercase tracking-tighter">
+                    <span>Número de ICCID <span className="text-red-500">*</span></span>
+                    <button 
+                      type="button" 
+                      onClick={() => setIsScanning(true)}
+                      className="text-blue-600 text-[10px] font-black hover:underline flex items-center gap-1"
                     >
-                      <Trash2 className="w-5 h-5" />
+                      <Barcode className="w-3 h-3" /> ESCANEAR BARRA
                     </button>
-                  )}
+                  </label>
+                  <div className="relative group">
+                    <Cpu className="absolute left-4 top-3.5 w-5 h-5 text-slate-400 group-focus-within:text-blue-600 transition-colors" />
+                    <input
+                      type="text"
+                      required
+                      placeholder="8952..."
+                      value={commonData.iccid}
+                      onChange={(e) => setCommonData(prev => ({ ...prev, iccid: e.target.value.replace(/\D/g, '').substring(0, 19) }))}
+                      className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-100 focus:border-blue-600 outline-none transition-all font-mono font-bold text-slate-800 placeholder:text-slate-300"
+                    />
+                  </div>
+                  <div className="flex justify-between items-center px-1">
+                    <p className="text-[10px] text-slate-400 font-medium">Debe tener 19 dígitos.</p>
+                    <span className={`text-[10px] font-bold ${commonData.iccid.length === 19 ? 'text-green-600' : 'text-slate-400'}`}>
+                      {commonData.iccid.length}/19
+                    </span>
+                  </div>
                 </div>
-              ))}
+              )}
+
+              {(commonData.category === 'portabilidad' || commonData.category === 'chip_express') && (
+                <div className="space-y-1">
+                  <label className="block text-sm font-black text-slate-700 uppercase tracking-tighter">Número de Teléfono <span className="text-red-500">*</span></label>
+                  <div className="relative group">
+                    <Phone className="absolute left-4 top-3.5 w-5 h-5 text-slate-400 group-focus-within:text-blue-600 transition-colors" />
+                    <input
+                      type="text"
+                      required
+                      placeholder="993..."
+                      value={commonData.phoneNumber}
+                      onChange={(e) => setCommonData(prev => ({ ...prev, phoneNumber: e.target.value.replace(/\D/g, '').substring(0, 10) }))}
+                      className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-4 focus:ring-blue-100 focus:border-blue-600 outline-none transition-all font-bold text-slate-800 placeholder:text-slate-300"
+                    />
+                  </div>
+                  <p className="text-[10px] text-slate-400 font-medium px-1">A 10 dígitos.</p>
+                </div>
+              )}
             </div>
 
-            <button
-              type="button"
-              onClick={handleAddItem}
-              disabled={!!initialData} // Disable adding items in Edit Mode
-              className={`mt-4 flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-lg transition-colors border border-dashed w-full md:w-auto justify-center ${initialData ? 'text-slate-400 border-slate-200 cursor-not-allowed' : 'text-blue-600 hover:text-blue-700 hover:bg-blue-50 border-blue-200'}`}
-            >
-              <Plus className="w-4 h-4" />
-              {initialData ? 'Edición de un solo item' : 'Agregar otro equipo al ticket'}
-            </button>
-          </div>
-        )}
-
-        {/* SECTION 3: TICKET IMAGE (Only for Kit and Chip 0) */}
-        {(commonData.category === 'kit' || commonData.category === 'chip_0') && (
-          <div className="space-y-2 pt-4 border-t border-slate-100">
-            <label className="block text-sm font-medium text-slate-700 flex justify-between items-center">
-              <span>Foto del Ticket <span className="text-blue-600 font-bold">(Autocompletado con IA)</span></span>
-              <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full border border-blue-100 uppercase tracking-wider font-bold">Recomendado</span>
-            </label>
-            <div className="flex flex-col md:flex-row items-start gap-4">
-              <div className="flex flex-col gap-3">
-                <div className="flex items-center gap-4">
-                  <div
-                    className={`
-                      relative w-32 h-32 rounded-lg border-2 border-dashed flex flex-col items-center justify-center overflow-hidden bg-white shrink-0
-                      ${ticketImage ? 'border-blue-500' : 'border-slate-300'}
-                    `}
-                  >
-                    {ticketImage ? (
-                      ticketImage.includes('google.com') || ticketImage.includes('drive.google') ? (
-                        <div className="w-full h-full flex items-center justify-center bg-slate-100 text-slate-500 text-xs text-center p-2 relative group">
-                          <span className="font-bold">Foto en la nube</span>
-                          <button
-                            type="button"
-                            className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 text-white font-bold opacity-0 group-hover:opacity-100 transition-opacity"
-                            onClick={(e) => { e.stopPropagation(); setShowFullImage(true); }}
-                          >
-                            <Eye className="w-6 h-6 mb-1" />
-                            <span className="text-[10px] uppercase tracking-wider">Ver Foto</span>
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="relative w-full h-full group">
-                          <img src={ticketImage} alt="Ticket preview" className="w-full h-full object-cover" />
-                          <button
-                            type="button"
-                            className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                            onClick={() => setShowFullImage(true)}
-                          >
-                            <Eye className="w-6 h-6 mb-1" />
-                            <span className="text-[10px]">Ampliar</span>
-                          </button>
-                        </div>
-                      )
-                    ) : (
-                      <>
-                        <Camera className="w-8 h-8 text-slate-400 mb-1" />
-                        <span className="text-xs text-slate-500 text-center px-1">Sin foto</span>
-                      </>
+            <div className="space-y-6">
+              {/* Product Info Section */}
+              <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                      Equipos ({items.length})
+                    </h3>
+                    {(commonData.category === 'kit' || commonData.category === 'chip_0') && totalInvoice > 0 && (
+                      <div className="flex items-center gap-1.5 bg-blue-600 text-white px-2.5 py-1 rounded-lg shadow-sm shadow-blue-100">
+                        <span className="text-[8px] font-bold uppercase opacity-80">Total:</span>
+                        <span className="text-[11px] font-black tracking-tight">
+                          ${totalInvoice.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
                     )}
                   </div>
+                  {commonData.category === 'kit' && !initialData && (
+                    <button type="button" onClick={handleAddItem} className="text-blue-600 text-[10px] font-black hover:underline uppercase tracking-tight">+ Artículo</button>
+                  )}
+                </div>
+                
+                {items.map((item, idx) => (
+                  <div key={item.tempId} className="space-y-3 pb-3 border-b border-slate-200 last:border-0 last:pb-0">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase">Marca <span className="text-red-500">*</span></label>
+                        <select
+                          value={item.brand}
+                          onChange={(e) => handleItemChange(item.tempId, 'brand', e.target.value)}
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg outline-none focus:border-blue-600 font-bold text-xs"
+                        >
+                          {Object.values(Brand).map(b => (
+                            <option key={b} value={b}>{BRAND_CONFIGS[b].label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase">
+                          Precio <span className="text-red-500">*</span> {commonData.category === 'kit' && '(Con IVA)'}
+                        </label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-2 text-slate-400 font-bold text-xs">$</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            disabled={commonData.category === 'portabilidad' || commonData.category === 'chip_express'}
+                            placeholder={commonData.category === 'portabilidad' || commonData.category === 'chip_express' ? "0.00" : "2,999"}
+                            value={commonData.category === 'portabilidad' || commonData.category === 'chip_express' ? "" : item.price}
+                            onChange={(e) => handleItemChange(item.tempId, 'price', e.target.value)}
+                            className="w-full pl-6 pr-3 py-2 bg-white border border-slate-200 rounded-lg outline-none focus:border-blue-600 font-bold text-xs"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    {items.length > 1 && (
+                      <button type="button" onClick={() => handleRemoveItem(item.tempId)} className="text-red-500 text-[9px] font-bold uppercase hover:underline">Eliminar artículo</button>
+                    )}
+                  </div>
+                ))}
+              </div>
 
-                  <div className="flex flex-col gap-2">
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-bold transition-colors border border-slate-200"
+              {/* Photos Section */}
+              {commonData.category !== 'chip_express' && commonData.category !== 'portabilidad' && (
+                <div className="space-y-3">
+                  <label className="block text-sm font-black text-slate-700 flex justify-between items-center uppercase tracking-tighter">
+                    <span>Foto del Ticket <span className="text-red-500">*</span></span>
+                  </label>
+                  <div className="flex gap-3">
+                    <div 
+                      className={`relative w-24 h-24 rounded-2xl border-2 border-dashed flex items-center justify-center overflow-hidden transition-all bg-slate-50 ${ticketImage ? 'border-blue-500' : 'border-slate-300 hover:border-blue-400'}`}
                     >
-                      {ticketImage ? 'Cambiar Foto' : 'Tomar Foto'}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (ticketImage) {
-                          handleAnalyzeTicket(ticketImage);
-                        } else {
-                          alert("📸 Primero debes tomar una foto del ticket para poder escanearlo.");
-                        }
-                      }}
-                      disabled={isAnalyzing}
-                      className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg text-sm font-bold transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
-                    >
-                      <Wand2 className={`w-4 h-4 text-yellow-300 ${isAnalyzing ? 'animate-spin' : ''}`} />
-                      {isAnalyzing ? 'Analizando...' : 'Escanear / Autocompletar'}
-                    </button>
+                      {ticketImage ? (
+                        <>
+                          <img src={ticketImage} alt="Preview" className="w-full h-full object-cover" />
+                          <button 
+                            type="button" 
+                            onClick={() => setTicketImage(null)}
+                            className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full shadow-lg hover:bg-red-600 transition-colors"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                          <button 
+                            type="button" 
+                            onClick={() => setShowFullImage(true)}
+                            className="absolute bottom-1 right-1 p-1 bg-white/90 text-blue-600 rounded-full shadow-lg hover:bg-white transition-colors"
+                          >
+                            <Eye className="w-3 h-3" />
+                          </button>
+                        </>
+                      ) : (
+                        <Camera className="w-8 h-8 text-slate-300" />
+                      )}
+                    </div>
+                    <div className="flex-1 flex flex-col gap-2">
+                      <div className="flex gap-2 items-stretch">
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="flex-1 flex items-center justify-center gap-2 py-4 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg shadow-slate-200"
+                        >
+                          <Camera className="w-4 h-4" />
+                          {ticketImage ? 'Cambiar Foto' : 'Tomar Foto'}
+                        </button>
+                        
+                        {userProfile?.role === 'admin' && (
+                          <button
+                            type="button"
+                            onClick={() => galleryInputRef.current?.click()}
+                            className="flex items-center justify-center w-14 bg-white border-2 border-slate-100 text-slate-400 rounded-2xl hover:bg-slate-50 hover:text-blue-600 hover:border-blue-100 transition-all shadow-sm"
+                            title="Subir de Galería"
+                          >
+                            <ImageIcon className="w-5 h-5" />
+                          </button>
+                        )}
+                      </div>
+                      
+                      {/* BOTÓN DE RE-ESCANEO MANUAL */}
+                      {ticketImage && !isAnalyzing && (commonData.category === 'kit' || commonData.category === 'chip_0') && (
+                        <button
+                          type="button"
+                          onClick={() => processTicketAI(ticketImage)}
+                          className="flex items-center justify-center gap-2 py-2.5 bg-blue-50 text-blue-700 border border-blue-100 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-100 transition-all group/ai"
+                        >
+                          <Wand2 className="w-3.5 h-3.5 group-hover/ai:rotate-12 transition-transform" />
+                          Re-escanear ticket con IA
+                        </button>
+                      )}
+                      
+                      {isAnalyzing && (
+                        <div className="flex items-center gap-2 text-[9px] font-black text-blue-600 animate-pulse uppercase tracking-widest bg-blue-50 px-3 py-2 rounded-lg border border-blue-100">
+                          <Wand2 className="w-3 h-3 animate-spin" />
+                          Analizando ticket con IA...
+                        </div>
+                      )}
+                      
+                      <p className="text-[9px] text-slate-400 font-bold leading-tight px-1">
+                        {userProfile?.role === 'admin' 
+                          ? "Puedes tomar una foto o subir un archivo de la galería." 
+                          : "Captura el ticket físico. No se permiten capturas de pantalla ni archivos de la galería."}
+                      </p>
+                    </div>
                   </div>
 
+                  {/* Hidden Inputs */}
                   <input
-                    ref={fileInputRef}
                     type="file"
-                    accept="image/*"
-                    capture="environment"
-                    className="hidden"
+                    ref={fileInputRef}
                     onChange={handleFileChange}
+                    accept="image/*"
+                    capture={userProfile?.role === 'admin' ? undefined : "environment"}
+                    className="hidden"
                   />
                   <input
-                    ref={galleryInputRef}
                     type="file"
+                    ref={galleryInputRef}
+                    onChange={handleFileChange}
                     accept="image/*"
                     className="hidden"
-                    onChange={handleFileChange}
                   />
                 </div>
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <p className="text-xs text-slate-500 max-w-xs leading-relaxed">
-                  Toma una foto clara del ticket. La imagen se guardará de forma segura en la nube.
-                </p>
-                {isAnalyzing && (
-                  <div className="flex items-center gap-2 text-blue-600 text-xs font-bold animate-pulse">
-                    <Wand2 className="w-3 h-3" />
-                    Analizando ticket con IA...
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {commonData.category === 'portability' && (
-          <div className="space-y-2 pt-4 border-t border-slate-100">
-            <label className="block text-sm font-black text-slate-700 flex justify-between items-center uppercase tracking-tighter">
-              <span>Captura de Portabilidad <span className="text-rose-600 font-bold">(Captura de pantalla)</span></span>
-            </label>
-            <div className="flex flex-col md:flex-row items-start gap-4">
-              <div
-                className={`
-                  relative w-32 h-32 rounded-lg border-2 border-dashed flex flex-col items-center justify-center overflow-hidden bg-white shrink-0
-                  ${portabilityImage ? 'border-rose-500' : 'border-slate-300'}
-                `}
-              >
-                {portabilityImage ? (
-                  <div className="relative w-full h-full group">
-                    <img src={portabilityImage} alt="Portability preview" className="w-full h-full object-cover" />
-                    <button
-                      type="button"
-                      className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                      onClick={() => setShowFullPortabilityImage(true)}
-                    >
-                      <Eye className="w-6 h-6 mb-1" />
-                      <span className="text-[10px]">Ampliar</span>
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <ImageIcon className="w-8 h-8 text-slate-400 mb-1" />
-                    <span className="text-xs text-slate-500 text-center px-1">Sin captura</span>
-                  </>
-                )}
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <button
-                  type="button"
-                  onClick={() => portabilityFileInputRef.current?.click()}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-bold transition-colors border border-slate-200"
-                >
-                  {portabilityImage ? 'Cambiar Captura' : 'Subir Captura'}
-                </button>
-                <p className="text-[10px] text-slate-400 max-w-[200px] leading-tight">
-                  Sube la captura de pantalla de la portabilidad exitosa.
-                </p>
-                <input
-                  ref={portabilityFileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handlePortabilityFileChange}
-                />
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="pt-4 flex justify-end gap-3 border-t border-slate-100">
-          <button
-            type="button"
-            onClick={() => { clearDraft(); onCancel(); }}
-            disabled={isSubmitting}
-            className="px-6 py-2.5 text-slate-600 font-medium hover:bg-slate-100 rounded-lg transition-colors bg-white border border-slate-200"
-          >
-            Cancelar
-          </button>
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="px-6 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 focus:ring-4 focus:ring-blue-200 transition-all flex items-center gap-2 shadow-md shadow-blue-200 disabled:opacity-70 disabled:cursor-wait"
-          >
-            {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-            {isSubmitting ? (selectedFile ? "Subiendo imagen..." : "Guardando...") : (initialData ? "Actualizar Venta" : `Guardar Venta (${items.length})`)}
-          </button>
-        </div>
-      </form>
-
-      {/* Full Image Modal */}
-      {showFullImage && ticketImage && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/95 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={() => setShowFullImage(false)}>
-          <div className="relative max-w-4xl max-h-[90vh] w-full flex flex-col items-center" onClick={e => e.stopPropagation()}>
-            <div className="absolute top-0 right-0 p-4 flex gap-3 pointer-events-none z-50">
-              {ticketImage && (
-                <button
-                  className="pointer-events-auto bg-slate-900 text-white p-3 rounded-full hover:bg-slate-800 transition-colors shadow-xl border border-slate-700"
-                  onClick={async () => {
-                    try {
-                      if (!navigator.share) {
-                        alert("Función no disponible en este dispositivo");
-                        return;
-                      }
-
-                      // Try to share as file if possible (Base64)
-                      if (ticketImage.startsWith('data:')) {
-                        const res = await fetch(ticketImage);
-                        const blob = await res.blob();
-                        const file = new File([blob], `ticket-${commonData.invoiceNumber || 'venta'}.jpg`, { type: 'image/jpeg' });
-
-                        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-                          await navigator.share({
-                            files: [file],
-                            title: 'Ticket de Venta',
-                            text: `Factura #${commonData.invoiceNumber}`
-                          });
-                          return;
-                        }
-                      }
-
-                      // Fallback: Share URL (Drive links or if file share fails)
-                      await navigator.share({
-                        title: 'Ticket de Venta',
-                        text: `Factura #${commonData.invoiceNumber}`,
-                        url: ticketImage
-                      });
-
-                    } catch (err) {
-                      console.error("Error al compartir:", err);
-                    }
-                  }}
-                >
-                  <Share2 className="w-6 h-6" />
-                </button>
               )}
-              <button
-                className="pointer-events-auto bg-slate-900 text-white p-3 rounded-full hover:bg-slate-800 transition-colors shadow-xl border border-slate-700"
-                onClick={() => setShowFullImage(false)}
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
 
-            {ticketImage.includes('google.com') || ticketImage.includes('drive.google') ? (
-              <iframe
-                src={ticketImage.replace('uc?export=view&id=', 'file/d/').replace('/view', '/preview').includes('/preview') ? ticketImage : ticketImage.includes('file/d/') ? ticketImage.split('/view')[0] + '/preview' : `https://drive.google.com/file/d/${ticketImage.split('id=')[1]}/preview`}
-                className="w-full h-[80vh] rounded-xl shadow-2xl bg-white"
-                allow="autoplay"
-                title="Ticket Preview"
-              ></iframe>
-            ) : (
-              <img src={ticketImage} alt="Full Ticket" className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl" />
-            )}
+              {commonData.category === 'portabilidad' && (
+                <div className="space-y-3 pt-4 border-t border-slate-100">
+                  <label className="block text-sm font-black text-slate-700 uppercase tracking-tighter">Captura de Portabilidad <span className="text-rose-600 font-bold">(OBLIGATORIA)</span></label>
+                  <div className="flex gap-3 items-center">
+                    <div 
+                      className={`relative w-24 h-24 rounded-2xl border-2 border-dashed flex items-center justify-center overflow-hidden transition-all bg-slate-50 ${portabilityImage ? 'border-rose-500' : 'border-slate-300 hover:border-rose-400'}`}
+                    >
+                      {portabilityImage ? (
+                        <>
+                          <img src={portabilityImage} alt="Porta Preview" className="w-full h-full object-cover" />
+                          <button 
+                            type="button" 
+                            onClick={() => setPortabilityImage(null)}
+                            className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full shadow-lg"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                          <button 
+                            type="button" 
+                            onClick={() => setShowFullPortabilityImage(true)}
+                            className="absolute bottom-1 right-1 p-1 bg-white/90 text-rose-600 rounded-full shadow-lg"
+                          >
+                            <Eye className="w-3 h-3" />
+                          </button>
+                        </>
+                      ) : (
+                        <Smartphone className="w-8 h-8 text-slate-300" />
+                      )}
+                    </div>
+                    
+                    <div className="flex-1 flex flex-col gap-2">
+                      <button
+                        type="button"
+                        onClick={() => portabilityFileInputRef.current?.click()}
+                        className="flex items-center justify-center gap-2 py-4 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-700 transition-all shadow-lg shadow-rose-100"
+                      >
+                        <Camera className="w-4 h-4" />
+                        {portabilityImage ? 'Cambiar Captura' : 'Tomar Captura'}
+                      </button>
+                      <p className="text-[9px] text-slate-400 font-bold px-1">
+                        Sube la captura de pantalla de la portabilidad exitosa.
+                      </p>
+                    </div>
+
+                    <input
+                      type="file"
+                      ref={portabilityFileInputRef}
+                      onChange={handlePortabilityFileChange}
+                      accept="image/*"
+                      capture={userProfile?.role === 'admin' ? undefined : "environment"}
+                      className="hidden"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
+
+          <div className="pt-6 border-t border-slate-100 flex gap-3">
+            <button type="button" onClick={onCancel} className="flex-1 px-6 py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold uppercase text-xs hover:bg-slate-200 transition-all">Cancelar</button>
+            <button type="submit" disabled={isSubmitting} className="flex-[2] px-6 py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs hover:bg-blue-700 shadow-xl shadow-blue-200 transition-all flex items-center justify-center gap-2 disabled:opacity-70">
+              {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+              {isSubmitting ? 'Guardando...' : (initialData ? 'Actualizar Registro' : `Confirmar Venta (${items.length})`)}
+            </button>
+          </div>
+        </form>
+      </div>
+
+      {showFullImage && ticketImage && (
+        <div className="fixed inset-0 z-[60] bg-black/90 p-4 flex items-center justify-center" onClick={() => setShowFullImage(false)}>
+          <img src={ticketImage} className="max-w-full max-h-full object-contain rounded-xl" alt="Ticket" />
         </div>
       )}
-      {/* Barcode Scanner Modal */}
+
       {isScanning && (
         <BarcodeScanner 
-          title="Escanear ICCID del Chip"
+          title="Escanear ICCID" 
           onScan={(code) => {
-            // Remove non-digits and limit to 19
-            const cleanCode = code.replace(/\D/g, '').substring(0, 19);
-            setCommonData(prev => ({ ...prev, iccid: cleanCode }));
+            const clean = code.replace(/\D/g, '').substring(0, 19);
+            setCommonData(prev => ({ ...prev, iccid: clean }));
+            setIsScanning(false);
           }}
           onClose={() => setIsScanning(false)}
         />
       )}
     </div>
-  </div>
   );
 };
 

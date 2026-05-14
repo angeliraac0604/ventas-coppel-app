@@ -74,7 +74,7 @@ export const analyzeTicketImage = async (
   const currentDateContext = `Hoy es ${now.toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })}.`;
 
   const categoryContext = category === 'chip_0' 
-    ? 'ESTA ES UNA VENTA DE CHIP 0 (EQUIPO LIBRE). Incluye los conceptos que digan "CHIP" o similares que tengan un precio significativo.' 
+    ? 'ESTA ES UNA VENTA DE CHIP 0 (EQUIPO LIBRE). Extrae el precio real del EQUIPO/TELÉFONO principal. Aunque el ticket mencione un chip de $1, debes buscar el precio significativo del dispositivo libre.' 
     : 'ESTA ES UNA VENTA DE EQUIPO KIT. Incluye solo equipos móviles de marcas reconocidas. IGNORA chips sueltos o seguros.';
 
   const prompt = `Analiza este ticket de compra de la tienda ${chainName} (${storeName}). 
@@ -101,7 +101,7 @@ export const analyzeTicketImage = async (
   };
 
   // Schema para forzar respuesta JSON
-  const schema = {
+  const schema: any = {
     description: "Ticket data extraction",
     type: SchemaType.OBJECT,
     properties: {

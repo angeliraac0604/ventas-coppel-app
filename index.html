@@ -45,32 +45,32 @@
   </script>
 
   <style>
-    /* Personalización de la barra de desplazamiento (Scrollbar) */
-    .custom-scrollbar::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
+    /* DISEÑO DE SCROLLBAR PREMIUM Y GLOBAL */
+    *::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
     }
 
-    .custom-scrollbar::-webkit-scrollbar-track {
+    *::-webkit-scrollbar-track {
       background: transparent;
     }
 
-    .custom-scrollbar::-webkit-scrollbar-thumb {
-      background: #cbd5e1; /* slate-300 */
-      border-radius: 20px;
-      border: 2px solid transparent;
+    *::-webkit-scrollbar-thumb {
+      background: rgba(203, 213, 225, 0.5); /* slate-300 con transparencia */
+      border-radius: 10px;
+      border: 1px solid transparent;
       background-clip: content-box;
     }
 
-    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-      background: #94a3b8; /* slate-400 */
+    *::-webkit-scrollbar-thumb:hover {
+      background: rgba(148, 163, 184, 0.8); /* slate-400 */
       background-clip: content-box;
     }
 
     /* Soporte para Firefox */
-    .custom-scrollbar {
+    * {
       scrollbar-width: thin;
-      scrollbar-color: #cbd5e1 transparent;
+      scrollbar-color: rgba(203, 213, 225, 0.5) transparent;
     }
 
     /* REMOVE ARROWS FROM NUMBER INPUTS */

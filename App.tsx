@@ -1920,6 +1920,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
                   : stores.find(s => s.id === userProfile?.storeId)?.name}
                 activeStoreId={(userProfile?.role === 'admin' || userProfile?.role === 'supervisor' || userProfile?.role === 'viewer') ? selectedStoreId : userProfile?.storeId}
                 stores={stores}
+                userProfile={userProfile}
               />
             )}
             {currentView === 'warranties' && userProfile?.role !== 'supervisor' && (

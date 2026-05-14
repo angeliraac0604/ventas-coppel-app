@@ -59,6 +59,10 @@ export interface DailyClose {
   topBrand: Brand | 'N/A';
   storeId?: string;
   attSales?: number;
+  kitCount?: number;
+  chip0Count?: number;
+  portabilityCount?: number;
+  chipExpressCount?: number;
 }
 
 export type UserRole = 'admin' | 'supervisor' | 'seller' | 'viewer';

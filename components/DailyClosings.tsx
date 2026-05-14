@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { CalendarCheck, DollarSign, ShoppingBag, Clock, ChevronDown, ChevronUp, Lock, Receipt, X, User, Tag, Calendar, Image as ImageIcon, CalendarRange, Layers, Filter, XCircle, ArrowRight, Share2, Trash2, Edit2, Save, Send, RefreshCw, Smartphone, ExternalLink, FileSpreadsheet } from 'lucide-react';
-import { Sale, DailyClose, Brand, Store } from '../types';
+import { CalendarCheck, DollarSign, ShoppingBag, Clock, ChevronDown, ChevronUp, Lock, Receipt, X, User, Tag, Calendar, Image as ImageIcon, CalendarRange, Layers, Filter, XCircle, ArrowRight, Share2, Trash2, Edit2, Save, Send, RefreshCw, Smartphone, ExternalLink, FileSpreadsheet, Cpu, Phone } from 'lucide-react';
+import { Sale, DailyClose, Brand, Store, UserProfile } from '../types';
 import { BRAND_CONFIGS } from '../constants';
 import { syncMarketParticipationScript } from '../services/googleAppsScriptService';
 
@@ -15,9 +15,10 @@ interface DailyClosingsProps {
   storeName?: string;
   activeStoreId?: string;
   stores: Store[];
+  userProfile?: UserProfile | null;
 }
 
-const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseDay, onDeleteClosing, role, storeName, activeStoreId, stores }) => {
+const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseDay, onDeleteClosing, role, storeName, activeStoreId, stores, userProfile }) => {
   const [activeTab, setActiveTab] = useState<'daily' | 'monthly'>('daily');
   const dateInputRef = useRef<HTMLInputElement>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -55,9 +56,27 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
   const targetDateStr = manualDate || todayStr;
 
   // Calculate stats for the TARGET date (Live Preview)
-  const targetSales = sales.filter(s => s.date === targetDateStr);
-  const targetRevenue = targetSales.reduce((sum, s) => sum + s.price, 0);
-  const targetCount = targetSales.length;
+  // Restricted sellers only see categories they are authorized to sell
+  const targetSales = sales.filter(s => {
+    const matchesDate = s.date === targetDateStr;
+    if (!matchesDate) return false;
+    
+    // Admins and Supervisors see everything
+    if (role === 'admin' || role === 'supervisor') return true;
+    
+    // Sellers only see authorized categories
+    if (s.category === 'chip_0' && userProfile?.canSellChip0) return true;
+    if (s.category === 'portabilidad' && userProfile?.canSellPortability) return true;
+    if (s.category === 'chip_express' && userProfile?.canSellChipExpress) return true;
+    if ((s.category === 'kit' || !s.category) && userProfile?.canSellKit === true) return true;
+    
+    return false;
+  });
+
+  const targetKitSales = targetSales.filter(s => s.category === 'kit' || !s.category);
+  const targetRevenue = targetKitSales.reduce((sum, s) => sum + s.price, 0);
+  const targetCount = targetSales.length; // Keep total count for button enabling
+  const targetKitCount = targetKitSales.length; // Use for the main card
 
   // Find top brand for TARGET date
   const brandCounts = targetSales.reduce((acc, sale) => {
@@ -79,13 +98,24 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
       if (dateFilter.start || dateFilter.end) {
         if (dateFilter.start && closeDate < dateFilter.start) return false;
         if (dateFilter.end && closeDate > dateFilter.end) return false;
-        return true;
       }
 
-      // NO default filter - Show everything (Request: todos los meses)
-      return true;
+      // 3. Role/Permission Filter
+      // Admins and supervisors see all closings
+      if (role === 'admin' || role === 'supervisor') return true;
+      
+      // Sellers with Kit permission see all closings
+      if (userProfile?.canSellKit === true) return true;
+      
+      // Restricted sellers: ONLY see if it contains authorized sales
+      let authorizedSalesInClosing = 0;
+      if (userProfile?.canSellChip0) authorizedSalesInClosing += (close.chip0Count || 0);
+      if (userProfile?.canSellPortability) authorizedSalesInClosing += (close.portabilityCount || 0);
+      if (userProfile?.canSellChipExpress) authorizedSalesInClosing += (close.chipExpressCount || 0);
+      
+      return authorizedSalesInClosing > 0;
     }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [closings, dateFilter, monthFilter]);
+  }, [closings, dateFilter, monthFilter, role, userProfile]);
 
   // --- MONTHLY DATA CALCULATION (Based on Filtered Data) ---
   const monthlyData = useMemo(() => {
@@ -191,12 +221,16 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
       const newClose: DailyClose = {
         id: `close-${targetDateStr}-${activeStoreId}`, 
         date: targetDateStr,
-        totalSales: targetCount,
-        totalRevenue: targetRevenue,
+        totalSales: targetKitCount, // Only Kits count as general sales now
+        totalRevenue: targetRevenue, // This already uses targetKitSales
         closedAt: new Date().toISOString(),
         topBrand: topBrandToday || 'N/A' as any,
         storeId: activeStoreId,
-        attSales: isSpecialStore ? attSalesInput : 0
+        attSales: isSpecialStore ? attSalesInput : 0,
+        kitCount: targetSales.filter(s => s.category === 'kit' || !s.category).length,
+        portabilityCount: targetSales.filter(s => s.category === 'portabilidad').length,
+        chip0Count: targetSales.filter(s => s.category === 'chip_0').length,
+        chipExpressCount: targetSales.filter(s => s.category === 'chip_express').length
       };
       onCloseDay(newClose);
       setManualDate(''); // Reset after close
@@ -329,49 +363,96 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
             )}
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-3 md:p-4 border border-white/5 overflow-hidden">
-              <p className="text-slate-400 text-[10px] md:text-xs font-bold uppercase tracking-wider mb-1 truncate">Ventas {manualDate ? 'del día' : 'Hoy'}</p>
-              <div className="flex items-center gap-2">
-                <ShoppingBag className="w-5 h-5 text-blue-400 shrink-0" />
-                <span className="text-xl md:text-3xl font-bold truncate">{targetCount}</span>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+            {(role === 'admin' || role === 'supervisor' || userProfile?.canSellKit === true) && (
+              <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-3 md:p-4 border border-white/5 overflow-hidden">
+                <p className="text-slate-400 text-[10px] md:text-xs font-bold uppercase tracking-wider mb-1 truncate">Ventas {manualDate ? 'del día' : 'Hoy'}</p>
+                <div className="flex items-center gap-2">
+                  <ShoppingBag className="w-5 h-5 text-blue-400 shrink-0" />
+                  <span className="text-xl md:text-3xl font-bold truncate">{targetKitCount}</span>
+                </div>
               </div>
-            </div>
-            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-3 md:p-4 border border-white/5 overflow-hidden">
-              <p className="text-slate-400 text-[10px] md:text-xs font-bold uppercase tracking-wider mb-1 truncate">Ingreso Total</p>
-              <div className="flex items-center gap-2">
-                <DollarSign className="w-5 h-5 text-green-400 shrink-0" />
-                <span className="text-xl md:text-3xl font-bold truncate">
-                  ${targetRevenue.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                </span>
+            )}
+
+            {(role === 'admin' || role === 'supervisor' || userProfile?.canSellKit === true) && (
+              <>
+                <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-3 md:p-4 border border-white/5 overflow-hidden">
+                  <p className="text-slate-400 text-[10px] md:text-xs font-bold uppercase tracking-wider mb-1 truncate">Ingreso Total</p>
+                  <div className="flex items-center gap-2">
+                    <DollarSign className="w-5 h-5 text-green-400 shrink-0" />
+                    <span className="text-xl md:text-3xl font-bold truncate">
+                      ${targetRevenue.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                    </span>
+                  </div>
+                </div>
+                <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-3 md:p-4 border border-white/5 overflow-hidden">
+                  <p className="text-slate-400 text-[10px] md:text-xs font-bold uppercase tracking-wider mb-1 truncate">Total Sin IVA</p>
+                  <div className="flex items-center gap-2">
+                    <Tag className="w-5 h-5 text-purple-400 shrink-0" />
+                    <span className="text-lg md:text-2xl font-bold truncate" title={(targetRevenue / 1.16).toLocaleString('es-MX')}>
+                      ${(targetRevenue / 1.16).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+                <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 border border-white/5">
+                  <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Top Marca</p>
+                  {topBrandToday ? (
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-bold text-white shadow-lg ${BRAND_CONFIGS[topBrandToday].colorClass}`}
+                      style={BRAND_CONFIGS[topBrandToday].colorClass.includes('text-black') ? { color: 'black' } : {}}
+                    >
+                      {BRAND_CONFIGS[topBrandToday].label}
+                    </span>
+                  ) : (
+                    <span className="text-slate-500 font-medium text-sm">Sin datos</span>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* UNIT SUMMARY PER CATEGORY (NEW) */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+            {(role === 'admin' || role === 'supervisor' || userProfile?.canSellKit === true) && (
+              <div className="bg-slate-800/50 rounded-xl p-3 border border-white/5">
+                <p className="text-[9px] text-slate-500 font-black uppercase tracking-widest mb-1">Equipos Kit</p>
+                <div className="flex items-center gap-2">
+                  <Smartphone className="w-4 h-4 text-blue-400" />
+                  <span className="text-lg font-bold">{targetSales.filter(s => s.category === 'kit' || !s.category).length}</span>
+                </div>
               </div>
-            </div>
-            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-3 md:p-4 border border-white/5 overflow-hidden">
-              <p className="text-slate-400 text-[10px] md:text-xs font-bold uppercase tracking-wider mb-1 truncate">Total Sin IVA</p>
-              <div className="flex items-center gap-2">
-                <Tag className="w-5 h-5 text-purple-400 shrink-0" />
-                <span className="text-lg md:text-2xl font-bold truncate" title={(targetRevenue / 1.16).toLocaleString('es-MX')}>
-                  ${(targetRevenue / 1.16).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
+            )}
+            {(role === 'admin' || role === 'supervisor' || userProfile?.canSellChip0 !== false) && (
+              <div className="bg-slate-800/50 rounded-xl p-3 border border-white/5">
+                <p className="text-[9px] text-slate-500 font-black uppercase tracking-widest mb-1">Chip 0</p>
+                <div className="flex items-center gap-2">
+                  <Cpu className="w-4 h-4 text-emerald-400" />
+                  <span className="text-lg font-bold">{targetSales.filter(s => s.category === 'chip_0').length}</span>
+                </div>
               </div>
-            </div>
-            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 border border-white/5">
-              <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Top Marca</p>
-              {topBrandToday ? (
-                <span
-                  className={`px-3 py-1 rounded-full text-xs font-bold text-white shadow-lg ${BRAND_CONFIGS[topBrandToday].colorClass}`}
-                  style={BRAND_CONFIGS[topBrandToday].colorClass.includes('text-black') ? { color: 'black' } : {}}
-                >
-                  {BRAND_CONFIGS[topBrandToday].label}
-                </span>
-              ) : (
-                <span className="text-slate-500 font-medium text-sm">Sin datos</span>
-              )}
-            </div>
+            )}
+            {(role === 'admin' || role === 'supervisor' || userProfile?.canSellPortability !== false) && (
+              <div className="bg-slate-800/50 rounded-xl p-3 border border-white/5">
+                <p className="text-[9px] text-slate-500 font-black uppercase tracking-widest mb-1">Portabilidad</p>
+                <div className="flex items-center gap-2">
+                  <Phone className="w-4 h-4 text-purple-400" />
+                  <span className="text-lg font-bold">{targetSales.filter(s => s.category === 'portabilidad').length}</span>
+                </div>
+              </div>
+            )}
+            {(role === 'admin' || role === 'supervisor' || userProfile?.canSellChipExpress !== false) && (
+              <div className="bg-slate-800/50 rounded-xl p-3 border border-white/5">
+                <p className="text-[9px] text-slate-500 font-black uppercase tracking-widest mb-1">Chip Express</p>
+                <div className="flex items-center gap-2">
+                  <Cpu className="w-4 h-4 text-orange-400" />
+                  <span className="text-lg font-bold">{targetSales.filter(s => s.category === 'chip_express').length}</span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* COMPETITION SALES PANEL (Only for 1053) */}
-          {isSpecialStore && role !== 'viewer' && (
+          {isSpecialStore && role !== 'viewer' && (role === 'admin' || role === 'supervisor' || userProfile?.canSellKit === true) && (
             <div className="mb-8 p-6 bg-blue-600/10 border border-blue-500/20 rounded-[2rem] backdrop-blur-sm">
                <div className="flex flex-col md:flex-row items-center justify-between gap-6">
                   <div className="flex items-center gap-4">
@@ -545,13 +626,45 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
               </div>
             ) : (
               filteredClosings
-                .filter(c => hasActiveFilter || c.date.startsWith(currentMonthPrefix))
+                .filter(c => {
+                  const matchesPeriod = hasActiveFilter || c.date.startsWith(currentMonthPrefix);
+                  if (!matchesPeriod) return false;
+                  
+                  // Admins and supervisors see all closings
+                  if (role === 'admin' || role === 'supervisor') return true;
+                  
+                  // Sellers with Kit permission see all closings
+                  if (userProfile?.canSellKit === true) return true;
+                  
+                  // Restricted sellers: ONLY see the closing if it contains at least ONE sale of their authorized categories
+                  let authorizedSalesInClosing = 0;
+                  if (userProfile?.canSellChip0) authorizedSalesInClosing += (c.chip0Count || 0);
+                  if (userProfile?.canSellPortability) authorizedSalesInClosing += (c.portabilityCount || 0);
+                  if (userProfile?.canSellChipExpress) authorizedSalesInClosing += (c.chipExpressCount || 0);
+                  
+                  return authorizedSalesInClosing > 0;
+                })
                 .map((close) => {
                 const isExpanded = expandedId === close.id;
                 // Fix timezone issue by parsing parts manually
                 const [cYear, cMonth, cDay] = close.date.split('-').map(Number);
                 const dateObj = new Date(cYear, cMonth - 1, cDay);
-                const daySales = sales.filter(s => s.date === close.date);
+                // Restricted sellers only see categories they are authorized to sell
+                const daySales = sales.filter(s => {
+                  const matchesDate = s.date === close.date;
+                  if (!matchesDate) return false;
+                  
+                  // Admins and Supervisors see everything
+                  if (role === 'admin' || role === 'supervisor') return true;
+                  
+                  // Sellers only see authorized categories
+                  if (s.category === 'chip_0' && userProfile?.canSellChip0) return true;
+                  if (s.category === 'portabilidad' && userProfile?.canSellPortability) return true;
+                  if (s.category === 'chip_express' && userProfile?.canSellChipExpress) return true;
+                  if ((s.category === 'kit' || !s.category) && userProfile?.canSellKit === true) return true;
+                  
+                  return false;
+                });
 
                 return (
                   <div
@@ -598,7 +711,7 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
                         {/* Right Side: Money & Competition (if 1053) */}
                         <div className="flex items-center justify-between sm:justify-end gap-6 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-0 border-slate-100">
                            {/* Competition Stats Mini-Badges - ALWAYS VISIBLE if it's the 1053 store */}
-                           {(isSpecialStore || stores.find(s => s.id === close.storeId)?.prefix === '1053') && (
+                           {(isSpecialStore || stores.find(s => s.id === close.storeId)?.prefix === '1053') && (role === 'admin' || role === 'supervisor' || userProfile?.canSellKit === true) && (
                              <div className="flex items-center gap-2">
                                <div className="flex flex-col items-center px-2 py-1 bg-blue-50 border border-blue-100 rounded-lg min-w-[45px]">
                                   <span className="text-[7px] font-black text-blue-400 uppercase leading-none mb-0.5">AT&T</span>
@@ -611,14 +724,16 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
                              </div>
                            )}
 
-                          <div className="flex flex-col items-end gap-0">
-                            <span className="font-black text-slate-900 text-lg leading-tight">
-                              ${close.totalRevenue.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                            </span>
-                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">
-                              Neto: ${(close.totalRevenue / 1.16).toLocaleString('es-MX', { maximumFractionDigits: 0 })}
-                            </span>
-                          </div>
+                           {(role === 'admin' || role === 'supervisor' || userProfile?.canSellKit === true) && (
+                             <div className="flex flex-col items-end gap-0">
+                               <span className="font-black text-slate-900 text-lg leading-tight">
+                                 ${close.totalRevenue.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                               </span>
+                               <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">
+                                 Neto: ${(close.totalRevenue / 1.16).toLocaleString('es-MX', { maximumFractionDigits: 0 })}
+                               </span>
+                             </div>
+                           )}
                         </div>
                       </div>
 
@@ -659,6 +774,40 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
                     {isExpanded && (
                       <div className="border-t border-slate-100 bg-slate-50/50 p-3 md:p-4 animate-in slide-in-from-top-2 duration-200">
                         <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+                          {/* CATEGORY STATS SUMMARY (NEW) */}
+                          <div className="p-3 bg-indigo-50/30 border-b border-slate-200">
+                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                              <Layers className="w-3 h-3 text-indigo-400" />
+                              Desglose por Categoría
+                            </h4>
+                            <div className="flex flex-wrap gap-4">
+                              {(role === 'admin' || role === 'supervisor' || userProfile?.canSellKit === true) && (
+                                <div className="flex flex-col">
+                                  <span className="text-[9px] text-slate-400 font-bold uppercase">Equipos</span>
+                                  <span className="text-sm font-black text-slate-700">{close.kitCount ?? daySales.filter(s => s.category === 'kit' || !s.category).length}</span>
+                                </div>
+                              )}
+                              {(role === 'admin' || role === 'supervisor' || userProfile?.canSellChip0 !== false) && (
+                                <div className="flex flex-col">
+                                  <span className="text-[9px] text-slate-400 font-bold uppercase">Chip 0</span>
+                                  <span className="text-sm font-black text-slate-700">{close.chip0Count ?? daySales.filter(s => s.category === 'chip_0').length}</span>
+                                </div>
+                              )}
+                              {(role === 'admin' || role === 'supervisor' || userProfile?.canSellPortability !== false) && (
+                                <div className="flex flex-col">
+                                  <span className="text-[9px] text-slate-400 font-bold uppercase">Porta</span>
+                                  <span className="text-sm font-black text-slate-700">{close.portabilityCount ?? daySales.filter(s => s.category === 'portabilidad').length}</span>
+                                </div>
+                              )}
+                              {(role === 'admin' || role === 'supervisor' || userProfile?.canSellChipExpress !== false) && (
+                                <div className="flex flex-col">
+                                  <span className="text-[9px] text-slate-400 font-bold uppercase">Express</span>
+                                  <span className="text-sm font-black text-slate-700">{close.chipExpressCount ?? daySales.filter(s => s.category === 'chip_express').length}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
                           {/* BRAND STATS SUMMARY */}
                           <div className="p-3 bg-slate-50 border-b border-slate-200">
                             <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Estadística por Marcas</h4>
@@ -685,7 +834,9 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
                                   <th className="px-3 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Factura</th>
                                   <th className="px-3 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Cliente</th>
                                   <th className="px-3 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Marca</th>
-                                  <th className="px-3 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Precio</th>
+                                  {(role === 'admin' || role === 'supervisor' || userProfile?.canSellKit === true) && (
+                                    <th className="px-3 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Precio</th>
+                                  )}
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100">
@@ -696,10 +847,15 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
                                     className="hover:bg-blue-50/50 transition-colors cursor-pointer group/row"
                                   >
                                     <td className="px-3 py-4">
-                                      <span className="text-slate-700 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold tracking-wide flex items-center gap-1 w-fit">
-                                        {sale.ticketImage && <ImageIcon className="w-3 h-3 text-blue-400" />}
-                                        #{String(sale.invoiceNumber).replace(/[^0-9-]/g, '')}
-                                      </span>
+                                      {sale.category !== 'chip_express' && sale.category !== 'portabilidad' && sale.invoiceNumber && (
+                                        <span className="text-slate-700 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold tracking-wide flex items-center gap-1 w-fit">
+                                          {sale.ticketImage && <ImageIcon className="w-3 h-3 text-blue-400" />}
+                                          #{String(sale.invoiceNumber).replace(/[^0-9-]/g, '')}
+                                        </span>
+                                      )}
+                                      {(sale.category === 'chip_express' || sale.category === 'portabilidad') && (
+                                         <span className="text-slate-400 text-[10px] font-bold uppercase tracking-widest italic">Sin factura</span>
+                                      )}
                                     </td>
                                     <td className="px-3 py-4 text-slate-700 font-medium truncate max-w-[120px]">{sale.customerName}</td>
                                     <td className="px-3 py-4">
@@ -710,9 +866,15 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
                                         {BRAND_CONFIGS[sale.brand].label}
                                       </span>
                                     </td>
-                                    <td className="px-3 py-4 text-right font-bold text-slate-700">
-                                      ${sale.price.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
-                                    </td>
+                                    {(role === 'admin' || role === 'supervisor' || userProfile?.canSellKit === true) && (
+                                      <td className="px-3 py-4 text-right font-bold text-slate-700">
+                                        {sale.category !== 'chip_express' && sale.category !== 'portabilidad' ? (
+                                          `$${sale.price.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`
+                                        ) : (
+                                          <span className="text-slate-300 font-normal italic">N/A</span>
+                                        )}
+                                      </td>
+                                    )}
                                   </tr>
                                 ))}
                               </tbody>
@@ -765,7 +927,20 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
                           </p>
                           <div className="flex items-center flex-wrap gap-3 text-xs text-slate-500 font-semibold">
                             <span className="bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">{month.closings.length} Cortes</span>
-                            <span>• <span className="text-slate-800 font-bold">{month.totalSales}</span> Ventas</span>
+                            <span>• <span className="text-slate-800 font-bold">
+                              {(() => {
+                                if (role === 'admin' || role === 'supervisor' || userProfile?.canSellKit === true) {
+                                  return month.totalSales;
+                                }
+                                return month.closings.reduce((sum, c) => {
+                                  let count = 0;
+                                  if (userProfile?.canSellChip0) count += (c.chip0Count || 0);
+                                  if (userProfile?.canSellPortability) count += (c.portabilidadCount || 0);
+                                  if (userProfile?.canSellChipExpress) count += (c.chipExpressCount || 0);
+                                  return sum + count;
+                                }, 0);
+                              })()}
+                            </span> Ventas</span>
                             {monthTopBrand && BRAND_CONFIGS[monthTopBrand] && (
                               <span
                                 className={`px-2 py-0.5 rounded-full text-[9px] font-black text-white uppercase tracking-widest shrink-0 shadow-sm ${BRAND_CONFIGS[monthTopBrand].colorClass}`}
@@ -778,14 +953,16 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
                         </div>
 
                         {/* Right Side: Money */}
-                        <div className="flex flex-col items-end gap-0 pt-2 sm:pt-0 border-t sm:border-0 border-slate-100 w-full sm:w-auto">
-                          <span className="font-black text-slate-900 text-lg leading-tight">
-                            ${month.totalRevenue.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                          </span>
-                          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">
-                            Neto: ${(month.totalRevenue / 1.16).toLocaleString('es-MX', { maximumFractionDigits: 0 })}
-                          </span>
-                        </div>
+                        {(role === 'admin' || role === 'supervisor' || userProfile?.canSellKit === true) && (
+                          <div className="flex flex-col items-end gap-0 pt-2 sm:pt-0 border-t sm:border-0 border-slate-100 w-full sm:w-auto">
+                            <span className="font-black text-slate-900 text-lg leading-tight">
+                              ${month.totalRevenue.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">
+                              Neto: ${(month.totalRevenue / 1.16).toLocaleString('es-MX', { maximumFractionDigits: 0 })}
+                            </span>
+                          </div>
+                        )}
                       </div>
 
                       <div className={`transition-transform duration-200 text-slate-300 md:ml-2 ${isExpanded ? 'rotate-180 text-indigo-600' : 'rotate-0 group-hover:text-slate-400'}`}>
@@ -834,17 +1011,42 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
                                   })()}
                                 </div>
                                 <div>
-                                  <p className="font-bold text-xs text-slate-800 group-hover/day:text-blue-700 capitalize">
-                                    {(() => {
-                                      const [dYear, dMonth, dDay] = close.date.split('-').map(Number);
-                                      const dDate = new Date(dYear, dMonth - 1, dDay);
-                                      return dDate.toLocaleDateString('es-MX', { weekday: 'short' }) + '.';
-                                    })()}
-                                  </p>
-                                  <p className="text-[10px] text-slate-500">{close.totalSales} ventas</p>
+                                   <p className="font-bold text-xs text-slate-800 group-hover/day:text-blue-700 capitalize">
+                                     {(() => {
+                                       const [dYear, dMonth, dDay] = close.date.split('-').map(Number);
+                                       const dDate = new Date(dYear, dMonth - 1, dDay);
+                                       return dDate.toLocaleDateString('es-MX', { weekday: 'short' }) + '.';
+                                     })()}
+                                   </p>
+                                   <p className="text-[10px] text-slate-500">
+                                     {(() => {
+                                       if (role === 'admin' || role === 'supervisor' || userProfile?.canSellKit === true) {
+                                         return `${close.totalSales} ventas`;
+                                       }
+                                       // Restricted view: sum only allowed categories stored in the closing
+                                       let count = 0;
+                                       if (userProfile?.canSellChip0) count += (close.chip0Count || 0);
+                                       if (userProfile?.canSellPortability) count += (close.portabilidadCount || 0);
+                                       if (userProfile?.canSellChipExpress) count += (close.chipExpressCount || 0);
+                                       return `${count} ventas`;
+                                     })()}
+                                     {!(role === 'admin' || role === 'supervisor' || userProfile?.canSellKit === true) && (
+                                       <span className="ml-2 text-[9px] text-indigo-500 font-black">
+                                         ({close.chip0Count || 0}C0, {close.portabilidadCount || 0}P)
+                                       </span>
+                                     )}
+                                   </p>
                                 </div>
                               </div>
                               <div className="text-right flex flex-col items-end gap-1">
+                                {(role === 'admin' || role === 'supervisor' || userProfile?.canSellKit === true) && (
+                                  <>
+                                    <p className="font-bold text-green-600 text-xs">${close.totalRevenue.toLocaleString('es-MX')}</p>
+                                    <p className="text-[10px] text-slate-400 font-medium whitespace-nowrap">
+                                      Neto: ${(close.totalRevenue / 1.16).toLocaleString('es-MX', { maximumFractionDigits: 0 })}
+                                    </p>
+                                  </>
+                                )}
                                 {role === 'admin' && onDeleteClosing && (
                                   <button
                                     onClick={(e) => {
@@ -857,10 +1059,6 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
                                     <Trash2 className="w-3 h-3" />
                                   </button>
                                 )}
-                                <p className="font-bold text-green-600 text-xs">${close.totalRevenue.toLocaleString('es-MX')}</p>
-                                <p className="text-[10px] text-slate-400 font-medium whitespace-nowrap">
-                                  Neto: ${(close.totalRevenue / 1.16).toLocaleString('es-MX', { maximumFractionDigits: 0 })}
-                                </p>
                               </div>
                             </div>
                           ))}
