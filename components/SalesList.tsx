@@ -98,18 +98,50 @@ const SalesList: React.FC<SalesListProps> = ({
   const [viewMode, setViewMode] = useState<'today' | 'all' | 'custom'>('today');
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
 
-  // --- TODAY'S STATS CALCULATIONS (LOCAL TIME FIXED) ---
+  // --- PERMISSIONS FILTERED TABS ---
+  const getAllowedTabs = () => {
+    const tabs = [];
+    if (userProfile?.canSellKit !== false) tabs.push({ id: 'KIT', label: 'Equipos Kit', icon: Smartphone });
+    if (userProfile?.canSellChip0) tabs.push({ id: 'CHIP_0', label: 'Chip 0', icon: Cpu });
+    if (userProfile?.canSellPortability) tabs.push({ id: 'PORTABILITY', label: 'Portabilidad', icon: Share2 });
+    if (userProfile?.canSellChipExpress) tabs.push({ id: 'EXPRESS', label: 'Chip Express', icon: Phone });
+    
+    if (tabs.length === 0) tabs.push({ id: 'KIT', label: 'Equipos Kit', icon: Smartphone });
+    return tabs;
+  };
+
+  const allowedTabs = getAllowedTabs();
+
+  // Switch tab if current one is not allowed
+  React.useEffect(() => {
+    if (!allowedTabs.find(t => t.id === activeTab)) {
+      setActiveTab(allowedTabs[0].id as any);
+    }
+  }, [userProfile, allowedTabs, activeTab]);
+
+  // --- TODAY'S STATS CALCULATIONS (BASED ON ACTIVE TAB) ---
   const todayDateObj = new Date();
-  // Construct YYYY-MM-DD in local time manually to match form input values
   const todayStr = todayDateObj.getFullYear() + '-' +
     String(todayDateObj.getMonth() + 1).padStart(2, '0') + '-' +
     String(todayDateObj.getDate()).padStart(2, '0');
 
   const todaysSales = sales.filter(s => s.date === todayStr);
-  const kitTodaysSales = todaysSales.filter(s => s.category === 'kit' || !s.category);
-  const todayRevenue = kitTodaysSales.reduce((sum, s) => sum + s.price, 0);
-  const todayCount = kitTodaysSales.length;
+  
+  // Filter by category matching activeTab
+  const currentTabSales = todaysSales.filter(s => {
+    if (activeTab === 'KIT') return (s.category === 'kit' || !s.category);
+    if (activeTab === 'CHIP_0') return (s.category === 'chip_0');
+    if (activeTab === 'PORTABILITY') return (s.category === 'portability');
+    if (activeTab === 'EXPRESS') return (s.category === 'chip_express');
+    return false;
+  });
+
+  const todayRevenue = currentTabSales.reduce((sum, s) => sum + s.price, 0);
+  const todayCount = currentTabSales.length;
   const todayNet = todayRevenue / 1.16;
+
+  const ActiveTabIcon = allowedTabs.find(t => t.id === activeTab)?.icon || Smartphone;
+  const activeTabLabel = allowedTabs.find(t => t.id === activeTab)?.label || 'Ventas';
 
   // --- FILTER LOGIC ---
   const filteredSales = sales.filter(sale => {
@@ -209,10 +241,10 @@ const SalesList: React.FC<SalesListProps> = ({
             {/* Stat 1: Count */}
             <div className="flex items-center gap-4 px-2">
               <div className="w-12 h-12 rounded-2xl bg-blue-500/10 flex items-center justify-center border border-blue-500/20 text-blue-400">
-                <Smartphone className="w-6 h-6" />
+                <ActiveTabIcon className="w-6 h-6" />
               </div>
               <div>
-                <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-0.5">Equipos Vendidos</p>
+                <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-0.5">{activeTabLabel}</p>
                 <p className="text-3xl font-black text-white">{todayCount}</p>
               </div>
             </div>
@@ -245,12 +277,7 @@ const SalesList: React.FC<SalesListProps> = ({
 
       {/* TAB NAVIGATION */}
       <div className="flex overflow-x-auto pb-1 gap-2 scrollbar-hide">
-        {[
-          { id: 'KIT', label: 'Equipos Kit', icon: Smartphone },
-          { id: 'CHIP_0', label: 'Chip 0', icon: Cpu },
-          { id: 'PORTABILITY', label: 'Portabilidad', icon: Share2 },
-          { id: 'EXPRESS', label: 'Chip Express', icon: Phone }
-        ].map((tab) => (
+        {allowedTabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
