@@ -658,8 +658,8 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
       {/* GOALS GRID */}
       <div className={`grid grid-cols-1 gap-6 ${monthlyGoal > 0 && devicesGoal > 0 ? 'lg:grid-cols-2' : ''}`}>
 
-        {/* CARD 1: REVENUE (Active if monthlyGoal > 0 or if admin/viewer/seller) */}
-        {(monthlyGoal > 0 || role === 'admin' || role === 'viewer' || role === 'seller') && (
+        {/* CARD 1: REVENUE (Active if monthlyGoal > 0 or if admin/viewer/supervisor) */}
+        {((monthlyGoal > 0 || role === 'admin' || role === 'viewer' || role === 'supervisor') || (role === 'seller' && userProfile?.canSellKit !== false)) && (
           <div id="revenue-goal-card" className="bg-slate-900 rounded-3xl p-6 shadow-xl relative overflow-hidden text-white group flex flex-col justify-between">
             <div className="absolute top-0 right-0 w-48 h-48 bg-blue-600 rounded-full blur-[80px] opacity-20 group-hover:opacity-30 transition-opacity"></div>
             <div className="absolute bottom-0 left-0 w-48 h-48 bg-purple-600 rounded-full blur-[80px] opacity-10 group-hover:opacity-20 transition-opacity"></div>
@@ -726,8 +726,8 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
           </div>
         )}
 
-        {/* CARD 2: DEVICES (Active if devicesGoal > 0 or if admin/viewer/seller) */}
-        {(devicesGoal > 0 || role === 'admin' || role === 'viewer' || role === 'seller') && (
+        {/* CARD 2: DEVICES (Active if devicesGoal > 0 or if admin/viewer/supervisor) */}
+        {((devicesGoal > 0 || role === 'admin' || role === 'viewer' || role === 'supervisor') || (role === 'seller' && userProfile?.canSellKit !== false)) && (
           <div id="devices-goal-card" className="bg-slate-900 rounded-3xl p-6 shadow-xl relative overflow-hidden text-white group flex flex-col justify-between">
             <div className="absolute top-0 right-0 w-48 h-48 bg-emerald-600 rounded-full blur-[80px] opacity-20 group-hover:opacity-30 transition-opacity"></div>
             <div className="absolute bottom-0 left-0 w-48 h-48 bg-cyan-600 rounded-full blur-[80px] opacity-10 group-hover:opacity-20 transition-opacity"></div>
@@ -790,7 +790,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
         )}
 
         {/* CARD 3: CHIP 0 */}
-        {(chip0Goal > 0 || role === 'admin') && (
+        {((chip0Goal > 0 || role === 'admin' || role === 'supervisor') || (role === 'seller' && userProfile?.canSellChip0)) && (
           <div className="bg-slate-900 rounded-3xl p-6 shadow-xl relative overflow-hidden text-white group flex flex-col justify-between">
             <div className="absolute top-0 right-0 w-48 h-48 bg-purple-600 rounded-full blur-[80px] opacity-20 group-hover:opacity-30 transition-opacity"></div>
             <div className="relative z-10 flex justify-between items-start mb-6">
@@ -847,7 +847,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
         )}
 
         {/* CARD 4: PORTABILITY */}
-        {(portaGoal > 0 || role === 'admin') && (
+        {((portaGoal > 0 || role === 'admin' || role === 'supervisor') || (role === 'seller' && userProfile?.canSellPortability)) && (
           <div className="bg-slate-900 rounded-3xl p-6 shadow-xl relative overflow-hidden text-white group flex flex-col justify-between">
             <div className="absolute top-0 right-0 w-48 h-48 bg-rose-600 rounded-full blur-[80px] opacity-20 group-hover:opacity-30 transition-opacity"></div>
             <div className="relative z-10 flex justify-between items-start mb-6">
@@ -904,7 +904,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
         )}
 
         {/* CARD 5: CHIP EXPRESS */}
-        {(expressGoal > 0 || role === 'admin') && (
+        {((expressGoal > 0 || role === 'admin' || role === 'supervisor') || (role === 'seller' && userProfile?.canSellChipExpress)) && (
           <div className="bg-slate-900 rounded-3xl p-6 shadow-xl relative overflow-hidden text-white group flex flex-col justify-between">
             <div className="absolute top-0 right-0 w-48 h-48 bg-orange-600 rounded-full blur-[80px] opacity-20 group-hover:opacity-30 transition-opacity"></div>
             <div className="relative z-10 flex justify-between items-start mb-6">

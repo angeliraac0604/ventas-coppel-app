@@ -531,7 +531,11 @@ create policy "Users insert store warranties" on public.warranties for insert to
           can_justify_absences: invite?.can_justify_absences || false,
           can_manage_rest_days: invite?.can_manage_rest_days || false,
           can_force_attendance: invite?.can_force_attendance || false,
-          can_set_schedules: invite?.can_set_schedules || false
+          can_set_schedules: invite?.can_set_schedules || false,
+          can_sell_kit: invite?.can_sell_kit ?? metadata.can_sell_kit ?? true,
+          can_sell_chip_0: invite?.can_sell_chip_0 || metadata.can_sell_chip_0 || false,
+          can_sell_portability: invite?.can_sell_portability || metadata.can_sell_portability || false,
+          can_sell_chip_express: invite?.can_sell_chip_express || metadata.can_sell_chip_express || false
         };
 
         const { data: inserted, error: insertError } = await supabase
@@ -558,7 +562,11 @@ create policy "Users insert store warranties" on public.warranties for insert to
               can_justify_absences: invite.can_justify_absences,
               can_manage_rest_days: invite.can_manage_rest_days,
               can_force_attendance: invite.can_force_attendance,
-              can_set_schedules: invite.can_set_schedules
+              can_set_schedules: invite.can_set_schedules,
+              can_sell_kit: invite.can_sell_kit,
+              can_sell_chip_0: invite.can_sell_chip_0,
+              can_sell_portability: invite.can_sell_portability,
+              can_sell_chip_express: invite.can_sell_chip_express
             })
             .eq('id', userId)
             .select()
@@ -587,7 +595,11 @@ create policy "Users insert store warranties" on public.warranties for insert to
           canJustifyAbsences: finalProfile.can_justify_absences,
           canManageRestDays: finalProfile.can_manage_rest_days,
           canForceAttendance: finalProfile.can_force_attendance,
-          canSetSchedules: finalProfile.can_set_schedules
+          canSetSchedules: finalProfile.can_set_schedules,
+          canSellKit: finalProfile.can_sell_kit ?? true,
+          canSellChip0: finalProfile.can_sell_chip_0 || false,
+          canSellPortability: finalProfile.can_sell_portability || false,
+          canSellChipExpress: finalProfile.can_sell_chip_express || false
         });
 
         // Auto-set selectedStoreId if restricted to one store

@@ -67,12 +67,32 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
     return `${prefix}-` + digits;
   };
 
+  // Helper to get available categories based on permissions
+  const getAvailableCategories = () => {
+    const allowed: SaleCategory[] = [];
+    if (role === 'admin') {
+      allowed.push('kit', 'chip_0', 'portability', 'chip_express');
+      return allowed;
+    }
+    if (userProfile?.canSellKit !== false) allowed.push('kit');
+    if (userProfile?.canSellChip0) allowed.push('chip_0');
+    if (userProfile?.canSellPortability) allowed.push('portability');
+    if (userProfile?.canSellChipExpress) allowed.push('chip_express');
+    
+    // If absolutely no permissions are found and user is logged in, default to KIT only
+    if (allowed.length === 0 && userProfile) allowed.push('kit');
+    
+    return allowed;
+  };
+
+  const availableCategories = getAvailableCategories();
+
   // Common fields for the whole ticket
   const [commonData, setCommonData] = useState({
     invoiceNumber: initialData?.invoiceNumber ? initialData.invoiceNumber : '',
     customerName: initialData?.customerName || '',
     date: initialData?.date || defaultDateStr,
-    category: (initialData?.category as SaleCategory) || 'kit',
+    category: (initialData?.category as SaleCategory) || (availableCategories.includes('kit') ? 'kit' : availableCategories[0] || 'kit'),
     iccid: initialData?.iccid || '',
     phoneNumber: initialData?.phone_number || '',
     portabilityScreenshot: initialData?.portability_screenshot || null
@@ -343,19 +363,34 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
     const invoiceValue = commonData.invoiceNumber;
     const suffix = invoiceValue.includes('-') ? invoiceValue.split('-')[1] : '';
 
-    if (!invoiceValue.trim() || !commonData.customerName.trim()) {
-      alert("⚠️ Por favor complete los campos obligatorios: Número de Factura y Nombre del Cliente.");
+    // Solo Kit y Chip 0 requieren Factura y Nombre del cliente estrictamente
+    const isKitOrChip0 = commonData.category === 'kit' || commonData.category === 'chip_0';
+    
+    if (isKitOrChip0) {
+      if (!invoiceValue.trim() || !commonData.customerName.trim()) {
+        alert("⚠️ Por favor complete los campos obligatorios: Número de Factura y Nombre del Cliente.");
+        return;
+      }
+
+      if (prefix && suffix.length !== 6) {
+        alert(`⚠️ El número de factura debe tener exactamente 6 dígitos después del prefijo ${prefix}.\nEjemplo: ${prefix}-123456`);
+        return;
+      }
+    }
+
+    // Para Chip Express, el nombre del cliente puede ser opcional o genérico
+    if (commonData.category === 'chip_express' && !commonData.phoneNumber) {
+      alert("⚠️ Por favor ingresa el número de teléfono para la venta Express.");
       return;
     }
 
-    if (prefix && suffix.length !== 6) {
-      alert(`⚠️ El número de factura debe tener exactamente 6 dígitos después del prefijo ${prefix}.\nEjemplo: ${prefix}-123456`);
-      return;
-    }
-
-    // Validate Items
+    // Validate Items (Only for Kit and Chip 0)
     let allValid = true;
+    const isPriceRequired = commonData.category === 'kit' || commonData.category === 'chip_0';
+    
     const validatedItems = items.map(item => {
+      if (!isPriceRequired) return { ...item, error: undefined };
+      
       const validation = validatePrice(item.price);
       if (!validation.isValid) {
         allValid = false;
@@ -364,15 +399,16 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
       return item;
     });
 
-    if (!allValid) {
+    if (!allValid && isPriceRequired) {
       setItems(validatedItems);
       alert("Por favor ingrese un precio válido para todos los equipos.");
       return;
     }
 
-    // Photo check...
-    if (!ticketImage && role !== 'admin') {
-      alert("⚠️ La foto del ticket es obligatoria para concluir la venta.");
+    // Photo check... (Solo obligatorio para Kits, opcional para chips si es Admin o si el usuario no tiene la restricción)
+    const isPhotoRequired = commonData.category === 'kit' && role !== 'admin';
+    if (!ticketImage && isPhotoRequired) {
+      alert("⚠️ La foto del ticket es obligatoria para concluir la venta de un Kit.");
       return;
     }
 
@@ -575,17 +611,17 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
       </div>
 
       <div className="flex flex-wrap gap-2 mb-8 bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
-        {(userProfile?.canSellKit !== false) && (
+        {availableCategories.includes('kit') && (
           <button 
             type="button"
             onClick={() => setCommonData(prev => ({ ...prev, category: 'kit' }))}
             className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-xs font-black uppercase transition-all ${commonData.category === 'kit' ? 'bg-white text-blue-600 shadow-sm border border-blue-100' : 'text-slate-400 hover:text-slate-600'}`}
           >
             <Smartphone className="w-4 h-4" />
-            Kit
+            Equipos Kit
           </button>
         )}
-        {(userProfile?.canSellChip0 || role === 'admin') && (
+        {availableCategories.includes('chip_0') && (
           <button 
             type="button"
             onClick={() => {
@@ -598,7 +634,7 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
             Chip 0
           </button>
         )}
-        {(userProfile?.canSellPortability || role === 'admin') && (
+        {availableCategories.includes('portability') && (
           <button 
             type="button"
             onClick={() => {
@@ -607,11 +643,11 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
             }}
             className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-xs font-black uppercase transition-all ${commonData.category === 'portability' ? 'bg-white text-rose-600 shadow-sm border border-rose-100' : 'text-slate-400 hover:text-slate-600'}`}
           >
-            <Phone className="w-4 h-4" />
-            Porta
+            <Share2 className="w-4 h-4" />
+            Portabilidad
           </button>
         )}
-        {(userProfile?.canSellChipExpress || role === 'admin') && (
+        {availableCategories.includes('chip_express') && (
           <button 
             type="button"
             onClick={() => {
@@ -620,8 +656,8 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
             }}
             className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-xs font-black uppercase transition-all ${commonData.category === 'chip_express' ? 'bg-white text-orange-600 shadow-sm border border-orange-100' : 'text-slate-400 hover:text-slate-600'}`}
           >
-            <Cpu className="w-4 h-4" />
-            Express
+            <Phone className="w-4 h-4" />
+            Chip Express
           </button>
         )}
       </div>

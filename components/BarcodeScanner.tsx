@@ -42,6 +42,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, onClose, title 
         qrbox: { width: 350, height: 80 }, // Wider for long ICCIDs
         aspectRatio: 1.777778,
         videoConstraints: {
+          facingMode: "environment",
           width: { ideal: 1920 },
           height: { ideal: 1080 },
           focusMode: "continuous",
@@ -87,19 +88,23 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({ onScan, onClose, title 
     const init = async () => {
       try {
         const devices = await Html5Qrcode.getCameras();
-        const backCameras = devices.filter(d => 
-          !d.label.toLowerCase().includes('front') && 
-          !d.label.toLowerCase().includes('user')
-        );
-
+        
         if (isMounted) {
-          setCameras(backCameras);
-          if (backCameras.length > 0) {
-            // Start with the FIRST back camera (usually the main one)
-            // instead of the last one (which on S25 Ultra is a telephoto/macro)
-            startWithIndex(0, backCameras);
+          setCameras(devices);
+          if (devices.length > 0) {
+            // Instead of filtering manually, we use facingMode in the start method
+            // but we still need to pick a default cameraId.
+            // We'll prefer devices that don't have 'front' in their label.
+            const backCameras = devices.filter(d => 
+              !d.label.toLowerCase().includes('front') && 
+              !d.label.toLowerCase().includes('user')
+            );
+            
+            const targetIndex = backCameras.length > 0 ? devices.indexOf(backCameras[0]) : 0;
+            setCurrentCameraIndex(targetIndex);
+            startWithIndex(targetIndex, devices);
           } else {
-            setError("No se detectaron cámaras traseras.");
+            setError("No se detectaron cámaras.");
             setStatus('error');
           }
         }
