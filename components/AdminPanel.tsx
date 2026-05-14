@@ -46,6 +46,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
   const [isDirectLoading, setIsDirectLoading] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
   const [sortConfig, setSortConfig] = useState<{ key: 'name' | 'role' | 'store', direction: 'asc' | 'desc' } | null>(null);
+  const [roleFilter, setRoleFilter] = useState<UserRole | 'all'>('all');
 
   const [stores, setStores] = useState<Store[]>([]);
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
@@ -69,8 +70,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
   const getSortedProfiles = () => {
     let items = [...profiles];
     
-    // First apply existing filters (search and store)
+    // First apply existing filters (search, store, and role)
     items = items.filter(profile => (storeFilter === 'all' || profile.storeId === storeFilter))
+                 .filter(profile => (roleFilter === 'all' || profile.role === roleFilter))
                  .filter(profile => (
                    profile.fullName?.toLowerCase().includes(searchQuery.toLowerCase()) || 
                    profile.email.toLowerCase().includes(searchQuery.toLowerCase())
@@ -577,10 +579,22 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
             <select 
               value={storeFilter}
               onChange={(e) => setStoreFilter(e.target.value)}
-              className="bg-white border border-slate-200 rounded-2xl px-6 py-4 text-xs font-black uppercase outline-none"
+              className="bg-white border border-slate-200 rounded-2xl px-6 py-4 text-xs font-black uppercase outline-none focus:ring-4 focus:ring-indigo-50/50 transition-all"
             >
               <option value="all">TODAS LAS TIENDAS</option>
               {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+
+            <select 
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value as UserRole | 'all')}
+              className="bg-white border border-slate-200 rounded-2xl px-6 py-4 text-xs font-black uppercase outline-none focus:ring-4 focus:ring-indigo-50/50 transition-all"
+            >
+              <option value="all">TODOS LOS ROLES</option>
+              <option value="admin">ADMINISTRADORES</option>
+              <option value="supervisor">SUPERVISORES</option>
+              <option value="seller">VENDEDORES</option>
+              <option value="viewer">LECTORES</option>
             </select>
 
             <button onClick={() => setActiveModal('stores-list')} className="p-4 bg-white text-slate-600 border border-slate-200 rounded-2xl hover:bg-slate-50 transition-all flex items-center gap-2 font-black text-[10px] uppercase tracking-widest">
