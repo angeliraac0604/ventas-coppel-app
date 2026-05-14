@@ -70,17 +70,15 @@ const SalesForm: React.FC<SalesFormProps> = ({ onAddSale, onUpdateSale, initialD
   // Helper to get available categories based on permissions
   const getAvailableCategories = () => {
     const allowed: SaleCategory[] = [];
-    if (role === 'admin') {
-      allowed.push('kit', 'chip_0', 'portability', 'chip_express');
-      return allowed;
-    }
+    
+    // Check specific permissions (canSellKit defaults to true if not explicitly false)
     if (userProfile?.canSellKit !== false) allowed.push('kit');
     if (userProfile?.canSellChip0) allowed.push('chip_0');
     if (userProfile?.canSellPortability) allowed.push('portability');
     if (userProfile?.canSellChipExpress) allowed.push('chip_express');
     
-    // If absolutely no permissions are found and user is logged in, default to KIT only
-    if (allowed.length === 0 && userProfile) allowed.push('kit');
+    // If absolutely no permissions are found, fallback to 'kit'
+    if (allowed.length === 0) return ['kit'];
     
     return allowed;
   };
