@@ -109,11 +109,7 @@ const AuthForm: React.FC = () => {
 
       if (signUpError) throw signUpError;
 
-      // 3. Eliminar la invitación ya usada
-      await supabase
-        .from('pending_invitations')
-        .delete()
-        .eq('email', email.toLowerCase());
+      // 3. La invitación se eliminará automáticamente en App.tsx después de que el perfil sea sincronizado con sus permisos.
 
       const message = signUpData.session 
         ? "¡Cuenta creada y sesión iniciada correctamente!" 
