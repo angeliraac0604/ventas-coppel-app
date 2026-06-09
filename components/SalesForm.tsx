@@ -51,7 +51,7 @@ const SalesForm: React.FC<SalesFormProps> = ({
   }, [userProfile]);
 
   // 2. Estado del Formulario
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0') + '-' + String(new Date().getDate()).padStart(2, '0');
 
   const [commonData, setCommonData] = useState({
     customerName: initialData?.customerName || '',
@@ -674,7 +674,7 @@ const SalesForm: React.FC<SalesFormProps> = ({
                     ref={fileInputRef}
                     onChange={handleFileChange}
                     accept="image/*"
-                    capture={userProfile?.role === 'admin' ? undefined : "environment"}
+                    capture="environment"
                     className="hidden"
                   />
                   <input
@@ -736,7 +736,6 @@ const SalesForm: React.FC<SalesFormProps> = ({
                       ref={portabilityFileInputRef}
                       onChange={handlePortabilityFileChange}
                       accept="image/*"
-                      capture={userProfile?.role === 'admin' ? undefined : "environment"}
                       className="hidden"
                     />
                   </div>

@@ -369,18 +369,27 @@ create policy "Admins/Supervisors manage closings" on public.daily_closings for 
 -- Bloque de Funciones de Ayuda para Políticas
 create or replace function public.is_admin()
 returns boolean as $$
-  select exists (select 1 from public.profiles where id = auth.uid() and role = 'admin');
-$$ language sql security definer;
+begin
+  return exists (select 1 from public.profiles where id = auth.uid() and role = 'admin');
+end;
+$$ language plpgsql security definer;
 
 create or replace function public.get_user_store_id()
 returns uuid as $$
-  select store_id from public.profiles where id = auth.uid();
-$$ language sql security definer;
+declare
+  store_id_val uuid;
+begin
+  select store_id into store_id_val from public.profiles where id = auth.uid();
+  return store_id_val;
+end;
+$$ language plpgsql security definer;
 
 create or replace function public.is_supervisor()
 returns boolean as $$
-  select exists (select 1 from public.profiles where id = auth.uid() and role in ('supervisor', 'viewer'));
-$$ language sql security definer;
+begin
+  return exists (select 1 from public.profiles where id = auth.uid() and role in ('supervisor', 'viewer'));
+end;
+$$ language plpgsql security definer;
 
 -- Políticas de Ventas
 create policy "Admins see all sales" on public.sales for select to authenticated using (public.is_admin());

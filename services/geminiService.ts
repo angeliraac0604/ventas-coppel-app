@@ -65,8 +65,9 @@ export const analyzeTicketImage = async (
   }
 
   const candidateModels = [
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
+    "gemini-2.5-flash",
+    "gemini-3.5-flash",
+    "gemini-2.5-flash-lite",
   ];
 
   const base64Data = base64Image.split(',')[1] || base64Image;
@@ -81,15 +82,24 @@ export const analyzeTicketImage = async (
   ${currentDateContext}
   ${categoryContext}
   
+  REGLAS ESTRICTAS DE FILTRADO Y ENFOQUE:
+  1. ENFOQUE EXCLUSIVO EN EQUIPOS MÓVILES (TELÉFONOS): Solo debes extraer teléfonos celulares/smartphones de marcas reconocidas (como SAMSUNG, APPLE, OPPO, ZTE, MOTOROLA, REALME, VIVO, XIAOMI, HONOR, HUAWEI, SENWA, NUBIA, etc.).
+  2. IGNORAR ACCESORIOS Y OTROS ARTÍCULOS: Ignora por completo cualquier otro artículo que no sea un teléfono celular. NO incluyas en la lista de items: seguros, micas protectoras, fundas/carcasas, cargadores, cables, tarjetas de memoria, audífonos, servicios, membresías (ej. "Club de Protección"), ni garantías extendidas.
+  3. COMPORTAMIENTO CON EL TICKET: Céntrate únicamente en la información impresa del ticket de compra. Ignora cualquier objeto de fondo, manos, o texto que no pertenezca al ticket.
+
+  REGLAS DE DESCUENTO INTELIGENTE Y CÁLCULO DE PRECIO NETO:
+  1. DESCUENTO POR LÍNEA: Para cada teléfono celular, busca si inmediatamente abajo, al lado o asociado a él aparece un descuento, ahorro, promoción, bonificación o una cantidad negativa (ej. "Ahorro: $500", "Descuento -$300", "Promo -$1,000", "-500.00").
+  2. APLICACIÓN AUTOMÁTICA DEL DESCUENTO: Si encuentras un descuento asociado al teléfono, debes restarlo automáticamente del precio base del equipo para calcular el PRECIO NETO FINAL.
+     - Ejemplo: Si dice "Teléfono Samsung $3,999.00" y abajo dice "Ahorro -$500.00", el precio neto final a reportar en el JSON debe ser 3499.
+  3. PRECIO NETO FINAL: El valor numérico de 'price' en el JSON debe representar este precio neto final calculado (Precio Base menos todos los descuentos/ahorros aplicados a ese artículo). No incluyas símbolos de moneda ni comas.
+
   Extrae los siguientes datos en formato JSON estricto:
   1. invoiceNumber: Busca el folio, factura o número de ticket. (Únelo sin espacios).
   2. date: Busca la fecha de la transacción.
   3. customerName: El nombre del cliente en MAYÚSCULAS.
-  4. items: Lista de TODOS los equipos/chips vendidos. 
-     - DETECCIÓN MÚLTIPLE: Si hay varios, lístalos todos.
-     - price: El PRECIO NETO FINAL pagado por el equipo. 
-       REGLA GENERAL DE DESCUENTO: 
-       - Identifica el precio base. Si inmediatamente debajo aparece un descuento, réstalo.
+  4. items: Lista de equipos móviles vendidos (solo teléfonos):
+     - brand: La marca del equipo (ej. SAMSUNG, MOTOROLA, etc.).
+     - price: El PRECIO NETO FINAL pagado por el equipo (después de aplicar los descuentos correspondientes automáticamente).
   
   RESPONDE ÚNICAMENTE CON EL JSON.`;
 
