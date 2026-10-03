@@ -6,7 +6,7 @@ import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { Sale, Brand, DailyClose } from '../types';
 import { BRAND_CONFIGS } from '../constants';
-import { supabase } from '../services/supabaseClient';
+import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
 
 interface DashboardProps {
   sales: Sale[];
@@ -80,64 +80,84 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
         const isGlobal = !storeId || storeId === 'all';
         
         // 1. Fetch Goals
-        let goalQuery = supabase.from('monthly_goals').select('*').eq('month', selectedMonth);
-        if (!isGlobal) {
-          goalQuery = goalQuery.eq('store_id', storeId);
-        } else if (userProfile?.role === 'supervisor' || userProfile?.role === 'viewer') {
-          // If in global mode but has assigned stores, filter by them
-          if (userProfile.assignedStores && userProfile.assignedStores.length > 0) {
-            goalQuery = goalQuery.in('store_id', userProfile.assignedStores);
+        if (isSupabaseConfigured) {
+          try {
+            let goalQuery = supabase.from('monthly_goals').select('*').eq('month', selectedMonth);
+            if (!isGlobal) {
+              goalQuery = goalQuery.eq('store_id', storeId);
+            } else if (userProfile?.role === 'supervisor' || userProfile?.role === 'viewer') {
+              if (userProfile.assignedStores && userProfile.assignedStores.length > 0) {
+                goalQuery = goalQuery.in('store_id', userProfile.assignedStores);
+              }
+            }
+            const { data: goalData } = await goalQuery;
+
+            if (goalData && goalData.length > 0) {
+              if (isGlobal) {
+                setMonthlyGoal(goalData.reduce((sum, g) => sum + Number(g.revenue_goal || 0), 0));
+                setDevicesGoal(goalData.reduce((sum, g) => sum + Number(g.devices_goal || 0), 0));
+                setChip0Goal(goalData.reduce((sum, g) => sum + Number(g.chip_0_goal || 0), 0));
+                setPortaGoal(goalData.reduce((sum, g) => sum + Number(g.portability_goal || 0), 0));
+                setExpressGoal(goalData.reduce((sum, g) => sum + Number(g.chip_express_goal || 0), 0));
+              } else {
+                setMonthlyGoal(goalData[0].revenue_goal !== null ? Number(goalData[0].revenue_goal) : 0);
+                setDevicesGoal(goalData[0].devices_goal !== null ? Number(goalData[0].devices_goal) : 0);
+                setChip0Goal(goalData[0].chip_0_goal !== null ? Number(goalData[0].chip_0_goal) : 0);
+                setPortaGoal(goalData[0].portability_goal !== null ? Number(goalData[0].portability_goal) : 0);
+                setExpressGoal(goalData[0].chip_express_goal !== null ? Number(goalData[0].chip_express_goal) : 0);
+              }
+            } else {
+              setMonthlyGoal(0);
+              setDevicesGoal(0);
+              setChip0Goal(0);
+              setPortaGoal(0);
+              setExpressGoal(0);
+            }
+          } catch (goalErr) {
+            console.warn("Goals query note:", goalErr);
           }
         }
-        const { data: goalData } = await goalQuery;
 
-        if (goalData && goalData.length > 0) {
-          if (isGlobal) {
-            setMonthlyGoal(goalData.reduce((sum, g) => sum + Number(g.revenue_goal || 0), 0));
-            setDevicesGoal(goalData.reduce((sum, g) => sum + Number(g.devices_goal || 0), 0));
-            setChip0Goal(goalData.reduce((sum, g) => sum + Number(g.chip_0_goal || 0), 0));
-            setPortaGoal(goalData.reduce((sum, g) => sum + Number(g.portability_goal || 0), 0));
-            setExpressGoal(goalData.reduce((sum, g) => sum + Number(g.chip_express_goal || 0), 0));
-          } else {
-            setMonthlyGoal(goalData[0].revenue_goal !== null ? Number(goalData[0].revenue_goal) : 0);
-            setDevicesGoal(goalData[0].devices_goal !== null ? Number(goalData[0].devices_goal) : 0);
-            setChip0Goal(goalData[0].chip_0_goal !== null ? Number(goalData[0].chip_0_goal) : 0);
-            setPortaGoal(goalData[0].portability_goal !== null ? Number(goalData[0].portability_goal) : 0);
-            setExpressGoal(goalData[0].chip_express_goal !== null ? Number(goalData[0].chip_express_goal) : 0);
+        // 2. Fetch Sales for specifically this month
+        let monthly: Sale[] = [];
+        if (isSupabaseConfigured) {
+          try {
+            let salesQuery = supabase.from('sales').select('*')
+              .gte('date', `${selectedMonth}-01`)
+              .lte('date', `${selectedMonth}-31`)
+              .order('date', { ascending: false });
+            
+            if (!isGlobal) salesQuery = salesQuery.eq('store_id', storeId);
+            
+            const { data: salesData } = await salesQuery.range(0, 1999);
+            
+            if (salesData && salesData.length > 0) {
+              monthly = salesData.map((s: any) => ({
+                id: s.id,
+                invoiceNumber: s.invoice_number,
+                customerName: s.customer_name,
+                price: Number(s.price || 0),
+                brand: s.brand as Brand,
+                date: s.date,
+                storeId: s.store_id,
+                category: s.category
+              }));
+            }
+          } catch (sbErr) {
+            console.warn("Supabase dashboard sales note:", sbErr);
           }
-        } else {
-          setMonthlyGoal(0);
-          setDevicesGoal(0);
-          setChip0Goal(0);
-          setPortaGoal(0);
-          setExpressGoal(0);
         }
 
-        // 2. Fetch Sales for specifically this month to bypass row limits
-        let salesQuery = supabase.from('sales').select('*')
-          .gte('date', `${selectedMonth}-01`)
-          .lte('date', `${selectedMonth}-31`)
-          .order('date', { ascending: false });
-        
-        if (!isGlobal) salesQuery = salesQuery.eq('store_id', storeId);
-        
-        const { data: salesData } = await salesQuery.range(0, 1999);
-        
-        if (salesData) {
-          const formatted = salesData.map((s: any) => ({
-            id: s.id,
-            invoiceNumber: s.invoice_number,
-            customerName: s.customer_name,
-            price: s.price,
-            brand: s.brand as Brand,
-            date: s.date,
-            storeId: s.store_id,
-            category: s.category
-          }));
-          setMonthlySales(formatted);
-        } else {
-          setMonthlySales([]);
+        // Fallback to sales passed from props (Firestore data from backup)
+        if (monthly.length === 0 && sales && sales.length > 0) {
+          monthly = sales.filter(s => {
+            const matchesMonth = s.date && s.date.startsWith(selectedMonth);
+            const matchesStore = isGlobal || s.storeId === storeId;
+            return matchesMonth && matchesStore;
+          });
         }
+
+        setMonthlySales(monthly);
 
       } catch (err) {
         console.error("Dashboard fetch error", err);
@@ -146,7 +166,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
       }
     };
     fetchDashboardData();
-  }, [selectedMonth, storeId]);
+  }, [selectedMonth, storeId, sales]);
 
 
   const {

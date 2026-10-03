@@ -15,9 +15,15 @@ import CompleteProfile from './components/CompleteProfile';
 import { Sale, DailyClose, Brand, UserProfile, Warranty, Store, UserRole } from './types';
 import { BRAND_CONFIGS } from './constants';
 import posthog from 'posthog-js';
-import { supabase } from './services/supabaseClient';
+import { supabase, isSupabaseConfigured } from './services/supabaseClient';
 import { deleteImageFromDriveScript } from './services/googleAppsScriptService';
 import { smartImageUpload } from './services/storageService';
+import { RoleSwitcher } from './components/RoleSwitcher';
+import { BackupMigration, cleanFirestoreData } from './components/BackupMigration';
+import { DatabaseUsagePanel } from './components/DatabaseUsagePanel';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { db } from './services/firebase';
+import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 
 const App: React.FC = () => {
   // Auth State
@@ -26,6 +32,28 @@ const App: React.FC = () => {
   const [authLoading, setAuthLoading] = useState(true);
   const [pendingResolutions, setPendingResolutions] = useState<any[]>([]);
   const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
+
+  // Developer Session State
+  const [isDeveloperSession, setIsDeveloperSession] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('dev_session') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const [simulatedRole, setSimulatedRole] = useState<UserRole>(() => {
+    try {
+      return (localStorage.getItem('dev_simulated_role') as UserRole) || 'developer';
+    } catch {
+      return 'developer';
+    }
+  });
+
+  // Only angeliraac2001@outlook.com or active dev session is developer. angeliraac@gmail.com is regular admin!
+  const isDeveloper = isDeveloperSession || userProfile?.role === 'developer' || userProfile?.email === 'angeliraac2001@outlook.com';
+  const effectiveRole: UserRole = isDeveloper ? simulatedRole : (userProfile?.role || 'seller');
+
   const [showAdminNotification, setShowAdminNotification] = useState(() => {
     try {
       // For Admin: Only show once per session
@@ -36,7 +64,7 @@ const App: React.FC = () => {
   });
 
   // App State
-  const [currentView, setCurrentView] = useState<'form' | 'list' | 'dashboard' | 'closings' | 'warranties' | 'attendance' | 'attendance-report' | 'admin' | 'supervision' | 'requests'>(() => {
+  const [currentView, setCurrentView] = useState<'form' | 'list' | 'dashboard' | 'closings' | 'warranties' | 'attendance' | 'attendance-report' | 'admin' | 'supervision' | 'requests' | 'backup-migration' | 'database-usage'>(() => {
     try {
       return (localStorage.getItem('app_current_view') as any) || 'list';
     } catch {
@@ -103,13 +131,13 @@ const App: React.FC = () => {
 
   // --- SECURITY: Force redirect unauthorized users from admin views ---
   useEffect(() => {
-    if (userProfile && userProfile.role === 'seller') {
-      const adminViews = ['attendance-report', 'admin', 'supervision', 'requests', 'warranties'];
+    if (effectiveRole === 'seller' || effectiveRole === 'viewer') {
+      const adminViews = ['attendance-report', 'admin', 'supervision', 'requests', 'warranties', 'backup-migration'];
       if (adminViews.includes(currentView)) {
         setCurrentView('list');
       }
     }
-  }, [userProfile, currentView]);
+  }, [effectiveRole, currentView]);
 
   // States for Error Handling & Setup
   const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -238,12 +266,28 @@ const App: React.FC = () => {
     // Solo admin recibe alertas de solicitudes
     if (userProfile.role !== 'admin' && userProfile.role !== 'seller') return;
 
+    if (!isSupabaseConfigured) {
+      let unsub: (() => void) | undefined;
+      try {
+        unsub = onSnapshot(collection(db, 'sale_requests'), () => {
+          fetchPendingRequestsCount();
+        }, (err) => {
+          console.warn("Firestore alerts note:", err);
+        });
+      } catch (e) {
+        console.warn("Firestore alerts listener note:", e);
+      }
+      return () => {
+        if (unsub) unsub();
+      };
+    }
+
     const channel = supabase
       .channel('sale_requests_alerts')
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'sale_requests' },
-        (payload) => {
+        () => {
           if (userProfile.role === 'admin') {
              fetchPendingRequestsCount();
              if ("Notification" in window && Notification.permission === "granted") {
@@ -468,8 +512,81 @@ create policy "Sellers see store warranties" on public.warranties for select to 
 create policy "Users insert store warranties" on public.warranties for insert to authenticated with check (store_id = public.get_user_store_id());
 `;
 
+  const handleDeveloperLogin = () => {
+    const devProfile: UserProfile = {
+      id: 'dev-isaac-2001',
+      email: 'angeliraac2001@outlook.com',
+      role: 'developer',
+      fullName: 'Ángel Isaac (Desarrollador)',
+      storeId: '',
+      assignedStores: [],
+      canJustifyAbsences: true,
+      canManageRestDays: true,
+      canForceAttendance: true,
+      canSetSchedules: true,
+      canSellKit: true,
+      canSellChip0: true,
+      canSellPortability: true,
+      canSellChipExpress: true,
+      isDeveloper: true,
+      simulatedRole: 'developer'
+    };
+    setSession({ user: { id: 'dev-isaac-2001', email: 'angeliraac2001@outlook.com' } });
+    setUserProfile(devProfile);
+    setIsDeveloperSession(true);
+    setSimulatedRole('developer');
+    setAuthLoading(false);
+    try {
+      localStorage.setItem('dev_session', 'true');
+      localStorage.setItem('dev_simulated_role', 'developer');
+    } catch (e) {}
+  };
+
+  const handleFirestoreLogin = (fsUser: any) => {
+    try {
+      localStorage.setItem('firestore_user_session', JSON.stringify(fsUser));
+    } catch (e) {}
+    setSession({ user: { id: fsUser.id, email: fsUser.email } });
+    setUserProfile({
+      id: fsUser.id,
+      email: fsUser.email || '',
+      role: fsUser.role || 'seller',
+      fullName: fsUser.fullName || fsUser.full_name || fsUser.email?.split('@')[0] || 'COLABORADOR',
+      storeId: fsUser.storeId || fsUser.store_id || '',
+      assignedStores: fsUser.assignedStores || fsUser.assigned_stores || [],
+      canJustifyAbsences: !!fsUser.canJustifyAbsences,
+      canManageRestDays: !!fsUser.canManageRestDays,
+      canForceAttendance: !!fsUser.canForceAttendance,
+      canSetSchedules: !!fsUser.canSetSchedules,
+      canSellKit: fsUser.canSellKit ?? true,
+      canSellChip0: !!fsUser.canSellChip0,
+      canSellPortability: !!fsUser.canSellPortability,
+      canSellChipExpress: !!fsUser.canSellChipExpress
+    });
+    setAuthLoading(false);
+  };
+
   // --- AUTH CHECK ---
   useEffect(() => {
+    // 1. Revisar si hay sesión de Firestore guardada
+    try {
+      const fsSessionRaw = localStorage.getItem('firestore_user_session');
+      if (fsSessionRaw) {
+        const fsUser = JSON.parse(fsSessionRaw);
+        if (fsUser && fsUser.id) {
+          handleFirestoreLogin(fsUser);
+          return;
+        }
+      }
+    } catch (e) {}
+
+    // Si ya hay sesión de desarrollador activa o Supabase no está configurado
+    if (localStorage.getItem('dev_session') === 'true' || !isSupabaseConfigured) {
+      handleDeveloperLogin();
+      setAuthLoading(false);
+      return;
+    }
+
     // Safety timeout: If Supabase takes too long (common on slow mobile networks), 
     // force stop loading so user isn't stuck on blue screen.
     const safetyTimeout = setTimeout(() => {
@@ -482,14 +599,17 @@ create policy "Users insert store warranties" on public.warranties for insert to
       setSession(session);
       if (session) fetchUserProfile(session.user.id);
       setAuthLoading(false);
+    }).catch(() => {
+      clearTimeout(safetyTimeout);
+      setAuthLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (localStorage.getItem('dev_session') === 'true') return;
       setSession(session);
       if (session) {
         fetchUserProfile(session.user.id);
       } else {
-        setUserProfile(null);
         setUserProfile(null);
         setSales([]); // Clear sensitive data on logout
         setClosings([]);
@@ -621,12 +741,18 @@ create policy "Users insert store warranties" on public.warranties for insert to
         }
 
         // --- POSTHOG IDENTIFICATION ---
-        posthog.identify(finalProfile.id, {
-          email: finalProfile.email,
-          name: finalProfile.full_name,
-          role: finalProfile.role,
-          store: finalProfile.store_id
-        });
+        if (import.meta.env.VITE_PUBLIC_POSTHOG_PROJECT_TOKEN) {
+          try {
+            posthog.identify(finalProfile.id, {
+              email: finalProfile.email,
+              name: finalProfile.full_name,
+              role: finalProfile.role,
+              store: finalProfile.store_id
+            });
+          } catch (e) {
+            console.warn("PostHog identify error:", e);
+          }
+        }
         
         // --- NOTIFICATION CHECK ---
         checkResolvedRequests(finalProfile.id);
@@ -657,8 +783,19 @@ create policy "Users insert store warranties" on public.warranties for insert to
     try {
       localStorage.removeItem('sales_app_session_date');
       localStorage.removeItem('app_current_view');
+      localStorage.removeItem('dev_session');
+      localStorage.removeItem('dev_simulated_role');
+      localStorage.removeItem('firestore_user_session');
     } catch (e) {}
-    await supabase.auth.signOut();
+    setIsDeveloperSession(false);
+    setSession(null);
+    setUserProfile(null);
+    setSales([]);
+    setClosings([]);
+    setWarranties([]);
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {}
   };
 
   // --- AUTOMATIC MIDNIGHT LOGOUT LOGIC ---
@@ -801,148 +938,283 @@ create policy "Users insert store warranties" on public.warranties for insert to
   };
 
 
-  // --- FETCH DATA FROM SUPABASE ---
+  // --- FETCH DATA (FIRESTORE & SUPABASE) ---
   const fetchData = async () => {
-    if (!session) return;
-
     setIsLoading(true);
     setConnectionError(null);
     setIsSetupNeeded(false);
 
     try {
-      // 1. Fetch Sales (with profiles join for Admin view)
-      const oneMonthAgo = new Date();
-      oneMonthAgo.setDate(oneMonthAgo.getDate() - 30);
-      const dateLimit = oneMonthAgo.toISOString().split('T')[0];
+      // 0. Firestore Data Integration
+      let foundFirestoreData = false;
+      try {
+        const [fsStoresSnap, fsSalesSnap, fsClosingsSnap, fsWarrantiesSnap, fsUsersSnap] = await Promise.all([
+          getDocs(collection(db, 'stores')),
+          getDocs(collection(db, 'sales')),
+          getDocs(collection(db, 'daily_closings')),
+          getDocs(collection(db, 'warranties')),
+          getDocs(collection(db, 'users'))
+        ]);
 
-      const { data: salesData, error: salesError } = await supabase
-        .from('sales')
-        .select(`
-          *,
-          profiles:created_by (
-            email,
-            full_name
-          )
-        `)
-        .gte('date', dateLimit)
-        .order('date', { ascending: false })
-        .range(0, 4999); 
+        console.log(`🔥 [Firestore] Lectura inicial: ${fsStoresSnap.size} tiendas, ${fsSalesSnap.size} ventas, ${fsClosingsSnap.size} cierres, ${fsWarrantiesSnap.size} garantías, ${fsUsersSnap.size} usuarios.`);
 
-      if (salesError) {
-        if (salesError.code === '42P01') {
-          setIsSetupNeeded(true);
-          throw new Error("Tablas no encontradas en Supabase.");
+        const userMap: Record<string, { email?: string; fullName?: string }> = {};
+        if (!fsUsersSnap.empty) {
+          fsUsersSnap.docs.forEach(uDoc => {
+            const uData = uDoc.data();
+            userMap[uDoc.id] = {
+              email: uData.email,
+              fullName: uData.fullName || uData.full_name
+            };
+          });
         }
-        throw salesError;
-      }
 
-      const formattedSales: Sale[] = (salesData || []).map((row: any) => ({
-        id: row.id,
-        invoiceNumber: row.invoice_number,
-        customerName: row.customer_name,
-        price: row.price,
-        brand: row.brand as Brand,
-        date: row.date,
-        ticketImage: row.ticket_image,
-        createdBy: row.created_by,
-        createdAt: row.created_at,
-        createdByEmail: row.profiles?.email,
-        createdByName: row.profiles?.full_name,
-        storeId: row.store_id,
-        transactionFolio: row.transaction_folio,
-        category: row.category,
-        iccid: row.iccid,
-        phoneNumber: row.phone_number,
-        portabilityScreenshot: row.portability_screenshot
-      }));
+        let loadedStores: Store[] = [];
 
-      setSales(formattedSales);
-
-      // 2. Fetch Closings
-      const { data: closingsData, error: closingsError } = await supabase
-        .from('daily_closings')
-        .select('*')
-        .order('date', { ascending: false });
-
-      if (closingsError) {
-        if (closingsError.code === '42P01') {
-          setIsSetupNeeded(true);
-          throw new Error("Tabla 'daily_closings' no encontrada.");
+        if (!fsStoresSnap.empty) {
+          loadedStores = fsStoresSnap.docs.map(d => {
+            const data = d.data();
+            return {
+              id: d.id,
+              name: data.name || 'Sucursal',
+              location: data.location || '',
+              createdAt: data.createdAt || data.created_at || '',
+              prefix: data.prefix || '',
+              entryTime: data.entryTime || data.entry_time || '09:00',
+              exitTime: data.exitTime || data.exit_time || '19:00',
+              lunchDurationMinutes: Number(data.lunchDurationMinutes ?? data.lunch_duration_minutes ?? 60),
+              daySchedules: data.daySchedules || data.day_schedules || {}
+            };
+          });
+          setStores(loadedStores);
+          foundFirestoreData = true;
         }
-        throw closingsError;
-      }
 
-      const formattedClosings: DailyClose[] = (closingsData || []).map((row: any) => ({
-        id: row.id,
-        date: row.date,
-        totalSales: row.total_sales,
-        totalRevenue: row.total_revenue,
-        closedAt: row.closed_at,
-        topBrand: row.top_brand,
-        storeId: row.store_id,
-        attSales: row.att_sales
-      }));
+        if (!fsSalesSnap.empty) {
+          const fsSales: Sale[] = fsSalesSnap.docs.map(d => {
+            const data = d.data();
+            const creatorInfo = userMap[data.createdBy || data.created_by] || {};
+            return {
+              id: d.id,
+              invoiceNumber: data.invoiceNumber || data.invoice_number || 'S/N',
+              customerName: data.customerName || data.customer_name || 'Cliente',
+              price: Number(data.price || 0),
+              brand: (data.brand || 'OTRO') as Brand,
+              date: data.date || '',
+              ticketImage: data.ticketImage || data.ticket_image || '',
+              createdBy: data.createdBy || data.created_by || '',
+              createdAt: data.createdAt || data.created_at || '',
+              createdByEmail: data.createdByEmail || creatorInfo.email || data.profiles?.email || '',
+              createdByName: data.createdByName || creatorInfo.fullName || data.profiles?.full_name || '',
+              storeId: data.storeId || data.store_id || '',
+              transactionFolio: data.transactionFolio || data.transaction_folio || '',
+              category: (data.category || 'kit').toLowerCase() as any,
+              iccid: data.iccid || '',
+              phoneNumber: data.phoneNumber || data.phone_number || '',
+              portabilityScreenshot: data.portabilityScreenshot || data.portability_screenshot || ''
+            } as Sale;
+          });
+          setSales(fsSales.sort((a, b) => (b.date || '').localeCompare(a.date || '')));
+          foundFirestoreData = true;
 
-      setClosings(formattedClosings);
-
-      // 3. Fetch Warranties
-      const { data: warrantiesData, error: warrantiesError } = await supabase
-        .from('warranties')
-        .select('*')
-        .order('reception_date', { ascending: false });
-
-      if (warrantiesError) {
-        // Only warn if table missing, might be strictly optional feature for now
-        if (warrantiesError.code === '42P01') {
-          console.warn("Table 'warranties' missing. Setup update needed.");
-          setIsSetupNeeded(true);
-        } else {
-          throw warrantiesError;
+          // Si hay ventas pero alguna sucursal no estaba en Firestore, la sintetizamos automáticamente
+          const uniqueStoreIds = Array.from(new Set(fsSales.map(s => s.storeId).filter(Boolean)));
+          const existingIds = new Set(loadedStores.map(s => s.id));
+          const missingIds = uniqueStoreIds.filter(id => !existingIds.has(id));
+          if (missingIds.length > 0) {
+            const synthesizedStores: Store[] = missingIds.map((id, index) => ({
+              id,
+              name: `Sucursal Respaldo #${loadedStores.length + index + 1}`,
+              location: 'Importada del respaldo',
+              entryTime: '09:00',
+              exitTime: '19:00',
+              lunchDurationMinutes: 60
+            }));
+            loadedStores = [...loadedStores, ...synthesizedStores];
+            setStores(loadedStores);
+          }
         }
+
+        if (!fsClosingsSnap.empty) {
+          const fsClosings: DailyClose[] = fsClosingsSnap.docs.map(d => {
+            const data = d.data();
+            return {
+              id: d.id,
+              date: data.date || '',
+              totalSales: Number(data.totalSales ?? data.total_sales ?? 0),
+              totalRevenue: Number(data.totalRevenue ?? data.total_revenue ?? 0),
+              closedAt: data.closedAt || data.closed_at || '',
+              topBrand: data.topBrand || data.top_brand || 'OTRO',
+              storeId: data.storeId || data.store_id || '',
+              attSales: Number(data.attSales ?? data.att_sales ?? 0),
+              kitCount: data.kitCount ?? data.kit_count,
+              chip0Count: data.chip0Count ?? data.chip_0_count,
+              portabilityCount: data.portabilityCount ?? data.portability_count,
+              chipExpressCount: data.chipExpressCount ?? data.chip_express_count
+            } as DailyClose;
+          });
+          setClosings(fsClosings.sort((a, b) => (b.date || '').localeCompare(a.date || '')));
+        }
+
+        if (!fsWarrantiesSnap.empty) {
+          const fsWarranties: Warranty[] = fsWarrantiesSnap.docs.map(d => {
+            const data = d.data();
+            return {
+              id: d.id,
+              receptionDate: data.receptionDate || data.reception_date || '',
+              invoiceNumber: data.invoiceNumber || data.invoice_number || '',
+              brand: (data.brand || 'OTRO') as Brand,
+              model: data.model || '',
+              imei: data.imei || '',
+              issueDescription: data.issueDescription || data.issue_description || '',
+              accessories: data.accessories || '',
+              physicalCondition: data.physicalCondition || data.physical_condition || '',
+              contactNumber: data.contactNumber || data.contact_number || '',
+              ticketImage: data.ticketImage || data.ticket_image || '',
+              possibleEntryDate: data.possibleEntryDate || data.possible_entry_date || '',
+              status: data.status || 'received',
+              storeId: data.storeId || data.store_id || ''
+            } as Warranty;
+          });
+          setWarranties(fsWarranties);
+        }
+      } catch (fsErr) {
+        console.warn("Consulta Firestore:", fsErr);
       }
 
-      if (warrantiesData) {
-        const formattedWarranties: Warranty[] = warrantiesData.map((row: any) => ({
-          id: row.id,
-          receptionDate: row.reception_date,
-          invoiceNumber: row.invoice_number,
-          brand: row.brand as Brand,
-          model: row.model,
-          imei: row.imei,
-          issueDescription: row.issue_description,
-          accessories: row.accessories,
-          physicalCondition: row.physical_condition,
-          contactNumber: row.contact_number,
-          ticketImage: row.ticket_image,
-          possibleEntryDate: row.possible_entry_date, 
-          status: row.status,
-          storeId: row.store_id
-        }));
-        setWarranties(formattedWarranties);
-      } else {
-        setWarranties([]);
+      // Si no hay datos en Firestore o estamos en modo Desarrollador sin tiendas
+      if (isDeveloper || foundFirestoreData) {
+        setStores(prev => prev.length > 0 ? prev : [
+          { id: 'coppel-centro', name: 'Coppel Centro', location: 'Av. Juárez 100', entryTime: '09:00', exitTime: '19:00', lunchDurationMinutes: 60 },
+          { id: 'coppel-plaza', name: 'Coppel Plaza Galerías', location: 'Plaza Galerías Local 25', entryTime: '09:00', exitTime: '19:00', lunchDurationMinutes: 60 },
+          { id: 'coppel-norte', name: 'Coppel Norte', location: 'Blvd. Norte 820', entryTime: '09:00', exitTime: '19:00', lunchDurationMinutes: 60 },
+        ]);
       }
 
+      // 1. Fetch Sales (with profiles join for Admin view) from Supabase if active
+      if (isSupabaseConfigured) {
+        try {
+          const oneMonthAgo = new Date();
+          oneMonthAgo.setDate(oneMonthAgo.getDate() - 30);
+          const dateLimit = oneMonthAgo.toISOString().split('T')[0];
 
-      // 4. Fetch Stores
-      const { data: storesData } = await supabase.from('stores').select('*').order('name');
-      if (storesData) {
-        setStores(storesData.map((s: any) => ({
-          id: s.id,
-          name: s.name,
-          location: s.location,
-          createdAt: s.created_at,
-          prefix: s.prefix,
-          entryTime: s.entry_time,
-          exitTime: s.exit_time,
-          lunchDurationMinutes: s.lunch_duration_minutes,
-          daySchedules: s.day_schedules || {}
-        })));
+          const { data: salesData, error: salesError } = await supabase
+            .from('sales')
+            .select(`
+              *,
+              profiles:created_by (
+                email,
+                full_name
+              )
+            `)
+            .gte('date', dateLimit)
+            .order('date', { ascending: false })
+            .range(0, 4999); 
+
+          if (!salesError && salesData && salesData.length > 0) {
+            const formattedSales: Sale[] = salesData.map((row: any) => ({
+              id: row.id,
+              invoiceNumber: row.invoice_number,
+              customerName: row.customer_name,
+              price: row.price,
+              brand: row.brand as Brand,
+              date: row.date,
+              ticketImage: row.ticket_image,
+              createdBy: row.created_by,
+              createdAt: row.created_at,
+              createdByEmail: row.profiles?.email,
+              createdByName: row.profiles?.full_name,
+              storeId: row.store_id,
+              transactionFolio: row.transaction_folio,
+              category: row.category,
+              iccid: row.iccid,
+              phoneNumber: row.phone_number,
+              portabilityScreenshot: row.portability_screenshot
+            }));
+            setSales(prev => {
+              const existingIds = new Set(prev.map(s => s.id));
+              const newOnes = formattedSales.filter(s => !existingIds.has(s.id));
+              return [...prev, ...newOnes];
+            });
+          }
+
+          // 2. Fetch Closings from Supabase
+          const { data: closingsData, error: closingsError } = await supabase
+            .from('daily_closings')
+            .select('*')
+            .order('date', { ascending: false });
+
+          if (!closingsError && closingsData && closingsData.length > 0) {
+            const formattedClosings: DailyClose[] = closingsData.map((row: any) => ({
+              id: row.id,
+              date: row.date,
+              totalSales: row.total_sales,
+              totalRevenue: row.total_revenue,
+              closedAt: row.closed_at,
+              topBrand: row.top_brand,
+              storeId: row.store_id,
+              attSales: row.att_sales
+            }));
+            setClosings(prev => {
+              const existingIds = new Set(prev.map(c => c.id));
+              const newOnes = formattedClosings.filter(c => !existingIds.has(c.id));
+              return [...prev, ...newOnes];
+            });
+          }
+
+          // 3. Fetch Warranties from Supabase
+          const { data: warrantiesData } = await supabase
+            .from('warranties')
+            .select('*')
+            .order('reception_date', { ascending: false });
+
+          if (warrantiesData && warrantiesData.length > 0) {
+            const formattedWarranties: Warranty[] = warrantiesData.map((row: any) => ({
+              id: row.id,
+              receptionDate: row.reception_date,
+              invoiceNumber: row.invoice_number,
+              brand: row.brand as Brand,
+              model: row.model,
+              imei: row.imei,
+              issueDescription: row.issue_description,
+              accessories: row.accessories,
+              physicalCondition: row.physical_condition,
+              contactNumber: row.contact_number,
+              ticketImage: row.ticket_image,
+              possibleEntryDate: row.possible_entry_date, 
+              status: row.status,
+              storeId: row.store_id
+            }));
+            setWarranties(prev => {
+              const existingIds = new Set(prev.map(w => w.id));
+              const newOnes = formattedWarranties.filter(w => !existingIds.has(w.id));
+              return [...prev, ...newOnes];
+            });
+          }
+
+          // 4. Fetch Stores from Supabase
+          const { data: storesData } = await supabase.from('stores').select('*').order('name');
+          if (storesData && storesData.length > 0) {
+            setStores(storesData.map((s: any) => ({
+              id: s.id,
+              name: s.name,
+              location: s.location,
+              createdAt: s.created_at,
+              prefix: s.prefix,
+              entryTime: s.entry_time,
+              exitTime: s.exit_time,
+              lunchDurationMinutes: s.lunch_duration_minutes,
+              daySchedules: s.day_schedules || {}
+            })));
+          }
+        } catch (sbErr) {
+          console.warn("Supabase fetch note:", sbErr);
+        }
       }
 
     } catch (error: any) {
-      console.error('Error fetching data from Supabase:', error);
-      if (!isSetupNeeded) {
+      console.error('Error fetching data:', error);
+      if (!isDeveloper && !isSetupNeeded) {
         setConnectionError(formatError(error));
       }
     } finally {
@@ -952,16 +1224,25 @@ create policy "Users insert store warranties" on public.warranties for insert to
 
   // --- FILTERED DATA logic ---
   const getFilteredData = <T extends { storeId?: string }>(data: T[]) => {
-    if (!userProfile) return [];
+    if (!data) return [];
+    if (!userProfile) return data;
 
-    // Admins see everything or filter by selectedStoreId
-    if (userProfile?.role === 'admin') {
-      return selectedStoreId === 'all' ? data : data.filter(item => item.storeId === selectedStoreId);
+    // Admins and Developers see everything (or filter by selectedStoreId)
+    if (
+      effectiveRole === 'admin' || 
+      effectiveRole === 'developer' || 
+      userProfile?.role === 'admin' || 
+      userProfile?.role === 'developer' || 
+      isDeveloper
+    ) {
+      if (!selectedStoreId || selectedStoreId === 'all') {
+        return data;
+      }
+      return data.filter(item => item.storeId === selectedStoreId);
     }
 
     // Supervisors and Viewers: handle "Global" vs "Area" access
-    if (userProfile?.role === 'supervisor' || userProfile?.role === 'viewer') {
-      // Combine base store and assigned stores
+    if (effectiveRole === 'supervisor' || effectiveRole === 'viewer' || userProfile?.role === 'supervisor' || userProfile?.role === 'viewer') {
       const storesFromProfile = [
         ...(userProfile.storeId ? [userProfile.storeId] : []),
         ...(userProfile.assignedStores || [])
@@ -973,22 +1254,39 @@ create policy "Users insert store warranties" on public.warranties for insert to
         ? data.filter(item => allowedStores.includes(item.storeId || ''))
         : data;
 
-      return selectedStoreId === 'all' 
+      return (!selectedStoreId || selectedStoreId === 'all') 
         ? baseData 
         : baseData.filter(item => item.storeId === selectedStoreId);
     }
 
-    // Default (Sellers): only show their store
-    return data.filter(item => item.storeId === userProfile?.storeId);
+    // Default (Sellers): only show their store if assigned, or show all if unassigned
+    return userProfile?.storeId 
+      ? data.filter(item => item.storeId === userProfile.storeId)
+      : data;
   };
 
   const filteredSales = getFilteredData(sales);
   const filteredClosings = getFilteredData(closings as any[]) as DailyClose[];
   const filteredWarranties = getFilteredData(warranties);
 
+  // Auto-reset store filter if selected store doesn't exist in loaded stores
+  useEffect(() => {
+    if (stores.length > 0 && selectedStoreId !== 'all') {
+      const exists = stores.some(s => s.id === selectedStoreId);
+      if (!exists) {
+        console.log(`[Store Filter] Sucursal '${selectedStoreId}' no encontrada en sucursales activas. Restableciendo a 'all'.`);
+        setSelectedStoreId('all');
+      }
+    }
+  }, [stores, selectedStoreId]);
+
   useEffect(() => {
     if (session) {
       fetchData();
+
+      if (!isSupabaseConfigured) {
+        return;
+      }
 
       // Realtime Subscription
       const channel = supabase
@@ -1072,6 +1370,32 @@ create policy "Users insert store warranties" on public.warranties for insert to
         return;
       }
 
+      const generatedFolio = `VNT-${newSaleData.date.replace(/-/g, '')}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
+      if (!isSupabaseConfigured) {
+        const saleId = `sale-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+        const newSale: Sale = {
+          id: saleId,
+          invoiceNumber: newSaleData.invoiceNumber,
+          customerName: newSaleData.customerName,
+          price: newSaleData.price,
+          brand: newSaleData.brand,
+          date: newSaleData.date,
+          ticketImage: newSaleData.ticketImage || '',
+          createdBy: session?.user?.id || 'dev-user',
+          storeId: finalStoreId,
+          category: (newSaleData as any).category || 'kit',
+          iccid: (newSaleData as any).iccid || '',
+          phoneNumber: (newSaleData as any).phone_number || '',
+          portabilityScreenshot: (newSaleData as any).portability_screenshot || '',
+          transactionFolio: generatedFolio
+        };
+        await setDoc(doc(db, 'sales', saleId), cleanFirestoreData(newSale), { merge: true });
+        setSales(prev => [newSale, ...prev]);
+        setCurrentView('list');
+        return;
+      }
+
       const dbPayload = {
         invoice_number: newSaleData.invoiceNumber,
         customer_name: newSaleData.customerName,
@@ -1085,7 +1409,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
         iccid: (newSaleData as any).iccid || null,
         phone_number: (newSaleData as any).phone_number || null,
         portability_screenshot: (newSaleData as any).portability_screenshot || null,
-        transaction_folio: `VNT-${newSaleData.date.replace(/-/g, '')}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`
+        transaction_folio: generatedFolio
       };
 
       const { data, error } = await supabase
@@ -1130,6 +1454,21 @@ create policy "Users insert store warranties" on public.warranties for insert to
 
   const fetchPendingRequestsCount = async () => {
     try {
+      if (!isSupabaseConfigured) {
+        try {
+          const snap = await getDocs(collection(db, 'sale_requests'));
+          const pending = snap.docs.filter(d => d.data().status === 'pending');
+          const countValue = pending.length;
+          setPendingRequestsCount(countValue);
+          if (countValue > 0 && sessionStorage.getItem('admin_notified_session') !== 'true') {
+            setShowAdminNotification(true);
+          }
+        } catch {
+          setPendingRequestsCount(0);
+        }
+        return;
+      }
+
       const { count, error } = await supabase
         .from('sale_requests')
         .select('*', { count: 'exact', head: true })
@@ -1145,7 +1484,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
         }
       }
     } catch (err) {
-      console.error("Error counting requests:", err);
+      console.warn("Requests count note:", err);
     }
   };
 
@@ -1165,6 +1504,22 @@ create policy "Users insert store warranties" on public.warranties for insert to
 
   const checkResolvedRequests = async (userId: string) => {
     try {
+      if (!isSupabaseConfigured) {
+        try {
+          const snap = await getDocs(collection(db, 'sale_requests'));
+          const resolved = snap.docs
+            .map(d => ({ id: d.id, ...d.data() } as any))
+            .filter(r => r.requester_id === userId && r.status !== 'pending' && !r.notified);
+          if (resolved.length > 0) {
+            setPendingResolutions(resolved);
+            for (const r of resolved) {
+              await updateDoc(doc(db, 'sale_requests', r.id), { notified: true }).catch(() => {});
+            }
+          }
+        } catch {}
+        return;
+      }
+
       const { data, error } = await supabase
         .from('sale_requests')
         .select(`
@@ -1186,12 +1541,18 @@ create policy "Users insert store warranties" on public.warranties for insert to
           .in('id', requestIds);
       }
     } catch (err) {
-      console.error("Error checking resolutions:", err);
+      console.warn("Resolutions check note:", err);
     }
   };
 
   const handleDismissResolution = async (requestId: string) => {
     try {
+      if (!isSupabaseConfigured) {
+        await updateDoc(doc(db, 'sale_requests', requestId), { notified: true }).catch(() => {});
+        setPendingResolutions(prev => prev.filter(r => r.id !== requestId));
+        return;
+      }
+
       const { error } = await supabase
         .from('sale_requests')
         .update({ notified: true })
@@ -1200,7 +1561,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
       if (error) throw error;
       setPendingResolutions(prev => prev.filter(r => r.id !== requestId));
     } catch (err) {
-      console.error("Error marking as notified:", err);
+      console.warn("Dismiss resolution note:", err);
     }
   };
 
@@ -1208,6 +1569,20 @@ create policy "Users insert store warranties" on public.warranties for insert to
     if (!session) return;
     setIsLoading(true);
     try {
+      const finalStoreId = updatedSale.storeId || userProfile?.storeId || '';
+
+      if (!isSupabaseConfigured) {
+        await updateDoc(doc(db, 'sales', updatedSale.id), cleanFirestoreData({
+          ...updatedSale,
+          storeId: finalStoreId
+        }));
+        setSales(prev => prev.map(s => s.id === updatedSale.id ? { ...updatedSale, storeId: finalStoreId } : s));
+        alert("Venta actualizada correctamente.");
+        setSaleToEdit(null);
+        setCurrentView('list');
+        return;
+      }
+
       const dbPayload = {
         invoice_number: updatedSale.invoiceNumber,
         customer_name: updatedSale.customerName,
@@ -1215,7 +1590,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
         brand: updatedSale.brand,
         date: updatedSale.date,
         ticket_image: updatedSale.ticketImage,
-        store_id: updatedSale.storeId || userProfile?.storeId,
+        store_id: finalStoreId,
         category: updatedSale.category,
         iccid: updatedSale.iccid,
         phone_number: updatedSale.phoneNumber,
@@ -1252,6 +1627,12 @@ create policy "Users insert store warranties" on public.warranties for insert to
       // Find sale to get image URL
       const saleToDelete = sales.find(s => s.id === id);
 
+      if (!isSupabaseConfigured) {
+        await deleteDoc(doc(db, 'sales', id));
+        setSales(prev => prev.filter(s => s.id !== id));
+        return;
+      }
+
       const { error } = await supabase
         .from('sales')
         .delete()
@@ -1286,8 +1667,26 @@ create policy "Users insert store warranties" on public.warranties for insert to
         ? selectedStoreId 
         : userProfile?.storeId;
 
+      const closeId = `close-${newClose.date}-${finalStoreId}`;
+
+      if (!isSupabaseConfigured) {
+        const closeDoc = {
+          ...newClose,
+          id: closeId,
+          storeId: finalStoreId,
+          attSales: newClose.attSales || 0
+        };
+        await setDoc(doc(db, 'daily_closings', closeId), cleanFirestoreData(closeDoc), { merge: true });
+        setClosings(prev => {
+          const filtered = prev.filter(c => !(c.date === newClose.date && c.storeId === finalStoreId));
+          return [newClose, ...filtered].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        });
+        alert("Cierre de día actualizado correctamente.");
+        return;
+      }
+
       const dbPayload = {
-        id: `close-${newClose.date}-${finalStoreId}`, // Added store ID to ID to avoid collision
+        id: closeId, // Added store ID to ID to avoid collision
         date: newClose.date,
         total_sales: newClose.totalSales,
         total_revenue: newClose.totalRevenue,
@@ -1326,6 +1725,13 @@ create policy "Users insert store warranties" on public.warranties for insert to
     
     setIsLoading(true);
     try {
+      if (!isSupabaseConfigured) {
+        await deleteDoc(doc(db, 'daily_closings', id));
+        setClosings(prev => prev.filter(c => c.id !== id));
+        alert("Cierre eliminado correctamente.");
+        return;
+      }
+
       const { error } = await supabase
         .from('daily_closings')
         .delete()
@@ -1357,6 +1763,31 @@ create policy "Users insert store warranties" on public.warranties for insert to
         return;
       }
 
+      const warrantyId = `warranty-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      const addedWarranty: Warranty = {
+        id: warrantyId,
+        receptionDate: newWarranty.receptionDate,
+        invoiceNumber: newWarranty.invoiceNumber,
+        brand: newWarranty.brand as Brand,
+        model: newWarranty.model,
+        imei: newWarranty.imei,
+        issueDescription: newWarranty.issueDescription,
+        accessories: newWarranty.accessories,
+        physicalCondition: newWarranty.physicalCondition,
+        contactNumber: newWarranty.contactNumber,
+        ticketImage: newWarranty.ticketImage,
+        possibleEntryDate: newWarranty.possibleEntryDate,
+        status: newWarranty.status,
+        storeId: finalStoreId
+      };
+
+      if (!isSupabaseConfigured) {
+        await setDoc(doc(db, 'warranties', warrantyId), cleanFirestoreData(addedWarranty), { merge: true });
+        setWarranties(prev => [addedWarranty, ...prev]);
+        alert("Garantía registrada correctamente.");
+        return;
+      }
+
       const dbPayload = {
         reception_date: newWarranty.receptionDate,
         invoice_number: newWarranty.invoiceNumber,
@@ -1382,7 +1813,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
 
       if (data && data.length > 0) {
         const row = data[0];
-        const addedWarranty: Warranty = {
+        const insertedWarranty: Warranty = {
           id: row.id,
           receptionDate: row.reception_date,
           invoiceNumber: row.invoice_number,
@@ -1398,7 +1829,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
           status: row.status,
           storeId: row.store_id
         };
-        setWarranties(prev => [addedWarranty, ...prev]);
+        setWarranties(prev => [insertedWarranty, ...prev]);
         alert("Garantía registrada correctamente.");
       }
     } catch (error: any) {
@@ -1415,6 +1846,11 @@ create policy "Users insert store warranties" on public.warranties for insert to
     setWarranties(prev => prev.map(w => w.id === id ? { ...w, status: newStatus } : w));
 
     try {
+      if (!isSupabaseConfigured) {
+        await updateDoc(doc(db, 'warranties', id), { status: newStatus });
+        return;
+      }
+
       const { error } = await supabase
         .from('warranties')
         .update({ status: newStatus })
@@ -1443,6 +1879,11 @@ create policy "Users insert store warranties" on public.warranties for insert to
         deleteImageFromDriveScript(warranty.ticketImage).catch(e => console.error("Drive delete error", e));
       }
 
+      if (!isSupabaseConfigured) {
+        await deleteDoc(doc(db, 'warranties', warranty.id));
+        return;
+      }
+
       // 2. Delete from Supabase
       const { error } = await supabase.from('warranties').delete().eq('id', warranty.id);
       if (error) throw error;
@@ -1454,7 +1895,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
     }
   };
 
-  const NavButton = ({ view, icon: Icon, label, badge }: { view: 'form' | 'list' | 'dashboard' | 'closings' | 'warranties' | 'admin' | 'attendance' | 'supervision' | 'attendance-report' | 'requests', icon: any, label: string, badge?: number }) => {
+  const NavButton = ({ view, icon: Icon, label, badge }: { view: 'form' | 'list' | 'dashboard' | 'closings' | 'warranties' | 'admin' | 'attendance' | 'supervision' | 'attendance-report' | 'requests' | 'backup-migration' | 'database-usage', icon: any, label: string, badge?: number }) => {
     const isActive = currentView === view;
     return (
       <button
@@ -1492,7 +1933,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
 
   // --- RENDER: AUTH FORM ---
   if (!session) {
-    return <AuthForm />;
+    return <AuthForm onDeveloperLogin={handleDeveloperLogin} onFirestoreLogin={handleFirestoreLogin} />;
   }
 
   // --- RENDER: PROFILE LOADING GUARD ---
@@ -1511,7 +1952,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
 
   // --- RENDER: COMPLETE PROFILE (For new users from invite) ---
   // BLOQUEO TOTAL: Si no hay nombre completo, NO se pasa de aquí.
-  if (userProfile && (!userProfile.fullName || userProfile.fullName.trim() === "")) {
+  if (!isDeveloper && userProfile && (!userProfile.fullName || userProfile.fullName.trim() === "")) {
     const userStoreName = stores.find(s => s.id === userProfile.storeId)?.name;
     return <CompleteProfile 
       profile={userProfile} 
@@ -1521,7 +1962,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
   }
 
   // --- RENDER: SETUP / ERROR SCREEN ---
-  if (isSetupNeeded || (connectionError && sales.length === 0 && closings.length === 0)) {
+  if (!isDeveloper && (isSetupNeeded || (connectionError && sales.length === 0 && closings.length === 0))) {
     return (
       <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center p-4 font-sans">
         <div className="max-w-2xl w-full space-y-8">
@@ -1623,10 +2064,10 @@ create policy "Users insert store warranties" on public.warranties for insert to
 
         {/* Navigation Items */}
         <div className="flex-1 px-4 space-y-2 overflow-y-auto custom-scrollbar">
-          {userProfile?.role !== 'supervisor' && (
+          {effectiveRole !== 'supervisor' && (
             <>
               <div className="text-[10px] font-bold text-slate-500 px-4 py-2 uppercase tracking-wider">Menú Principal</div>
-              {userProfile?.role !== 'viewer' && (
+              {effectiveRole !== 'viewer' && (
                 <>
                   <NavButton view="list" icon={LayoutList} label="Registro de Ventas" />
                   <NavButton view="attendance" icon={Clock} label="Asistencia" />
@@ -1637,10 +2078,10 @@ create policy "Users insert store warranties" on public.warranties for insert to
             </>
           )}
           
-          {(userProfile?.role === 'admin' || userProfile?.role === 'supervisor') && (
+          {(effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'developer') && (
             <>
               <div className="text-[10px] font-bold text-slate-500 px-4 py-2 mt-4 uppercase tracking-wider">Administración</div>
-              {userProfile?.role === 'admin' && (
+              {(effectiveRole === 'admin' || effectiveRole === 'developer') && (
                 <NavButton view="warranties" icon={ShieldAlert} label="Garantías" />
               )}
               <NavButton 
@@ -1649,7 +2090,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
                 label="Reporte Asistencias" 
                 badge={alerts.length > 0 ? alerts.length : undefined}
               />
-              {userProfile?.role === 'admin' && (
+              {(effectiveRole === 'admin' || effectiveRole === 'developer') && (
                 <>
                   <NavButton view="admin" icon={Shield} label="Administración" />
                   <NavButton view="requests" icon={Bell} label="Solicitudes" badge={pendingRequestsCount > 0 ? pendingRequestsCount : undefined} />
@@ -1658,12 +2099,23 @@ create policy "Users insert store warranties" on public.warranties for insert to
               <NavButton view="supervision" icon={TrendingUp} label="Rendimiento" />
             </>
           )}
+
+          {(effectiveRole === 'developer' || effectiveRole === 'admin') && (
+            <>
+              <div className="text-[10px] font-bold text-purple-400 px-4 py-2 mt-4 uppercase tracking-wider flex items-center gap-1.5">
+                <Database className="w-3 h-3" />
+                Base de Datos
+              </div>
+              <NavButton view="backup-migration" icon={Database} label="Migrar Respaldo (.gz)" />
+              <NavButton view="database-usage" icon={TrendingUp} label="Uso y Costos de BD" />
+            </>
+          )}
         </div>
 
         {/* User Profile Section */}
         <div className="p-4 border-t border-slate-800">
           <div className="bg-slate-800/50 rounded-xl p-3 flex items-center gap-3 border border-slate-700/50 hover:border-slate-600 transition-colors group">
-            <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center text-slate-300 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white transition-colors ${effectiveRole === 'developer' ? 'bg-purple-600' : 'bg-slate-700'}`}>
               <UserIcon className="w-5 h-5" />
             </div>
             <div className="flex-1 min-w-0">
@@ -1671,9 +2123,9 @@ create policy "Users insert store warranties" on public.warranties for insert to
                 {userProfile?.fullName || userProfile?.email?.split('@')[0] || 'Usuario'}
               </p>
               <div className="flex items-center gap-1.5 mt-0.5">
-                <Shield className={`w-3 h-3 ${userProfile?.role === 'admin' ? 'text-yellow-400' : 'text-slate-500'}`} />
-                <p className="text-slate-500 text-[10px] uppercase font-bold truncate">
-                  {userProfile?.role === 'admin' ? 'Administrador' : userProfile?.role === 'supervisor' ? 'Supervisor' : userProfile?.role === 'viewer' ? 'Visualizador' : 'Vendedor'}
+                <Shield className={`w-3 h-3 ${effectiveRole === 'developer' ? 'text-purple-400' : effectiveRole === 'admin' ? 'text-yellow-400' : 'text-slate-500'}`} />
+                <p className="text-slate-400 text-[10px] uppercase font-bold truncate">
+                  {effectiveRole === 'developer' ? 'Desarrollador' : effectiveRole === 'admin' ? 'Administrador' : effectiveRole === 'supervisor' ? 'Supervisor' : effectiveRole === 'viewer' ? 'Visualizador' : 'Vendedor'}
                 </p>
               </div>
             </div>
@@ -1707,6 +2159,8 @@ create policy "Users insert store warranties" on public.warranties for insert to
                 {currentView === 'attendance' && 'Control de Asistencia'}
                 {currentView === 'attendance-report' && 'Vigilancia de Asistencias'}
                 {currentView === 'admin' && 'Administración Maestra'}
+                {currentView === 'backup-migration' && 'Migrador de Respaldo Supabase'}
+                {currentView === 'database-usage' && 'Control de Uso y Cuotas de BD'}
                 {isLoading && <Loader2 className="w-6 h-6 animate-spin text-blue-600" />}
               </h1>
               <p className="text-slate-500 mt-1 font-medium text-xs md:text-sm truncate">
@@ -1718,13 +2172,15 @@ create policy "Users insert store warranties" on public.warranties for insert to
                 {currentView === 'attendance' && 'Registra tus entradas, salidas y horarios de comida.'}
                 {currentView === 'attendance-report' && 'Historial detallado y estatus actual de todo el personal.'}
                 {currentView === 'admin' && 'Configura sucursales, gestiona permisos y expande el sistema.'}
+                {currentView === 'backup-migration' && 'Extrae y transfiere usuarios, sucursales y ventas de tu archivo .gz a Firestore.'}
+                {currentView === 'database-usage' && 'Monitoreo diario de operaciones Firestore y simulador de costos por rebase.'}
               </p>
             </div>
 
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
               {/* Store Selector Visibility Logic */}
               {(() => {
-                const isAdmin = userProfile?.role === 'admin';
+                const isAdmin = effectiveRole === 'admin' || effectiveRole === 'developer';
                 const isRestrictedToOneStore = !isAdmin && (
                   !!userProfile?.storeId || 
                   (userProfile?.assignedStores && userProfile.assignedStores.length === 1)
@@ -1735,7 +2191,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
                 );
 
                 if (!isAdmin && isRestrictedToOneStore) return null;
-                if (!isAdmin && userProfile?.role === 'seller') return null;
+                if (!isAdmin && effectiveRole === 'seller') return null;
                 if (!isAdmin && !isGlobalAccess && (!userProfile?.assignedStores || userProfile.assignedStores.length <= 1) && !userProfile?.storeId) return null;
 
                 return (
@@ -1747,21 +2203,20 @@ create policy "Users insert store warranties" on public.warranties for insert to
                       className="bg-transparent text-[10px] md:text-xs font-black text-slate-800 outline-none cursor-pointer w-full"
                     >
                       <option value="all" disabled={selectedStoreId !== 'all'}>Seleccionar Tienda...</option>
-                      {/* Show 'Global' only for admins or truly global supervisors */}
                       {(isAdmin || isGlobalAccess || (userProfile?.assignedStores && userProfile.assignedStores.length > 1)) && (
                         <option value="all">Ver Todas {isAdmin ? '(Global)' : '(Mis Tiendas)'}</option>
                       )}
                       {stores
                         .filter(s => {
-                          if (userProfile?.role === 'admin') return true;
-                          if (userProfile?.role === 'supervisor' || userProfile?.role === 'viewer') {
-                             if (userProfile.storeId) {
+                          if (isAdmin) return true;
+                          if (effectiveRole === 'supervisor' || effectiveRole === 'viewer') {
+                             if (userProfile?.storeId) {
                                return s.id === userProfile.storeId;
                              }
                              if (userProfile?.assignedStores && userProfile.assignedStores?.length > 0) {
                                return userProfile.assignedStores.includes(s.id);
                              }
-                             return true; // Global Access if no stores assigned
+                             return true;
                           }
                           return s.id === userProfile?.storeId;
                         })
@@ -1771,10 +2226,10 @@ create policy "Users insert store warranties" on public.warranties for insert to
                 );
               })()}
 
-              {currentView === 'list' && (userProfile?.role === 'admin' || userProfile?.role === 'seller') && (
+              {currentView === 'list' && (effectiveRole === 'admin' || effectiveRole === 'seller' || effectiveRole === 'developer') && (
                 <button
                   onClick={() => {
-                    if (selectedStoreId === 'all' && (userProfile?.role === 'admin' || userProfile?.role === 'supervisor' || userProfile?.role === 'viewer')) {
+                    if (selectedStoreId === 'all' && (effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'viewer' || effectiveRole === 'developer')) {
                       alert("⚠️ Por favor, selecciona una sucursal específica antes de agregar una venta.");
                       return;
                     }
@@ -1824,7 +2279,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
           )}
 
           {/* ADMIN PENDING REQUESTS NOTIFICATION (TRANSIENT) */}
-          {userProfile?.role === 'admin' && showAdminNotification && (
+          {(effectiveRole === 'admin' || effectiveRole === 'developer') && showAdminNotification && (
             <div className="fixed top-4 md:top-8 right-0 md:right-8 z-[60] w-full md:max-w-md px-4 md:px-0 animate-in slide-in-from-top-10 md:slide-in-from-right-10 fade-in duration-700">
               <div 
                 onClick={() => {
@@ -1860,12 +2315,55 @@ create policy "Users insert store warranties" on public.warranties for insert to
               </div>
             </div>
           )}
-            {currentView === 'list' && userProfile?.role !== 'supervisor' && userProfile?.role !== 'viewer' && (
+
+            {/* BACKUP MIGRATION VIEW */}
+            {currentView === 'backup-migration' && (
+              <ErrorBoundary fallbackTitle="Error al procesar el archivo de respaldo">
+                <BackupMigration 
+                  userProfile={userProfile}
+                  onComplete={() => {
+                    setSelectedStoreId('all');
+                    try { localStorage.setItem('app_selected_store_id', 'all'); } catch (e) {}
+                    fetchData();
+                  }} 
+                  onNavigateToList={() => {
+                    setSelectedStoreId('all');
+                    try { localStorage.setItem('app_selected_store_id', 'all'); } catch (e) {}
+                    setCurrentView('list');
+                    fetchData();
+                  }}
+                  onNavigateToDashboard={() => {
+                    setSelectedStoreId('all');
+                    try { localStorage.setItem('app_selected_store_id', 'all'); } catch (e) {}
+                    setCurrentView('dashboard');
+                    fetchData();
+                  }}
+                  onNavigateToAdmin={() => {
+                    setSelectedStoreId('all');
+                    try { localStorage.setItem('app_selected_store_id', 'all'); } catch (e) {}
+                    setCurrentView('admin');
+                    fetchData();
+                  }}
+                />
+              </ErrorBoundary>
+            )}
+
+            {/* DATABASE USAGE & COST TRACKER VIEW */}
+            {currentView === 'database-usage' && (
+              <DatabaseUsagePanel 
+                salesCount={sales.length}
+                storesCount={stores.length}
+                closingsCount={closings.length}
+                warrantiesCount={warranties.length}
+              />
+            )}
+
+            {currentView === 'list' && effectiveRole !== 'supervisor' && effectiveRole !== 'viewer' && (
               <SalesList
                 sales={filteredSales}
                 onDelete={handleDeleteSale}
                 onEdit={(sale) => {
-                  if (userProfile?.role === 'admin' || userProfile?.role === 'seller') {
+                  if (effectiveRole === 'admin' || effectiveRole === 'seller' || effectiveRole === 'developer') {
                     setSaleToEdit(sale);
                     setCurrentView('form');
                   }
@@ -1874,8 +2372,8 @@ create policy "Users insert store warranties" on public.warranties for insert to
                 onFetchRange={handleFetchRange}
                 isDeepSearching={isDeepSearching}
                 onAdd={() => {
-                  if (userProfile?.role === 'admin' || userProfile?.role === 'seller') {
-                    if (selectedStoreId === 'all' && (userProfile?.role === 'admin' || userProfile?.role === 'supervisor' || userProfile?.role === 'viewer')) {
+                  if (effectiveRole === 'admin' || effectiveRole === 'seller' || effectiveRole === 'developer') {
+                    if (selectedStoreId === 'all' && (effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'viewer' || effectiveRole === 'developer')) {
                       alert("⚠️ Por favor, selecciona una sucursal específica antes de agregar una venta.");
                       return;
                     }
@@ -1883,74 +2381,74 @@ create policy "Users insert store warranties" on public.warranties for insert to
                     setCurrentView('form');
                   }
                 }}
-                role={userProfile?.role}
+                role={effectiveRole}
                 userProfile={userProfile}
-                storeName={(userProfile?.role === 'admin' || userProfile?.role === 'supervisor' || userProfile?.role === 'viewer') 
+                storeName={(effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'viewer' || effectiveRole === 'developer') 
                   ? (selectedStoreId === 'all' ? 'Todas las Tiendas' : stores.find(s => s.id === selectedStoreId)?.name) 
                   : stores.find(s => s.id === userProfile?.storeId)?.name}
               />
             )}
-            {currentView === 'form' && userProfile?.role !== 'viewer' && (
+            {currentView === 'form' && effectiveRole !== 'viewer' && (
               <SalesForm 
                 onAddSale={handleAddSale} 
                 onUpdateSale={handleUpdateSale}
                 initialData={saleToEdit}
-                role={userProfile?.role}
+                role={effectiveRole}
                 userProfile={userProfile}
                 stores={stores}
-                activeStoreId={userProfile?.role === 'admin' && selectedStoreId !== 'all' ? selectedStoreId : userProfile?.storeId}
+                activeStoreId={(effectiveRole === 'admin' || effectiveRole === 'developer') && selectedStoreId !== 'all' ? selectedStoreId : userProfile?.storeId}
                 onCancel={() => {
                   setSaleToEdit(null);
                   setCurrentView('list');
                 }}
               />
             )}
-            {currentView === 'dashboard' && userProfile?.role !== 'supervisor' && (
+            {currentView === 'dashboard' && effectiveRole !== 'supervisor' && (
               <Dashboard 
                 sales={filteredSales}
                 closings={filteredClosings} 
-                role={userProfile?.role}
-                storeId={(userProfile?.role === 'admin' || userProfile?.role === 'supervisor' || userProfile?.role === 'viewer') ? (selectedStoreId === 'all' ? undefined : selectedStoreId) : userProfile?.storeId}
+                role={effectiveRole}
+                storeId={(effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'viewer' || effectiveRole === 'developer') ? (selectedStoreId === 'all' ? undefined : selectedStoreId) : userProfile?.storeId}
                 userProfile={userProfile}
-                storeName={(userProfile?.role === 'admin' || userProfile?.role === 'supervisor' || userProfile?.role === 'viewer') 
+                storeName={(effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'viewer' || effectiveRole === 'developer') 
                   ? (selectedStoreId === 'all' ? 'Todas las Tiendas' : stores.find(s => s.id === selectedStoreId)?.name) 
                   : stores.find(s => s.id === userProfile?.storeId)?.name}
               />
             )}
-            {currentView === 'closings' && userProfile?.role !== 'supervisor' && (
+            {currentView === 'closings' && effectiveRole !== 'supervisor' && (
               <DailyClosings
                 sales={filteredSales}
                 closings={filteredClosings}
                 onCloseDay={handleCloseDay}
                 onDeleteClosing={handleDeleteClosing}
-                role={userProfile?.role}
-                storeName={(userProfile?.role === 'admin' || userProfile?.role === 'supervisor' || userProfile?.role === 'viewer') 
+                role={effectiveRole}
+                storeName={(effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'viewer' || effectiveRole === 'developer') 
                   ? (selectedStoreId === 'all' ? 'Todas las Tiendas' : stores.find(s => s.id === selectedStoreId)?.name) 
                   : stores.find(s => s.id === userProfile?.storeId)?.name}
-                activeStoreId={(userProfile?.role === 'admin' || userProfile?.role === 'supervisor' || userProfile?.role === 'viewer') ? selectedStoreId : userProfile?.storeId}
+                activeStoreId={(effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'viewer' || effectiveRole === 'developer') ? selectedStoreId : userProfile?.storeId}
                 stores={stores}
                 userProfile={userProfile}
               />
             )}
-            {currentView === 'warranties' && userProfile?.role !== 'supervisor' && (
+            {currentView === 'warranties' && effectiveRole !== 'supervisor' && (
               <Warranties
                 warranties={filteredWarranties}
                 onAddWarranty={handleAddWarranty}
                 onUpdateStatus={handleUpdateWarrantyStatus}
                 onDeleteWarranty={handleDeleteWarranty}
                 brandConfigs={BRAND_CONFIGS}
-                isAdmin={userProfile?.role === 'admin' || userProfile?.role === 'supervisor'}
+                isAdmin={effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'developer'}
                 userProfile={userProfile}
                 stores={stores}
               />
             )}
-            {currentView === 'attendance' && userProfile && userProfile?.role !== 'viewer' && (
+            {currentView === 'attendance' && userProfile && effectiveRole !== 'viewer' && (
               <AttendanceManager 
                 user={userProfile} 
                 storeName={stores.find(s => s.id === userProfile?.storeId)?.name}
               />
             )}
-            {currentView === 'attendance-report' && (userProfile?.role === 'admin' || userProfile?.role === 'supervisor') && (
+            {currentView === 'attendance-report' && (effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'developer') && (
               <AttendanceReport 
                 selectedStoreId={selectedStoreId}
                 stores={stores}
@@ -1958,14 +2456,14 @@ create policy "Users insert store warranties" on public.warranties for insert to
                 onRefreshStores={fetchData}
               />
             )}
-            {currentView === 'supervision' && (userProfile?.role === 'admin' || userProfile?.role === 'supervisor') && (
+            {currentView === 'supervision' && (effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'developer') && (
               <SupervisionPanel 
                 stores={stores}
                 selectedStoreId={selectedStoreId}
                 userProfile={userProfile}
               />
             )}
-            {currentView === 'admin' && (userProfile?.role === 'admin' || userProfile?.role === 'supervisor') && (
+            {currentView === 'admin' && (effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'developer') && (
               <AdminPanel 
                 userProfile={userProfile}
                 onRefresh={() => {
@@ -1975,7 +2473,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
                 onViewRequests={() => setCurrentView('requests')}
               />
             )}
-            {currentView === 'requests' && userProfile?.role === 'admin' && (
+            {currentView === 'requests' && (effectiveRole === 'admin' || effectiveRole === 'developer') && (
               <RequestsPanel 
                 onBack={() => setCurrentView('admin')}
                 onRefresh={() => fetchPendingRequestsCount()}
@@ -1986,10 +2484,10 @@ create policy "Users insert store warranties" on public.warranties for insert to
       </main>
 
       {/* Floating Action Button (Mobile Only for List View) */}
-      {currentView === 'list' && (userProfile?.role === 'admin' || userProfile?.role === 'seller') && (
+      {currentView === 'list' && (effectiveRole === 'admin' || effectiveRole === 'seller' || effectiveRole === 'developer') && (
         <button
           onClick={() => {
-            if (selectedStoreId === 'all' && (userProfile?.role === 'admin' || userProfile?.role === 'supervisor' || userProfile?.role === 'viewer')) {
+            if (selectedStoreId === 'all' && (effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'viewer' || effectiveRole === 'developer')) {
               alert("⚠️ Por favor, selecciona una sucursal específica antes de agregar una venta.");
               return;
             }
@@ -2003,8 +2501,24 @@ create policy "Users insert store warranties" on public.warranties for insert to
         </button>
       )}
 
-
-
+      {/* Role Switcher floating widget for Developer */}
+      {isDeveloper && (
+        <RoleSwitcher
+          currentRole={userProfile?.role || 'developer'}
+          effectiveRole={effectiveRole}
+          onRoleChange={(newRole) => {
+            setSimulatedRole(newRole);
+            try {
+              localStorage.setItem('dev_simulated_role', newRole);
+            } catch (e) {}
+          }}
+          stores={stores}
+          selectedStoreId={selectedStoreId}
+          onStoreChange={(newStoreId) => setSelectedStoreId(newStoreId)}
+          onOpenMigration={() => setCurrentView('backup-migration')}
+          onOpenDatabaseUsage={() => setCurrentView('database-usage')}
+        />
+      )}
 
     </div>
   );

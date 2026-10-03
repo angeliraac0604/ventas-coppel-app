@@ -28,9 +28,13 @@ import {
   MessageSquare,
   Undo2,
   ShieldCheck,
-  ArrowUpDown
+  ArrowUpDown,
+  RefreshCw
 } from 'lucide-react';
-import { supabase } from '../services/supabaseClient';
+import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
+import { db } from '../services/firebase';
+import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { cleanFirestoreData } from './BackupMigration';
 import { Store, UserProfile, UserRole } from '../types';
 
 interface AdminPanelProps {
@@ -73,10 +77,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
     // First apply existing filters (search, store, and role)
     items = items.filter(profile => (storeFilter === 'all' || profile.storeId === storeFilter))
                  .filter(profile => (roleFilter === 'all' || profile.role === roleFilter))
-                 .filter(profile => (
-                   profile.fullName?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                   profile.email.toLowerCase().includes(searchQuery.toLowerCase())
-                 ));
+                 .filter(profile => {
+                   const q = (searchQuery || '').toLowerCase().trim();
+                   if (!q) return true;
+                   const name = (profile.fullName || '').toLowerCase();
+                   const email = (profile.email || '').toLowerCase();
+                   return name.includes(q) || email.includes(q);
+                 });
 
     if (sortConfig) {
       items.sort((a, b) => {
@@ -192,59 +199,200 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
   const fetchAllData = async () => {
     setDataLoading(true);
     try {
-      // 1. Fetch Stores
-      const { data: storesData } = await supabase.from('stores').select('*').order('name');
-      if (storesData) {
-        setStores(storesData.map((s: any) => ({
-          id: s.id,
-          name: s.name,
-          location: s.location,
-          entryTime: s.entry_time,
-          exitTime: s.exit_time,
-          lunchDurationMinutes: s.lunch_duration_minutes,
-          type: s.type,
-          prefix: s.prefix
-        })));
-      }
+      // 1. Siempre consultar Firestore (tanto 'stores', 'users' como 'profiles')
+      const [fsStoresSnap, fsUsersSnap, fsProfilesSnap] = await Promise.all([
+        getDocs(collection(db, 'stores')).catch(() => ({ empty: true, docs: [] } as any)),
+        getDocs(collection(db, 'users')).catch(() => ({ empty: true, docs: [] } as any)),
+        getDocs(collection(db, 'profiles')).catch(() => ({ empty: true, docs: [] } as any))
+      ]);
 
-      // 2. Fetch Profiles
-      const { data: profilesData } = await supabase.from('profiles').select('*');
-      if (profilesData) {
-        setProfiles(profilesData.map((p: any) => ({
-          id: p.id,
-          email: p.email,
-          role: p.role,
-          fullName: p.full_name,
-          storeId: p.store_id,
-          assignedStores: p.assigned_stores || [],
-          canJustifyAbsences: p.can_justify_absences || false,
-          canManageRestDays: p.can_manage_rest_days || false,
-          canForceAttendance: p.can_force_attendance || false,
-          canSetSchedules: p.can_set_schedules || false,
-          canSellKit: p.can_sell_kit ?? true,
-          canSellChip0: p.can_sell_chip_0 || false,
-          canSellPortability: p.can_sell_portability || false,
-          canSellChipExpress: p.can_sell_chip_express || false
-        })));
-      }
+      // 2. Consultar Supabase si está disponible
+      let sbStoresData: any[] = [];
+      let sbProfilesData: any[] = [];
+      let sbInvitesData: any[] = [];
 
-      // 3. Fetch Pending Invites (Filter out those who already have a profile)
-      const { data: invitesData } = await supabase.from('pending_invitations').select('*, stores(name)');
-      if (invitesData) {
-        // Clean up invites for emails that already have a profile
-        const activeEmails = new Set(profilesData?.map(p => p.email.toLowerCase()));
-        const filteredInvites = invitesData.filter(inv => !activeEmails.has(inv.email.toLowerCase()));
-        
-        // Auto-delete redundant invites from DB asynchronously (Safely check for ID)
-        const redundantInvites = invitesData.filter(inv => activeEmails.has(inv.email.toLowerCase()));
-        if (redundantInvites.length > 0) {
-          Promise.all(redundantInvites.map(inv => {
-            if (inv.id) return supabase.from('pending_invitations').delete().eq('id', inv.id);
-            return Promise.resolve();
-          })).catch(err => console.error("Error cleaning up invites:", err));
+      if (isSupabaseConfigured) {
+        try {
+          const [storesRes, profilesRes, invitesRes] = await Promise.all([
+            supabase.from('stores').select('*').order('name'),
+            supabase.from('profiles').select('*'),
+            supabase.from('pending_invitations').select('*, stores(name)')
+          ]);
+          if (storesRes.data) sbStoresData = storesRes.data;
+          if (profilesRes.data) sbProfilesData = profilesRes.data;
+          if (invitesRes.data) sbInvitesData = invitesRes.data;
+        } catch (sbErr) {
+          console.warn("Consulta Supabase en AdminPanel:", sbErr);
         }
+      }
 
+      // 3. Fusionar Sucursales (Firestore + Supabase)
+      const storesMap = new Map<string, Store>();
+
+      if (!fsStoresSnap.empty) {
+        fsStoresSnap.docs.forEach((d: any) => {
+          const s = d.data();
+          storesMap.set(d.id, {
+            id: d.id,
+            name: s.name || 'Sucursal',
+            location: s.location || '',
+            entryTime: s.entryTime || s.entry_time || '09:00',
+            exitTime: s.exitTime || s.exit_time || '19:00',
+            lunchDurationMinutes: Number(s.lunchDurationMinutes ?? s.lunch_duration_minutes ?? 60),
+            type: s.type || '',
+            prefix: s.prefix || ''
+          });
+        });
+      }
+
+      sbStoresData.forEach((s: any) => {
+        const existing = storesMap.get(s.id);
+        storesMap.set(s.id, {
+          id: s.id,
+          name: s.name || existing?.name || 'Sucursal',
+          location: s.location || existing?.location || '',
+          entryTime: s.entry_time || existing?.entryTime || '09:00',
+          exitTime: s.exit_time || existing?.exitTime || '19:00',
+          lunchDurationMinutes: Number(s.lunch_duration_minutes ?? existing?.lunchDurationMinutes ?? 60),
+          type: s.type || existing?.type || '',
+          prefix: s.prefix || existing?.prefix || ''
+        });
+      });
+
+      const mergedStores = Array.from(storesMap.values()).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      setStores(mergedStores);
+
+      // 4. Fusionar Usuarios y Perfiles (Firestore 'users', Firestore 'profiles', Supabase 'profiles')
+      const profilesMap = new Map<string, UserProfile>();
+
+      const parseProfile = (id: string, p: any): UserProfile => ({
+        id: id || p.id,
+        email: p.email || '',
+        role: p.role || 'seller',
+        fullName: p.fullName || p.full_name || p.displayName || p.name || '',
+        storeId: p.storeId || p.store_id || '',
+        assignedStores: p.assignedStores || p.assigned_stores || [],
+        canJustifyAbsences: !!(p.canJustifyAbsences ?? p.can_justify_absences),
+        canManageRestDays: !!(p.canManageRestDays ?? p.can_manage_rest_days),
+        canForceAttendance: !!(p.canForceAttendance ?? p.can_force_attendance),
+        canSetSchedules: !!(p.canSetSchedules ?? p.can_set_schedules),
+        canSellKit: p.canSellKit ?? p.can_sell_kit ?? true,
+        canSellChip0: !!(p.canSellChip0 ?? p.can_sell_chip_0),
+        canSellPortability: !!(p.canSellPortability ?? p.can_sell_portability),
+        canSellChipExpress: !!(p.canSellChipExpress ?? p.can_sell_chip_express)
+      });
+
+      // Desde Firestore 'users'
+      if (!fsUsersSnap.empty) {
+        fsUsersSnap.docs.forEach((d: any) => {
+          const profile = parseProfile(d.id, d.data());
+          profilesMap.set(d.id, profile);
+          if (profile.email) profilesMap.set(`email_${profile.email.toLowerCase()}`, profile);
+        });
+      }
+
+      // Desde Firestore 'profiles'
+      if (!fsProfilesSnap.empty) {
+        fsProfilesSnap.docs.forEach((d: any) => {
+          const profile = parseProfile(d.id, d.data());
+          const existing = profilesMap.get(d.id) || (profile.email ? profilesMap.get(`email_${profile.email.toLowerCase()}`) : undefined);
+          const merged = existing ? { ...existing, ...profile } : profile;
+          profilesMap.set(d.id, merged);
+          if (profile.email) profilesMap.set(`email_${profile.email.toLowerCase()}`, merged);
+        });
+      }
+
+      // Desde Supabase 'profiles'
+      sbProfilesData.forEach((sp: any) => {
+        const profile = parseProfile(sp.id, sp);
+        const existing = profilesMap.get(sp.id) || (profile.email ? profilesMap.get(`email_${profile.email.toLowerCase()}`) : undefined);
+        const merged = existing ? { ...existing, ...profile } : profile;
+        profilesMap.set(sp.id, merged);
+        if (profile.email) profilesMap.set(`email_${profile.email.toLowerCase()}`, merged);
+      });
+
+      // Desde almacenamiento local de respaldos (app_backup_users)
+      try {
+        const backupUsersRaw = localStorage.getItem('app_backup_users');
+        if (backupUsersRaw) {
+          const backupUsers = JSON.parse(backupUsersRaw);
+          if (Array.isArray(backupUsers)) {
+            backupUsers.forEach((bu: any) => {
+              const profile = parseProfile(bu.id, bu);
+              if (!profilesMap.has(profile.id)) {
+                profilesMap.set(profile.id, profile);
+                if (profile.email) profilesMap.set(`email_${profile.email.toLowerCase()}`, profile);
+                // Asegurar persistencia en Firestore
+                setDoc(doc(db, 'users', profile.id), cleanFirestoreData(profile), { merge: true }).catch(() => {});
+                setDoc(doc(db, 'profiles', profile.id), cleanFirestoreData(profile), { merge: true }).catch(() => {});
+              }
+            });
+          }
+        }
+      } catch (e) {}
+
+      // AUTO-RECUPERACIÓN: Si hay muy pocos perfiles o ninguno, escanear ventas en Firestore para recuperar vendedores respaldados
+      if (profilesMap.size <= 1) {
+        try {
+          const salesSnap = await getDocs(collection(db, 'sales')).catch(() => ({ empty: true, docs: [] } as any));
+          if (!salesSnap.empty) {
+            salesSnap.docs.forEach((d: any) => {
+              const sale = d.data();
+              const creatorId = sale.createdBy;
+              if (creatorId && !profilesMap.has(creatorId) && !profilesMap.has(`email_${creatorId.toLowerCase()}`)) {
+                const email = sale.createdByEmail || (creatorId.includes('@') ? creatorId : `${creatorId}@sistema.com`);
+                const fullName = (sale.createdByName || (creatorId.includes('@') ? creatorId.split('@')[0] : `COLABORADOR (${creatorId.slice(0, 8)})`)).toUpperCase();
+                const autoUser: UserProfile = {
+                  id: creatorId,
+                  email,
+                  fullName,
+                  role: 'seller',
+                  storeId: sale.storeId || '',
+                  assignedStores: sale.storeId ? [sale.storeId] : [],
+                  canSellKit: true,
+                  canSellChip0: true,
+                  canSellPortability: true,
+                  canSellChipExpress: true
+                };
+                profilesMap.set(creatorId, autoUser);
+                if (email) profilesMap.set(`email_${email.toLowerCase()}`, autoUser);
+
+                // Persistir en Firestore users y profiles
+                setDoc(doc(db, 'users', creatorId), cleanFirestoreData(autoUser), { merge: true }).catch(() => {});
+                setDoc(doc(db, 'profiles', creatorId), cleanFirestoreData(autoUser), { merge: true }).catch(() => {});
+              }
+            });
+          }
+        } catch (salesErr) {
+          console.warn("Auto-escaneo de ventas para vendedores:", salesErr);
+        }
+      }
+
+      // Deduplicar lista final de perfiles
+      const seenIds = new Set<string>();
+      const finalProfiles: UserProfile[] = [];
+      profilesMap.forEach((prof, key) => {
+        if (!key.startsWith('email_') && prof.id && !seenIds.has(prof.id)) {
+          seenIds.add(prof.id);
+          finalProfiles.push(prof);
+        }
+      });
+
+      // Asegurar que el usuario activo (admin / dev) esté presente si está disponible
+      if (userProfile && !seenIds.has(userProfile.id)) {
+        finalProfiles.unshift(userProfile);
+        seenIds.add(userProfile.id);
+      }
+
+      setProfiles(finalProfiles);
+
+      // 5. Invitaciones Pendientes
+      if (sbInvitesData.length > 0) {
+        const activeEmails = new Set(finalProfiles.map(p => (p.email || '').toLowerCase()));
+        const filteredInvites = sbInvitesData.filter(inv => !activeEmails.has((inv.email || '').toLowerCase()));
         setInvites(filteredInvites);
+      } else {
+        setInvites([]);
       }
 
     } catch (err) {
@@ -254,19 +402,94 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
     }
   };
 
+  // Función explícita para escanear y registrar vendedores a partir de las ventas en Firestore
+  const handleScanSellersFromSales = async () => {
+    setIsLoading(true);
+    try {
+      const salesSnap = await getDocs(collection(db, 'sales'));
+      if (salesSnap.empty) {
+        alert("ℹ️ No se encontraron ventas registradas en Cloud Firestore.");
+        setIsLoading(false);
+        return;
+      }
+
+      let addedCount = 0;
+      const seen = new Set<string>();
+
+      for (const d of salesSnap.docs) {
+        const sale = d.data();
+        const creatorId = sale.createdBy;
+        if (!creatorId || seen.has(creatorId)) continue;
+        seen.add(creatorId);
+
+        const existsInCurrent = profiles.some(p => p.id === creatorId || (creatorId.includes('@') && p.email.toLowerCase() === creatorId.toLowerCase()));
+        if (!existsInCurrent) {
+          const email = sale.createdByEmail || (creatorId.includes('@') ? creatorId : `${creatorId}@sistema.com`);
+          const fullName = (sale.createdByName || (creatorId.includes('@') ? creatorId.split('@')[0] : `COLABORADOR (${creatorId.slice(0, 8)})`)).toUpperCase();
+          const autoUser: UserProfile = {
+            id: creatorId,
+            email,
+            fullName,
+            role: 'seller',
+            storeId: sale.storeId || '',
+            assignedStores: sale.storeId ? [sale.storeId] : [],
+            canSellKit: true,
+            canSellChip0: true,
+            canSellPortability: true,
+            canSellChipExpress: true
+          };
+
+          await setDoc(doc(db, 'users', creatorId), cleanFirestoreData(autoUser), { merge: true });
+          await setDoc(doc(db, 'profiles', creatorId), cleanFirestoreData(autoUser), { merge: true });
+          addedCount++;
+        }
+      }
+
+      await fetchAllData();
+      if (onRefresh) onRefresh();
+
+      if (addedCount > 0) {
+        alert(`🎉 ¡Éxito! Se detectaron y vincularon ${addedCount} colaboradores a partir de las ventas en Google Cloud Firestore.`);
+      } else {
+        alert(`✅ Todos los vendedores detectados en las ventas ya se encuentran registrados en el sistema (${profiles.length} colaboradores activos).`);
+      }
+    } catch (err: any) {
+      alert("Error al sincronizar vendedores de ventas: " + (err.message || err));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleCreateStore = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     try {
-      const dbPayload = { 
+      const storeId = `store-${Date.now()}`;
+      const storeDoc = { 
+        id: storeId,
         name: newStoreName.toUpperCase(), 
         location: newStoreLocation.toUpperCase(),
         type: newStoreType,
-        prefix: newStorePrefix
+        prefix: newStorePrefix,
+        entryTime: '09:00',
+        exitTime: '19:00',
+        lunchDurationMinutes: 60,
+        createdAt: new Date().toISOString()
       };
       
-      const { error } = await supabase.from('stores').insert([dbPayload]);
-      if (error) throw error;
+      // Guardar en Firestore
+      await setDoc(doc(db, 'stores', storeId), cleanFirestoreData(storeDoc)).catch(() => {});
+
+      // Guardar en Supabase si está activo
+      if (isSupabaseConfigured) {
+        await supabase.from('stores').insert([{
+          name: newStoreName.toUpperCase(), 
+          location: newStoreLocation.toUpperCase(),
+          type: newStoreType,
+          prefix: newStorePrefix
+        }]).catch(() => {});
+      }
+
       setNewStoreName('');
       setNewStoreLocation('');
       setNewStoreType('Coppel');
@@ -416,7 +639,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
     if (!editingUserId) return;
     setIsLoading(true);
     try {
-      const { error } = await supabase.from('profiles').update({
+      const profilePayload = {
         full_name: targetFullName.toUpperCase(),
         role: targetRole,
         store_id: targetStoreId || null,
@@ -429,7 +652,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
         can_sell_chip_0: targetCanSellChip0,
         can_sell_portability: targetCanSellPortability,
         can_sell_chip_express: targetCanSellChipExpress
-      }).eq('id', editingUserId);
+      };
+
+      if (!isSupabaseConfigured) {
+        await updateDoc(doc(db, 'users', editingUserId), cleanFirestoreData(profilePayload));
+        setEditingUserId(null);
+        setActiveModal('none');
+        fetchAllData();
+        if (onRefresh) onRefresh();
+        return;
+      }
+
+      const { error } = await supabase.from('profiles').update(profilePayload).eq('id', editingUserId);
 
       if (error) throw error;
       setEditingUserId(null);
@@ -446,6 +680,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
   const handleDeleteUser = async (userId: string) => {
     if (!confirm('¿Estás seguro de eliminar este usuario?')) return;
     try {
+      if (!isSupabaseConfigured) {
+        await deleteDoc(doc(db, 'users', userId));
+        fetchAllData();
+        if (onRefresh) onRefresh();
+        return;
+      }
+
       const { error } = await supabase.rpc('delete_user_entirely', { target_user_id: userId });
       if (error) throw error;
       fetchAllData();
@@ -457,12 +698,22 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
   
   const handleUpdateStore = async (storeId: string) => {
     try {
-      const { error } = await supabase.from('stores').update({
+      const storePayload = {
         name: editStoreName.toUpperCase(),
         location: editStoreLocation.toUpperCase(),
         type: editStoreType,
         prefix: editStorePrefix
-      }).eq('id', storeId);
+      };
+
+      if (!isSupabaseConfigured) {
+        await updateDoc(doc(db, 'stores', storeId), cleanFirestoreData(storePayload));
+        setEditingStoreId(null);
+        fetchAllData();
+        if (onRefresh) onRefresh();
+        return;
+      }
+
+      const { error } = await supabase.from('stores').update(storePayload).eq('id', storeId);
 
       if (error) throw error;
       setEditingStoreId(null);
@@ -480,6 +731,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
     }
     if (!confirm('¿Estás seguro de eliminar esta sucursal?')) return;
     try {
+      if (!isSupabaseConfigured) {
+        await deleteDoc(doc(db, 'stores', storeId));
+        fetchAllData();
+        if (onRefresh) onRefresh();
+        return;
+      }
+
       const { error } = await supabase.from('stores').delete().eq('id', storeId);
       if (error) throw error;
       fetchAllData();
@@ -603,6 +861,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
             
             <button onClick={() => setActiveModal('store')} className="p-4 bg-white text-indigo-600 border-2 border-dashed border-indigo-200 rounded-2xl hover:bg-indigo-50 transition-all flex items-center gap-2 font-black text-[10px] uppercase tracking-widest">
               <Plus className="w-4 h-4" /> Nueva Tienda
+            </button>
+
+            <button 
+              onClick={handleScanSellersFromSales} 
+              disabled={isLoading}
+              title="Detectar y vincular automáticamente vendedores a partir de las ventas en Cloud Firestore"
+              className="p-4 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-2xl transition-all flex items-center gap-2 font-black text-[10px] uppercase tracking-widest shadow-sm"
+            >
+              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} /> Sincronizar Vendedores de Ventas
             </button>
           </div>
         </div>

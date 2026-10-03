@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import html2canvas from 'html2canvas';
-import { Search, Image as ImageIcon, Calendar, User, Tag, Trash2, Eye, DollarSign, TrendingUp, Smartphone, MoreHorizontal, Edit2, X, Share2, Clock, Cpu, Phone, Database, Loader2, RefreshCcw } from 'lucide-react';
+import { Search, Image as ImageIcon, Calendar, User, Tag, Trash2, Eye, DollarSign, TrendingUp, Smartphone, MoreHorizontal, Edit2, X, Share2, Clock, Cpu, Phone, Database, Loader2, RefreshCcw, ShoppingBag } from 'lucide-react';
 import { Sale, Brand, UserProfile } from '../types';
 import { BRAND_CONFIGS } from '../constants';
 import { supabase } from '../services/supabaseClient';
@@ -29,7 +29,7 @@ const SalesList: React.FC<SalesListProps> = ({
   const [requestReason, setRequestReason] = useState('');
   const [isRequesting, setIsRequesting] = useState(false);
   const [suggestedData, setSuggestedData] = useState<Partial<Sale>>({});
-  const [activeTab, setActiveTab] = useState<'KIT' | 'CHIP_0' | 'PORTABILITY' | 'EXPRESS'>('KIT');
+  const [activeTab, setActiveTab] = useState<'ALL' | 'KIT' | 'CHIP_0' | 'PORTABILITY' | 'EXPRESS'>('ALL');
   const [displayLimit, setDisplayLimit] = useState(50);
   const summaryRef = useRef<HTMLDivElement>(null);
 
@@ -94,19 +94,34 @@ const SalesList: React.FC<SalesListProps> = ({
     }
   };
 
-  // Date Filtering State
-  const [viewMode, setViewMode] = useState<'today' | 'all' | 'custom'>('today');
+  // Date Filtering State: Default to 'all' if no sales match today so imported backups are immediately visible
+  const [viewMode, setViewMode] = useState<'today' | 'all' | 'custom'>(() => {
+    const today = new Date().toISOString().split('T')[0];
+    return sales.some(s => s.date === today) ? 'today' : 'all';
+  });
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
+
+  // If sales prop updates and today has 0 sales but there are historical sales, ensure viewMode isn't stuck on empty 'today'
+  React.useEffect(() => {
+    if (sales.length > 0 && viewMode === 'today') {
+      const today = new Date().toISOString().split('T')[0];
+      const hasToday = sales.some(s => s.date === today);
+      if (!hasToday) {
+        setViewMode('all');
+      }
+    }
+  }, [sales.length]);
 
   // --- PERMISSIONS FILTERED TABS ---
   const getAllowedTabs = () => {
-    const tabs = [];
+    const tabs = [
+      { id: 'ALL', label: 'Todas las Ventas', icon: ShoppingBag }
+    ];
     if (userProfile?.canSellKit !== false) tabs.push({ id: 'KIT', label: 'Equipos Kit', icon: Smartphone });
     if (userProfile?.canSellChip0) tabs.push({ id: 'CHIP_0', label: 'Chip 0', icon: Cpu });
     if (userProfile?.canSellPortability) tabs.push({ id: 'PORTABILITY', label: 'Portabilidad', icon: Share2 });
     if (userProfile?.canSellChipExpress) tabs.push({ id: 'EXPRESS', label: 'Chip Express', icon: Phone });
     
-    if (tabs.length === 0) tabs.push({ id: 'KIT', label: 'Equipos Kit', icon: Smartphone });
     return tabs;
   };
 
@@ -129,10 +144,12 @@ const SalesList: React.FC<SalesListProps> = ({
   
   // Filter by category matching activeTab
   const currentTabSales = todaysSales.filter(s => {
-    if (activeTab === 'KIT') return (s.category === 'kit' || !s.category);
-    if (activeTab === 'CHIP_0') return (s.category === 'chip_0');
-    if (activeTab === 'PORTABILITY') return (s.category === 'portabilidad');
-    if (activeTab === 'EXPRESS') return (s.category === 'chip_express');
+    if (activeTab === 'ALL') return true;
+    const cat = (s.category || 'kit').toLowerCase();
+    if (activeTab === 'KIT') return (cat === 'kit' || !s.category || cat === '');
+    if (activeTab === 'CHIP_0') return (cat === 'chip_0' || cat === 'chip 0');
+    if (activeTab === 'PORTABILITY') return (cat === 'portabilidad' || cat === 'portability');
+    if (activeTab === 'EXPRESS') return (cat === 'chip_express' || cat === 'chip express' || cat === 'express');
     return false;
   });
 
@@ -140,7 +157,7 @@ const SalesList: React.FC<SalesListProps> = ({
   const todayCount = currentTabSales.length;
   const todayNet = todayRevenue / 1.16;
 
-  const ActiveTabIcon = allowedTabs.find(t => t.id === activeTab)?.icon || Smartphone;
+  const ActiveTabIcon = allowedTabs.find(t => t.id === activeTab)?.icon || ShoppingBag;
   const activeTabLabel = allowedTabs.find(t => t.id === activeTab)?.label || 'Ventas';
 
   // --- FILTER LOGIC ---
@@ -165,10 +182,15 @@ const SalesList: React.FC<SalesListProps> = ({
 
     // Category filtering
     let matchesTab = true;
-    if (activeTab === 'KIT') matchesTab = (sale.category === 'kit' || !sale.category);
-    else if (activeTab === 'CHIP_0') matchesTab = (sale.category === 'chip_0');
-    else if (activeTab === 'PORTABILITY') matchesTab = (sale.category === 'portabilidad');
-    else if (activeTab === 'EXPRESS') matchesTab = (sale.category === 'chip_express');
+    if (activeTab === 'ALL') {
+      matchesTab = true;
+    } else {
+      const cat = (sale.category || 'kit').toLowerCase();
+      if (activeTab === 'KIT') matchesTab = (cat === 'kit' || !sale.category || cat === '');
+      else if (activeTab === 'CHIP_0') matchesTab = (cat === 'chip_0' || cat === 'chip 0');
+      else if (activeTab === 'PORTABILITY') matchesTab = (cat === 'portabilidad' || cat === 'portability');
+      else if (activeTab === 'EXPRESS') matchesTab = (cat === 'chip_express' || cat === 'chip express' || cat === 'express');
+    }
 
     return matchesSearch && matchesBrand && matchesDate && matchesTab;
   }).sort((a, b) => {
@@ -327,6 +349,27 @@ const SalesList: React.FC<SalesListProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Banner if filtered to Today but there are historical sales in backup */}
+        {viewMode === 'today' && sales.length > filteredSales.length && (
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/80 text-blue-900 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm animate-in fade-in">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-blue-600/10 flex items-center justify-center text-blue-600 shrink-0">
+                <Calendar className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-xs md:text-sm font-bold">Filtro activo: Solo ventas de hoy ({todayStr}) &bull; {filteredSales.length} registro(s)</p>
+                <p className="text-xs text-blue-700/80">Tienes <strong className="text-blue-900 font-extrabold">{sales.length} ventas registradas</strong> en el respaldo y base de datos.</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setViewMode('all')}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-black text-xs px-5 py-2.5 rounded-xl shadow-md transition-all self-start sm:self-auto cursor-pointer flex items-center gap-1.5 shrink-0"
+            >
+              Ver Historial Completo ({sales.length} ventas)
+            </button>
+          </div>
+        )}
 
         {/* Custom Date Inputs */}
         {viewMode === 'custom' && (

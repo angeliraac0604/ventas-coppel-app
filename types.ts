@@ -65,7 +65,7 @@ export interface DailyClose {
   chipExpressCount?: number;
 }
 
-export type UserRole = 'admin' | 'supervisor' | 'seller' | 'viewer';
+export type UserRole = 'admin' | 'supervisor' | 'seller' | 'viewer' | 'developer';
 
 export interface Store {
   id: string;
@@ -97,6 +97,8 @@ export interface UserProfile {
   canSellChip0?: boolean;
   canSellPortability?: boolean;
   canSellChipExpress?: boolean;
+  isDeveloper?: boolean;
+  simulatedRole?: UserRole;
 }
 
 export type AttendanceType = 'entry' | 'lunch_start' | 'lunch_end' | 'exit' | 'excused' | 'rest_day' | 'vacation' | 'attended';

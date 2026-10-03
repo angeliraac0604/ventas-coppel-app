@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../services/supabaseClient';
+import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
+import { db } from '../services/firebase';
+import { collection, getDocs, doc, updateDoc, deleteDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { cleanFirestoreData } from './BackupMigration';
 import { Bell, Check, X, ArrowRight, ArrowLeft, User, Calendar, Tag, Smartphone, MessageSquare, Trash2, Edit2, AlertCircle, CheckCircle, Loader2, ChevronRight, Hash, DollarSign, Image as ImageIcon, ExternalLink, Eye } from 'lucide-react';
 import { deleteFromSupabaseStorage } from '../services/storageService';
 import { deleteImageFromDriveScript } from '../services/googleAppsScriptService';
@@ -23,7 +26,24 @@ const RequestsPanel: React.FC<RequestsPanelProps> = ({ onBack, onRefresh, stores
   useEffect(() => {
     fetchRequests();
 
-    // REAL-TIME SUBSCRIPTION
+    if (!isSupabaseConfigured) {
+      let unsub: (() => void) | undefined;
+      try {
+        unsub = onSnapshot(collection(db, 'sale_requests'), () => {
+          fetchRequests();
+          if (onRefresh) onRefresh();
+        }, (err) => {
+          console.warn("Firestore sale_requests snapshot listener note:", err);
+        });
+      } catch (e) {
+        console.warn("Firestore listener setup note:", e);
+      }
+      return () => {
+        if (unsub) unsub();
+      };
+    }
+
+    // REAL-TIME SUBSCRIPTION FOR SUPABASE
     const channel = supabase
       .channel('sale_requests_changes')
       .on(
@@ -44,6 +64,25 @@ const RequestsPanel: React.FC<RequestsPanelProps> = ({ onBack, onRefresh, stores
   const fetchRequests = async () => {
     setLoading(true);
     try {
+      if (!isSupabaseConfigured) {
+        try {
+          const snap = await getDocs(collection(db, 'sale_requests'));
+          const list = snap.docs.map(d => ({
+            id: d.id,
+            ...d.data(),
+            created_at: d.data().createdAt || d.data().created_at || new Date().toISOString()
+          }));
+          list.sort((a: any, b: any) => (b.created_at || '').localeCompare(a.created_at || ''));
+          setRequests(list);
+        } catch (fsErr) {
+          console.warn("Firestore sale_requests fetch:", fsErr);
+          setRequests([]);
+        } finally {
+          setLoading(false);
+        }
+        return;
+      }
+
       const { data, error } = await supabase
         .from('sale_requests')
         .select(`
@@ -53,10 +92,15 @@ const RequestsPanel: React.FC<RequestsPanelProps> = ({ onBack, onRefresh, stores
         `)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      setRequests(data || []);
+      if (error) {
+        console.warn("Supabase fetch requests note:", error.message);
+        setRequests([]);
+      } else {
+        setRequests(data || []);
+      }
     } catch (err) {
-      console.error("Error fetching requests:", err);
+      console.warn("Requests fetch note:", err);
+      setRequests([]);
     } finally {
       setLoading(false);
     }
@@ -67,6 +111,29 @@ const RequestsPanel: React.FC<RequestsPanelProps> = ({ onBack, onRefresh, stores
     setIsProcessing(true);
     try {
       const saleData = request.sale || request.sale_data_snapshot;
+
+      if (!isSupabaseConfigured) {
+        if (request.type === 'delete') {
+          if (request.sale_id) {
+            await deleteDoc(doc(db, 'sales', request.sale_id)).catch(() => {});
+          }
+        } else if (request.suggested_changes && request.sale_id) {
+          await updateDoc(doc(db, 'sales', request.sale_id), cleanFirestoreData({
+            brand: request.suggested_changes.brand,
+            price: request.suggested_changes.price,
+            customerName: request.suggested_changes.customerName,
+            invoiceNumber: request.suggested_changes.invoiceNumber
+          })).catch(() => {});
+        }
+        await updateDoc(doc(db, 'sale_requests', request.id), {
+          status: 'approved',
+          resolved_at: new Date().toISOString()
+        }).catch(() => {});
+        fetchRequests();
+        if (onRefresh) onRefresh();
+        alert("✅ Solicitud procesada y aplicada con éxito.");
+        return;
+      }
       
       // Update snapshot before deleting to ensure we have it
       if (!request.sale_data_snapshot && request.sale) {
@@ -111,7 +178,7 @@ const RequestsPanel: React.FC<RequestsPanelProps> = ({ onBack, onRefresh, stores
         resolved_at: new Date().toISOString()
       }).eq('id', request.id);
 
-      // fetchRequests(); // Realtime will handle this
+      fetchRequests();
       if (onRefresh) onRefresh();
       alert("✅ Solicitud procesada y aplicada con éxito.");
     } catch (err: any) {
@@ -131,6 +198,19 @@ const RequestsPanel: React.FC<RequestsPanelProps> = ({ onBack, onRefresh, stores
     setIsProcessing(true);
     try {
       const snap = request.sale_data_snapshot;
+
+      if (!isSupabaseConfigured) {
+        await setDoc(doc(db, 'sales', snap.id || request.sale_id), cleanFirestoreData(snap), { merge: true });
+        await updateDoc(doc(db, 'sale_requests', request.id), {
+          status: 'pending',
+          resolved_at: null
+        }).catch(() => {});
+        alert("✅ Venta restaurada correctamente.");
+        fetchRequests();
+        if (onRefresh) onRefresh();
+        return;
+      }
+
       // Re-insert into sales
       const { error: insertError } = await supabase.from('sales').insert([{
         id: snap.id, // Reuse same ID if possible or new one? Better reuse to keep history.
@@ -154,6 +234,7 @@ const RequestsPanel: React.FC<RequestsPanelProps> = ({ onBack, onRefresh, stores
       }).eq('id', request.id);
 
       alert("✅ Venta restaurada correctamente.");
+      fetchRequests();
       if (onRefresh) onRefresh();
     } catch (err: any) {
       alert("Error al restaurar: " + err.message);
@@ -166,6 +247,19 @@ const RequestsPanel: React.FC<RequestsPanelProps> = ({ onBack, onRefresh, stores
     if (!rejectionModal || !rejectionReason.trim()) return;
     setIsProcessing(true);
     try {
+      if (!isSupabaseConfigured) {
+        await updateDoc(doc(db, 'sale_requests', rejectionModal.id), {
+          status: 'rejected',
+          resolved_at: new Date().toISOString(),
+          rejection_reason: rejectionReason
+        }).catch(() => {});
+        setRejectionModal(null);
+        setRejectionReason('');
+        fetchRequests();
+        if (onRefresh) onRefresh();
+        return;
+      }
+
       const { error } = await supabase.from('sale_requests').update({
         status: 'rejected',
         resolved_at: new Date().toISOString(),

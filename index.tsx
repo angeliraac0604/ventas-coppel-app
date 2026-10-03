@@ -4,10 +4,17 @@ import App from './App';
 import posthog from 'posthog-js';
 import { PostHogProvider } from '@posthog/react';
 
-posthog.init(import.meta.env.VITE_PUBLIC_POSTHOG_PROJECT_TOKEN, {
-  api_host: import.meta.env.VITE_PUBLIC_POSTHOG_HOST,
-  defaults: '2026-01-30',
-});
+const posthogToken = import.meta.env.VITE_PUBLIC_POSTHOG_PROJECT_TOKEN;
+if (posthogToken) {
+  try {
+    posthog.init(posthogToken, {
+      api_host: import.meta.env.VITE_PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com',
+      defaults: '2026-01-30',
+    });
+  } catch (err) {
+    console.warn("PostHog initialization skipped:", err);
+  }
+}
 
 console.log('--- INDEX.TSX STARTING ---');
 
@@ -25,9 +32,13 @@ try {
   console.log('Rendering App...');
   root.render(
     <React.StrictMode>
-      <PostHogProvider client={posthog}>
+      {posthogToken ? (
+        <PostHogProvider client={posthog}>
+          <App />
+        </PostHogProvider>
+      ) : (
         <App />
-      </PostHogProvider>
+      )}
     </React.StrictMode>
   );
   console.log('Render Called Successfully');

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Clock, Calendar, User, Search, Filter, ArrowRight, CheckCircle, AlertCircle, Coffee, LogOut, Loader2, Building, Eye, MapPin, Smartphone, X, Camera, Edit2 } from 'lucide-react';
-import { supabase } from '../services/supabaseClient';
+import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
+import { db } from '../services/firebase';
+import { collection, getDocs } from 'firebase/firestore';
 import { AttendanceRecord, UserProfile, Store, AttendanceType } from '../types';
 import AttendanceSummary from './AttendanceSummary';
 import { transformImageUrl } from '../services/imageUtils';
@@ -84,6 +86,68 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
   const fetchData = async () => {
     setLoading(true);
     try {
+      if (!isSupabaseConfigured) {
+        const [usersSnap, attSnap] = await Promise.all([
+          getDocs(collection(db, 'users')),
+          getDocs(collection(db, 'attendance'))
+        ]);
+
+        if (!usersSnap.empty) {
+          const mappedAll = usersSnap.docs.map(d => {
+            const p = d.data();
+            return {
+              id: d.id,
+              email: p.email || '',
+              role: p.role || 'seller',
+              fullName: p.fullName || p.full_name || '',
+              storeId: p.storeId || p.store_id || '',
+              restDays: p.restDays || p.rest_days || [],
+              vacationDates: p.vacationDates || p.vacation_dates || [],
+              canJustifyAbsences: !!(p.canJustifyAbsences ?? p.can_justify_absences),
+              canManageRestDays: !!(p.canManageRestDays ?? p.can_manage_rest_days),
+              canForceAttendance: !!(p.canForceAttendance ?? p.can_force_attendance),
+              canSetSchedules: !!(p.canSetSchedules ?? p.can_set_schedules)
+            } as UserProfile;
+          });
+          setAllProfiles(mappedAll);
+          setProfiles(mappedAll);
+        }
+
+        if (!attSnap.empty) {
+          let attList: AttendanceRecord[] = attSnap.docs.map(d => {
+            const data = d.data();
+            return {
+              id: d.id,
+              userId: data.userId || data.user_id || '',
+              storeId: data.storeId || data.store_id || '',
+              type: data.type || 'entry',
+              timestamp: data.timestamp || new Date().toISOString(),
+              date: data.date || '',
+              imageUrl: data.imageUrl || data.image_url || '',
+              notes: data.notes || ''
+            };
+          });
+
+          if (activeTab === 'summary') {
+            const startDate = `${month}-01`;
+            const endDate = `${month}-31`;
+            attList = attList.filter(a => a.date >= startDate && a.date <= endDate);
+          } else {
+            attList = attList.filter(a => a.date === filterDate);
+          }
+
+          if (selectedStoreId !== 'all') {
+            attList = attList.filter(a => a.storeId === selectedStoreId);
+          }
+
+          setRecords(attList);
+        } else {
+          setRecords([]);
+        }
+        setLoading(false);
+        return;
+      }
+
       // 1. Fetch Profiles to get names
       const { data: profilesData } = await supabase.from('profiles').select('*');
       if (profilesData && Array.isArray(profilesData)) {

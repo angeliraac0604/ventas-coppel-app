@@ -7,6 +7,8 @@ const API_KEYS = [
   import.meta.env.VITE_GEMINI_API_KEY_2,
   import.meta.env.VITE_GEMINI_API_KEY_3,
   import.meta.env.VITE_GEMINI_API_KEY,
+  process.env.GEMINI_API_KEY,
+  process.env.API_KEY,
 ].filter(Boolean) as string[];
 
 const parseSpanishDate = (dateStr: string | undefined): string | undefined => {

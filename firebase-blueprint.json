@@ -1,0 +1,191 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with role-based access information",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email", "description": "User email address" },
+        "role": { "type": "string", "enum": ["admin", "supervisor", "seller", "viewer"], "description": "User role in the system" },
+        "fullName": { "type": "string", "description": "Full name of the user" },
+        "storeId": { "type": "string", "description": "Primary assigned store ID" },
+        "assignedStores": { "type": "array", "description": "List of store IDs assigned for supervisors" },
+        "restDays": { "type": "array", "description": "Day of week indices for regular rest days" },
+        "vacationDates": { "type": "array", "description": "Dates scheduled for vacation" },
+        "canJustifyAbsences": { "type": "boolean", "description": "Permission flag" },
+        "canManageRestDays": { "type": "boolean", "description": "Permission flag" },
+        "canForceAttendance": { "type": "boolean", "description": "Permission flag" },
+        "canSetSchedules": { "type": "boolean", "description": "Permission flag" },
+        "canSellKit": { "type": "boolean", "description": "Permission flag" },
+        "canSellChip0": { "type": "boolean", "description": "Permission flag" },
+        "canSellPortability": { "type": "boolean", "description": "Permission flag" },
+        "canSellChipExpress": { "type": "boolean", "description": "Permission flag" }
+      },
+      "required": ["email", "role"]
+    },
+    "Sale": {
+      "title": "Sale",
+      "description": "Record of a sale transaction made by a seller",
+      "type": "object",
+      "properties": {
+        "invoiceNumber": { "type": "string", "description": "Invoice or ticket number" },
+        "customerName": { "type": "string", "description": "Customer name" },
+        "price": { "type": "number", "description": "Sale total price in MXN" },
+        "brand": { "type": "string", "description": "Phone brand sold" },
+        "date": { "type": "string", "description": "Date of sale (YYYY-MM-DD)" },
+        "ticketImage": { "type": "string", "description": "Ticket image URL or identifier" },
+        "createdBy": { "type": "string", "description": "Firebase Auth UID of the seller who created the sale" },
+        "createdAt": { "type": "string", "description": "ISO timestamp of creation" },
+        "createdByEmail": { "type": "string", "description": "Email of seller" },
+        "createdByName": { "type": "string", "description": "Full name of seller" },
+        "storeId": { "type": "string", "description": "Store ID where sale occurred" },
+        "transactionFolio": { "type": "string", "description": "Unique transaction folio" },
+        "category": { "type": "string", "description": "Product category: kit, chip_0, portabilidad, chip_express" },
+        "iccid": { "type": "string", "description": "ICCID for SIM cards" },
+        "phoneNumber": { "type": "string", "description": "Phone number for portability or activation" },
+        "portabilityScreenshot": { "type": "string", "description": "Screenshot proof of portability" }
+      },
+      "required": ["invoiceNumber", "customerName", "price", "brand", "date", "createdBy", "storeId"]
+    },
+    "DailyClose": {
+      "title": "DailyClose",
+      "description": "Daily closing summary for a specific store and date",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "description": "Date of the close (YYYY-MM-DD)" },
+        "totalSales": { "type": "number", "description": "Count of sales closed" },
+        "totalRevenue": { "type": "number", "description": "Total revenue in MXN" },
+        "closedAt": { "type": "string", "description": "Timestamp when closed" },
+        "topBrand": { "type": "string", "description": "Top selling brand of the day" },
+        "storeId": { "type": "string", "description": "Store ID" },
+        "attSales": { "type": "number", "description": "Sales count of competitor AT&T" },
+        "kitCount": { "type": "number", "description": "Count of kit sales" },
+        "chip0Count": { "type": "number", "description": "Count of chip 0 sales" },
+        "portabilityCount": { "type": "number", "description": "Count of portabilities" },
+        "chipExpressCount": { "type": "number", "description": "Count of chip express" }
+      },
+      "required": ["date", "totalSales", "totalRevenue", "closedAt", "storeId"]
+    },
+    "Store": {
+      "title": "Store",
+      "description": "Coppel branch store information",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Store branch name" },
+        "location": { "type": "string", "description": "Location description" },
+        "createdAt": { "type": "string", "description": "Creation timestamp" },
+        "entryTime": { "type": "string", "description": "Standard work entry time HH:mm" },
+        "exitTime": { "type": "string", "description": "Standard work exit time HH:mm" },
+        "lunchDurationMinutes": { "type": "number", "description": "Lunch duration in minutes" },
+        "type": { "type": "string", "description": "Store type or chain" },
+        "prefix": { "type": "string", "description": "Ticket folio prefix" },
+        "daySchedules": { "type": "object", "description": "Specific daily schedules by day of week" }
+      },
+      "required": ["name"]
+    },
+    "Warranty": {
+      "title": "Warranty",
+      "description": "Customer warranty and technical service record",
+      "type": "object",
+      "properties": {
+        "receptionDate": { "type": "string", "description": "Date received" },
+        "invoiceNumber": { "type": "string", "description": "Ticket/Invoice number" },
+        "brand": { "type": "string", "description": "Device brand" },
+        "model": { "type": "string", "description": "Device model" },
+        "imei": { "type": "string", "description": "Device IMEI" },
+        "issueDescription": { "type": "string", "description": "Issue or fault description" },
+        "accessories": { "type": "string", "description": "Accessories received with device" },
+        "physicalCondition": { "type": "string", "description": "Physical condition of device" },
+        "contactNumber": { "type": "string", "description": "Customer phone number" },
+        "ticketImage": { "type": "string", "description": "Ticket image URL" },
+        "possibleEntryDate": { "type": "string", "description": "Estimated date of entry to workshop" },
+        "status": { "type": "string", "enum": ["received", "sent_to_provider", "in_store", "delivered"], "description": "Warranty status" },
+        "storeId": { "type": "string", "description": "Store ID" }
+      },
+      "required": ["receptionDate", "brand", "model", "issueDescription", "contactNumber", "status"]
+    },
+    "Attendance": {
+      "title": "Attendance",
+      "description": "Attendance record for employee clock-in and check-out",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Employee user UID" },
+        "storeId": { "type": "string", "description": "Store ID" },
+        "type": { "type": "string", "enum": ["entry", "lunch_start", "lunch_end", "exit", "excused", "rest_day", "vacation", "attended"], "description": "Clock event type" },
+        "timestamp": { "type": "string", "description": "ISO timestamp" },
+        "date": { "type": "string", "description": "Date (YYYY-MM-DD)" },
+        "imageUrl": { "type": "string", "description": "Selfie or photo proof URL" },
+        "screenshotUrl": { "type": "string", "description": "Screenshot URL if applicable" },
+        "locationCoords": { "type": "string", "description": "GPS coordinates lat,lng" },
+        "notes": { "type": "string", "description": "Notes or justification reason" }
+      },
+      "required": ["userId", "type", "timestamp", "date"]
+    },
+    "Request": {
+      "title": "Request",
+      "description": "Absence justification or schedule change request",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Requesting employee UID" },
+        "storeId": { "type": "string", "description": "Store ID" },
+        "type": { "type": "string", "description": "Request type: excuse, rest_day_change, vacation, edit_sale" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"], "description": "Resolution status" },
+        "date": { "type": "string", "description": "Date of requested change" },
+        "reason": { "type": "string", "description": "Reason provided by employee" },
+        "resolvedBy": { "type": "string", "description": "Admin/Supervisor UID who resolved" },
+        "resolvedAt": { "type": "string", "description": "Timestamp of resolution" },
+        "createdAt": { "type": "string", "description": "Timestamp when requested" }
+      },
+      "required": ["userId", "type", "status", "createdAt"]
+    },
+    "MonthlyGoal": {
+      "title": "MonthlyGoal",
+      "description": "Monthly sales goals per store or overall",
+      "type": "object",
+      "properties": {
+        "month": { "type": "string", "description": "Month in YYYY-MM format" },
+        "revenue_goal": { "type": "number", "description": "Target revenue in MXN" },
+        "devices_goal": { "type": "number", "description": "Target phone devices count" },
+        "chip_0_goal": { "type": "number", "description": "Target chip 0 count" },
+        "portability_goal": { "type": "number", "description": "Target portability count" },
+        "chip_express_goal": { "type": "number", "description": "Target chip express count" },
+        "storeId": { "type": "string", "description": "Optional specific store ID" }
+      },
+      "required": ["month", "revenue_goal", "devices_goal"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles storing roles and permissions"
+    },
+    "/sales/{saleId}": {
+      "schema": "Sale",
+      "description": "Sales records entered by sellers"
+    },
+    "/daily_closings/{closeId}": {
+      "schema": "DailyClose",
+      "description": "Daily closing balances by store"
+    },
+    "/stores/{storeId}": {
+      "schema": "Store",
+      "description": "Store branches"
+    },
+    "/warranties/{warrantyId}": {
+      "schema": "Warranty",
+      "description": "Device warranty tickets and statuses"
+    },
+    "/attendance/{attendanceId}": {
+      "schema": "Attendance",
+      "description": "Employee attendance logs"
+    },
+    "/requests/{requestId}": {
+      "schema": "Request",
+      "description": "Employee requests for approval by supervisors/admins"
+    },
+    "/monthly_goals/{goalId}": {
+      "schema": "MonthlyGoal",
+      "description": "Sales targets per month"
+    }
+  }
+}
