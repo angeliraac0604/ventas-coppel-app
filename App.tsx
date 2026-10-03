@@ -80,6 +80,36 @@ const App: React.FC = () => {
     }
   });
 
+  const CARDENAS_STORE_ID = 'c90b4652-f98f-472b-acab-0d9bc6b4862e';
+
+  const userStore = stores.find(s => s.id === userProfile?.storeId);
+  const isCardenas1053 = Boolean(
+    userProfile?.storeId === CARDENAS_STORE_ID ||
+    userProfile?.assignedStores?.includes(CARDENAS_STORE_ID) ||
+    (userStore && (
+      userStore.id === CARDENAS_STORE_ID ||
+      userStore.name.toLowerCase().includes('cárdenas') ||
+      userStore.name.toLowerCase().includes('cardenas') ||
+      userStore.name.includes('1053') ||
+      userStore.id.toLowerCase().includes('cardenas') ||
+      userStore.id.includes('1053')
+    ))
+  );
+
+  const canAccessWarranties = Boolean(
+    effectiveRole === 'admin' || 
+    effectiveRole === 'developer' || 
+    effectiveRole === 'supervisor' ||
+    isCardenas1053
+  );
+
+  const isWarrantyAdmin = Boolean(
+    effectiveRole === 'admin' || 
+    effectiveRole === 'developer' || 
+    effectiveRole === 'supervisor' ||
+    isCardenas1053
+  );
+
   useEffect(() => {
     // Persistence of view
     try {
@@ -132,12 +162,14 @@ const App: React.FC = () => {
   // --- SECURITY: Force redirect unauthorized users from admin views ---
   useEffect(() => {
     if (effectiveRole === 'seller' || effectiveRole === 'viewer') {
-      const adminViews = ['attendance-report', 'admin', 'supervision', 'requests', 'warranties', 'backup-migration'];
+      const adminViews = ['attendance-report', 'admin', 'supervision', 'requests', 'backup-migration'];
       if (adminViews.includes(currentView)) {
+        setCurrentView('list');
+      } else if (currentView === 'warranties' && !canAccessWarranties) {
         setCurrentView('list');
       }
     }
-  }, [effectiveRole, currentView]);
+  }, [effectiveRole, currentView, canAccessWarranties]);
 
   // States for Error Handling & Setup
   const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -1779,9 +1811,9 @@ create policy "Users delete store warranties" on public.warranties for delete to
     if (!session) return;
     setIsLoading(true);
     try {
-      const finalStoreId = userProfile?.role === 'admin' && selectedStoreId !== 'all' 
+      const finalStoreId = (userProfile?.role === 'admin' && selectedStoreId !== 'all') 
         ? selectedStoreId 
-        : userProfile?.storeId;
+        : (userProfile?.storeId || (selectedStoreId !== 'all' ? selectedStoreId : CARDENAS_STORE_ID));
       
       if (!finalStoreId) {
         alert("Por favor, selecciona una tienda específica antes de registrar una garantía.");
@@ -1802,6 +1834,7 @@ create policy "Users delete store warranties" on public.warranties for delete to
         physicalCondition: newWarranty.physicalCondition,
         contactNumber: newWarranty.contactNumber,
         ticketImage: newWarranty.ticketImage,
+        phoneDetails: newWarranty.phoneDetails,
         possibleEntryDate: newWarranty.possibleEntryDate,
         status: newWarranty.status,
         storeId: finalStoreId
@@ -2104,23 +2137,6 @@ create policy "Users delete store warranties" on public.warranties for delete to
     );
   }
 
-  const userStore = stores.find(s => s.id === userProfile?.storeId);
-  const isCardenas1053 = userStore && (
-    userStore.name.toLowerCase().includes('cárdenas') ||
-    userStore.name.toLowerCase().includes('cardenas') ||
-    userStore.name.includes('1053') ||
-    userStore.id.toLowerCase().includes('cardenas') ||
-    userStore.id.includes('1053')
-  );
-  const canAccessWarranties = 
-    effectiveRole === 'admin' || 
-    effectiveRole === 'developer' || 
-    isCardenas1053;
-  const isWarrantyAdmin = 
-    effectiveRole === 'admin' || 
-    effectiveRole === 'developer' || 
-    isCardenas1053;
-
   // --- MAIN APP RENDER ---
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col md:flex-row font-sans">
@@ -2183,6 +2199,9 @@ create policy "Users delete store warranties" on public.warranties for delete to
                 label="Reporte Asistencias" 
                 badge={alerts.length > 0 ? alerts.length : undefined}
               />
+              {canAccessWarranties && (
+                <NavButton view="warranties" icon={ShieldAlert} label="Garantías" />
+              )}
               {(effectiveRole === 'admin' || effectiveRole === 'developer') && (
                 <>
                   <NavButton view="admin" icon={Shield} label="Administración" />

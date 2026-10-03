@@ -65,6 +65,19 @@ const Warranties: React.FC<WarrantiesProps> = ({
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [filterStatus, setFilterStatus] = useState<'all' | Warranty['status']>('all');
+    const [ticketPreview, setTicketPreview] = useState<string | null>(null);
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            const result = reader.result as string;
+            setTicketPreview(result);
+            setFormData(prev => ({ ...prev, ticketImage: result }));
+        };
+        reader.readAsDataURL(file);
+    };
 
     const startEditingWarranty = (warranty: Warranty) => {
         setWarrantyToEdit(warranty);
@@ -79,8 +92,10 @@ const Warranties: React.FC<WarrantiesProps> = ({
             accessories: warranty.accessories || '',
             physicalCondition: warranty.physicalCondition,
             contactNumber: warranty.contactNumber,
-            phoneDetails: warranty.phoneDetails || ''
+            phoneDetails: warranty.phoneDetails || '',
+            ticketImage: warranty.ticketImage || ''
         });
+        setTicketPreview(warranty.ticketImage || null);
         setIsAdding(true);
     };
 
@@ -252,8 +267,10 @@ const Warranties: React.FC<WarrantiesProps> = ({
                 accessories: '',
                 physicalCondition: '',
                 contactNumber: '',
-                phoneDetails: ''
+                phoneDetails: '',
+                ticketImage: ''
             });
+            setTicketPreview(null);
 
         } catch (error) {
             console.error(error);
@@ -653,7 +670,7 @@ const Warranties: React.FC<WarrantiesProps> = ({
                             <div className="pt-4 flex gap-3 justify-end border-t border-slate-100 mt-4">
                                 <button
                                     type="button"
-                                    onClick={() => { setIsAdding(false); setWarrantyToEdit(null); }}
+                                    onClick={() => { setIsAdding(false); setWarrantyToEdit(null); setTicketPreview(null); }}
                                     disabled={isSubmitting}
                                     className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium text-sm transition-colors disabled:opacity-50"
                                 >
