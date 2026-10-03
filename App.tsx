@@ -580,9 +580,14 @@ create policy "Users insert store warranties" on public.warranties for insert to
       }
     } catch (e) {}
 
-    // Si ya hay sesión de desarrollador activa o Supabase no está configurado
-    if (localStorage.getItem('dev_session') === 'true' || !isSupabaseConfigured) {
+    // Si ya hay sesión de desarrollador activa
+    if (localStorage.getItem('dev_session') === 'true') {
       handleDeveloperLogin();
+      setAuthLoading(false);
+      return;
+    }
+
+    if (!isSupabaseConfigured) {
       setAuthLoading(false);
       return;
     }
