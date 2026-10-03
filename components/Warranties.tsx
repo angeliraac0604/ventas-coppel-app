@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { Warranty, Brand, BrandConfig } from '../types';
 import { uploadImageToDriveScript } from '../services/googleAppsScriptService';
-import { smartImageUpload } from '../services/storageService';
+import { smartImageUpload, compressImage } from '../services/storageService';
 
 interface WarrantiesProps {
     warranties: Warranty[];
@@ -66,17 +66,35 @@ const Warranties: React.FC<WarrantiesProps> = ({
     const [searchTerm, setSearchTerm] = useState('');
     const [filterStatus, setFilterStatus] = useState<'all' | Warranty['status']>('all');
     const [ticketPreview, setTicketPreview] = useState<string | null>(null);
+    const [isProcessingImage, setIsProcessingImage] = useState(false);
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        const reader = new FileReader();
-        reader.onloadend = () => {
-            const result = reader.result as string;
-            setTicketPreview(result);
-            setFormData(prev => ({ ...prev, ticketImage: result }));
-        };
-        reader.readAsDataURL(file);
+
+        setIsProcessingImage(true);
+        try {
+            const reader = new FileReader();
+            reader.onloadend = async () => {
+                const rawBase64 = reader.result as string;
+                try {
+                    // Compresión inmediata a 800px para evitar saturación de memoria y parpadeos
+                    const compressed = await compressImage(rawBase64, 800, 0.7);
+                    setTicketPreview(compressed);
+                    setFormData(prev => ({ ...prev, ticketImage: compressed }));
+                } catch (err) {
+                    console.warn("Error comprimiendo imagen:", err);
+                    setTicketPreview(rawBase64);
+                    setFormData(prev => ({ ...prev, ticketImage: rawBase64 }));
+                } finally {
+                    setIsProcessingImage(false);
+                }
+            };
+            reader.readAsDataURL(file);
+        } catch (err) {
+            console.error("Error leyendo imagen:", err);
+            setIsProcessingImage(false);
+        }
     };
 
     const startEditingWarranty = (warranty: Warranty) => {
@@ -210,21 +228,56 @@ const Warranties: React.FC<WarrantiesProps> = ({
     };
 
     const validateForm = () => {
-        if (!formData.invoiceNumber || !formData.receptionDate || !formData.possibleEntryDate || !formData.brand || !formData.model || !formData.imei || !formData.issueDescription || !formData.accessories || !formData.physicalCondition || !formData.contactNumber || !formData.phoneDetails) {
-            alert("⚠️ Todos los campos son obligatorios para registrar la garantía.");
+        if (!formData.invoiceNumber.trim()) {
+            alert("⚠️ El No. de Factura / Folio es obligatorio.");
             return false;
         }
-
+        if (!formData.receptionDate) {
+            alert("⚠️ La Fecha de Recepción es obligatoria.");
+            return false;
+        }
+        if (!formData.contactNumber.trim()) {
+            alert("⚠️ El Número de Contacto es obligatorio.");
+            return false;
+        }
+        if (formData.contactNumber.length !== 10) {
+            alert("⚠️ El Número de Contacto debe tener exactamente 10 dígitos.");
+            return false;
+        }
+        if (!formData.possibleEntryDate) {
+            alert("⚠️ La Posible Fecha de Ingreso es obligatoria.");
+            return false;
+        }
+        if (!formData.brand) {
+            alert("⚠️ Debes seleccionar una Marca.");
+            return false;
+        }
+        if (!formData.model.trim()) {
+            alert("⚠️ El Modelo es obligatorio.");
+            return false;
+        }
+        if (!formData.imei.trim()) {
+            alert("⚠️ El IMEI es obligatorio.");
+            return false;
+        }
         if (formData.imei.length !== 15) {
             alert("⚠️ El IMEI debe tener exactamente 15 dígitos.");
             return false;
         }
-
-        if (formData.contactNumber.length !== 10) {
-            alert("⚠️ El número de contacto debe tener 10 dígitos.");
+        if (!formData.issueDescription.trim()) {
+            alert("⚠️ La Falla Reportada es obligatoria.");
+            return false;
+        }
+        if (!formData.accessories.trim()) {
+            alert("⚠️ Debes indicar los Accesorios (ej. 'Solo equipo' o accesorios incluidos).");
+            return false;
+        }
+        if (!formData.physicalCondition.trim()) {
+            alert("⚠️ El Estado Físico es obligatorio (ej. 'Rayones leves', 'Buen estado').");
             return false;
         }
 
+        // phoneDetails (detalles adicionales) y ticketImage (foto) son completamente opcionales
         return true;
     };
 
@@ -468,7 +521,7 @@ const Warranties: React.FC<WarrantiesProps> = ({
 
             {/* Add Modal */}
             {isAdding && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
                     <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
                         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                             <div>
@@ -476,10 +529,12 @@ const Warranties: React.FC<WarrantiesProps> = ({
                                     <ShieldAlert className="w-5 h-5 text-blue-600" />
                                     {warrantyToEdit ? 'Editar Garantía' : 'Registrar Garantía'}
                                 </h2>
-                                <p className="text-slate-500 text-sm">Todos los campos son obligatorios.</p>
+                                <p className="text-slate-500 text-xs mt-0.5">
+                                    Los campos con <span className="text-red-500 font-bold">*</span> son obligatorios. La foto y notas adicionales son opcionales.
+                                </p>
                             </div>
                             {!isSubmitting && (
-                                <button onClick={() => { setIsAdding(false); setWarrantyToEdit(null); }} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 transition-colors">
+                                <button onClick={() => { setIsAdding(false); setWarrantyToEdit(null); setTicketPreview(null); }} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 transition-colors">
                                     <X className="w-5 h-5" />
                                 </button>
                             )}
@@ -490,7 +545,10 @@ const Warranties: React.FC<WarrantiesProps> = ({
 
                                 {/* Invoice Number - First Field requested */}
                                 <div className="space-y-1">
-                                    <label className="text-xs font-bold text-slate-500 uppercase">No. Factura</label>
+                                    <label className="text-xs font-bold text-slate-700 uppercase flex items-center gap-1">
+                                        <span>No. Factura / Folio</span>
+                                        <span className="text-red-500 font-bold text-sm">*</span>
+                                    </label>
                                     <div className="relative">
                                         <FileText className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                                         <input
@@ -506,7 +564,10 @@ const Warranties: React.FC<WarrantiesProps> = ({
                                     <p className="text-[10px] text-right text-slate-400">{formData.invoiceNumber.length}/6</p>
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-xs font-bold text-slate-500 uppercase">Fecha Recepción</label>
+                                    <label className="text-xs font-bold text-slate-700 uppercase flex items-center gap-1">
+                                        <span>Fecha Recepción</span>
+                                        <span className="text-red-500 font-bold text-sm">*</span>
+                                    </label>
                                     <div className="relative">
                                         <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                                         <input
@@ -520,7 +581,10 @@ const Warranties: React.FC<WarrantiesProps> = ({
                                 </div>
 
                                 <div className="space-y-1">
-                                    <label className="text-xs font-bold text-slate-500 uppercase">Número de Contacto (10 Dígitos)</label>
+                                    <label className="text-xs font-bold text-slate-700 uppercase flex items-center gap-1">
+                                        <span>Número de Contacto (10 Dígitos)</span>
+                                        <span className="text-red-500 font-bold text-sm">*</span>
+                                    </label>
                                     <div className="relative">
                                         <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                                         <input
@@ -536,7 +600,10 @@ const Warranties: React.FC<WarrantiesProps> = ({
                                 </div>
 
                                 <div className="space-y-1">
-                                    <label className="text-xs font-bold text-slate-500 uppercase">Posible Fecha Ingreso</label>
+                                    <label className="text-xs font-bold text-slate-700 uppercase flex items-center gap-1">
+                                        <span>Posible Fecha Ingreso</span>
+                                        <span className="text-red-500 font-bold text-sm">*</span>
+                                    </label>
                                     <div className="relative">
                                         <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                                         <input
@@ -550,7 +617,10 @@ const Warranties: React.FC<WarrantiesProps> = ({
                                 </div>
 
                                 <div className="space-y-1">
-                                    <label className="text-xs font-bold text-slate-500 uppercase">Marca</label>
+                                    <label className="text-xs font-bold text-slate-700 uppercase flex items-center gap-1">
+                                        <span>Marca</span>
+                                        <span className="text-red-500 font-bold text-sm">*</span>
+                                    </label>
                                     <div className="relative">
                                         <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                                         <select
@@ -567,7 +637,10 @@ const Warranties: React.FC<WarrantiesProps> = ({
                                 </div>
 
                                 <div className="space-y-1">
-                                    <label className="text-xs font-bold text-slate-500 uppercase">Modelo</label>
+                                    <label className="text-xs font-bold text-slate-700 uppercase flex items-center gap-1">
+                                        <span>Modelo</span>
+                                        <span className="text-red-500 font-bold text-sm">*</span>
+                                    </label>
                                     <input
                                         type="text"
                                         required
@@ -579,7 +652,10 @@ const Warranties: React.FC<WarrantiesProps> = ({
                                 </div>
 
                                 <div className="space-y-1 md:col-span-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase">IMEI / Serie (15 Dígitos)</label>
+                                    <label className="text-xs font-bold text-slate-700 uppercase flex items-center gap-1">
+                                        <span>IMEI / Serie (15 Dígitos)</span>
+                                        <span className="text-red-500 font-bold text-sm">*</span>
+                                    </label>
                                     <input
                                         type="text"
                                         required
@@ -593,7 +669,10 @@ const Warranties: React.FC<WarrantiesProps> = ({
                                 </div>
 
                                 <div className="space-y-1 md:col-span-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase">Falla Reportada</label>
+                                    <label className="text-xs font-bold text-slate-700 uppercase flex items-center gap-1">
+                                        <span>Falla Reportada</span>
+                                        <span className="text-red-500 font-bold text-sm">*</span>
+                                    </label>
                                     <div className="relative">
                                         <FileText className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
                                         <textarea
@@ -608,13 +687,16 @@ const Warranties: React.FC<WarrantiesProps> = ({
                                 </div>
 
                                 <div className="space-y-1 md:col-span-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase">Accesorios (Cargador, caja, funda...)</label>
+                                    <label className="text-xs font-bold text-slate-700 uppercase flex items-center gap-1">
+                                        <span>Accesorios (Cargador, caja, funda...)</span>
+                                        <span className="text-red-500 font-bold text-sm">*</span>
+                                    </label>
                                     <div className="relative">
                                         <PackageCheck className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
                                         <textarea
                                             required
                                             rows={2}
-                                            placeholder="Detalla qué accesorios se reciben..."
+                                            placeholder="Detalla qué accesorios se reciben (ej. Solo equipo, cable USB)..."
                                             value={formData.accessories}
                                             onChange={(e) => setFormData({ ...formData, accessories: e.target.value })}
                                             className="w-full pl-10 pr-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm resize-none"
@@ -623,13 +705,16 @@ const Warranties: React.FC<WarrantiesProps> = ({
                                 </div>
 
                                 <div className="space-y-1 md:col-span-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase">Estado Físico</label>
+                                    <label className="text-xs font-bold text-slate-700 uppercase flex items-center gap-1">
+                                        <span>Estado Físico</span>
+                                        <span className="text-red-500 font-bold text-sm">*</span>
+                                    </label>
                                     <div className="relative">
                                         <Thermometer className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
                                         <textarea
                                             required
                                             rows={2}
-                                            placeholder="Rayones, golpes, accesorios incluidos..."
+                                            placeholder="Rayones, golpes, condiciones estéticas..."
                                             value={formData.physicalCondition}
                                             onChange={(e) => setFormData({ ...formData, physicalCondition: e.target.value })}
                                             className="w-full pl-10 pr-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm resize-none"
@@ -637,29 +722,66 @@ const Warranties: React.FC<WarrantiesProps> = ({
                                     </div>
                                 </div>
 
-                                {/* Ticket Image Input */}
+                                {/* Detalles Adicionales del Teléfono (Opcional) */}
                                 <div className="space-y-1 md:col-span-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase">Detalles del Teléfono (si presenta algún detalle o daño)</label>
+                                    <label className="text-xs font-bold text-slate-700 uppercase flex items-center justify-between">
+                                        <span>Detalles del Teléfono (Daño o detalle específico)</span>
+                                        <span className="text-slate-400 font-normal normal-case text-xs">(Opcional)</span>
+                                    </label>
+                                    <div className="relative">
+                                        <Smartphone className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
+                                        <textarea
+                                            rows={2}
+                                            placeholder="Especifica si presenta algún detalle adicional o daño previo (Opcional)..."
+                                            value={formData.phoneDetails || ''}
+                                            onChange={(e) => setFormData({ ...formData, phoneDetails: e.target.value })}
+                                            className="w-full pl-10 pr-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm resize-none"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Ticket Image Input (Opcional) */}
+                                <div className="space-y-1 md:col-span-2">
+                                    <label className="text-xs font-bold text-slate-700 uppercase flex items-center justify-between">
+                                        <span>Foto o Evidencia del Equipo</span>
+                                        <span className="text-slate-400 font-normal normal-case text-xs">(Opcional)</span>
+                                    </label>
                                     <div className="flex gap-4 items-start">
                                         {ticketPreview ? (
-                                            <div className="relative w-24 h-24 rounded-lg overflow-hidden border border-slate-200 group">
+                                            <div className="relative w-28 h-28 rounded-xl overflow-hidden border border-slate-200 group shadow-sm bg-slate-100 flex-shrink-0">
                                                 <img src={ticketPreview} alt="Preview" className="w-full h-full object-cover" />
                                                 <button
                                                     type="button"
                                                     onClick={() => { setTicketPreview(null); setFormData(p => ({ ...p, ticketImage: '' })); }}
-                                                    className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-80 hover:opacity-100"
+                                                    className="absolute top-1.5 right-1.5 bg-red-600 text-white rounded-full p-1 shadow-md hover:bg-red-700 transition-colors"
+                                                    title="Eliminar foto"
                                                 >
-                                                    <X className="w-3 h-3" />
+                                                    <X className="w-3.5 h-3.5" />
                                                 </button>
                                             </div>
                                         ) : (
                                             <label className="w-full cursor-pointer group">
-                                                <div className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-slate-300 rounded-lg bg-slate-50 hover:bg-blue-50 hover:border-blue-400 transition-colors">
-                                                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                                                        <Camera className="w-8 h-8 text-slate-400 group-hover:text-blue-500 mb-2" />
-                                                        <p className="text-xs text-slate-500">Tocar para tomar foto</p>
-                                                    </div>
-                                                    <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFileChange} />
+                                                <div className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-slate-300 rounded-xl bg-slate-50 hover:bg-blue-50/50 hover:border-blue-400 transition-all">
+                                                    {isProcessingImage ? (
+                                                        <div className="flex items-center gap-2 text-blue-600 font-medium text-xs">
+                                                            <Loader2 className="w-5 h-5 animate-spin" />
+                                                            <span>Optimizando foto...</span>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex flex-col items-center justify-center py-4">
+                                                            <Camera className="w-7 h-7 text-slate-400 group-hover:text-blue-500 mb-1 transition-colors" />
+                                                            <p className="text-xs font-medium text-slate-600 group-hover:text-blue-600">Tocar para tomar o seleccionar foto</p>
+                                                            <span className="text-[10px] text-slate-400">Opcional · Se optimiza automáticamente</span>
+                                                        </div>
+                                                    )}
+                                                    <input 
+                                                        type="file" 
+                                                        accept="image/*" 
+                                                        capture="environment" 
+                                                        className="hidden" 
+                                                        disabled={isProcessingImage} 
+                                                        onChange={handleFileChange} 
+                                                    />
                                                 </div>
                                             </label>
                                         )}
