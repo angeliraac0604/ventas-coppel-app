@@ -79,9 +79,8 @@ const Warranties: React.FC<WarrantiesProps> = ({
             accessories: warranty.accessories || '',
             physicalCondition: warranty.physicalCondition,
             contactNumber: warranty.contactNumber,
-            ticketImage: warranty.ticketImage || ''
+            phoneDetails: warranty.phoneDetails || ''
         });
-        setTicketPreview(warranty.ticketImage || null);
         setIsAdding(true);
     };
 
@@ -110,7 +109,7 @@ const Warranties: React.FC<WarrantiesProps> = ({
         sent_to_provider: '¡Hola! Te informamos desde Coppel que tu equipo *{brand} {model}* (IMEI: {imei}) ya ha sido *enviado a centro de servicio / proveedor* para su revisión en garantía. Continuamos al pendiente y te avisaremos en cuanto regrese a tienda.',
         in_store: '¡Hola! Tenemos excelentes noticias de Coppel. 🎉 Tu equipo *{brand} {model}* ya se encuentra de regreso en nuestra sucursal y *listo para que pases a recogerlo*. ¡Te esperamos!',
         delivered: '¡Hola! Te saludamos de Coppel. 🤝 Queremos confirmar la entrega de tu equipo *{brand} {model}* ya reparado/atendido en garantía. Agradecemos tu preferencia y estamos para servirte.',
-        group: '*📋 REPORTE DE GARANTÍA - COPPEL*\n--------------------------------\n📅 Fecha: {date}\n📱 Equipo: {brand} {model}\n🔢 IMEI: {imei}\n👤 Teléfono Cliente: {phone}\n🔧 Falla: {issue}\n🔌 Accesorios: {accessories}\n🔍 Estado: {physical}'
+        group: '*📋 REPORTE DE GARANTÍA - COPPEL*\n--------------------------------\n📅 Fecha: {date}\n📱 Equipo: {brand} {model}\n🔢 IMEI: {imei}\n👤 Teléfono Cliente: {phone}\n🔧 Falla: {issue}\n🔌 Accesorios: {accessories}\n🔍 Estado: {physical}\n⚠️ Detalles del Teléfono: {details}'
     };
 
     const [templates, setTemplates] = useState(() => {
@@ -146,7 +145,8 @@ const Warranties: React.FC<WarrantiesProps> = ({
             .replace(/\{phone\}/g, warranty.contactNumber || 'N/A')
             .replace(/\{issue\}/g, warranty.issueDescription || 'N/A')
             .replace(/\{accessories\}/g, warranty.accessories || 'Ninguno')
-            .replace(/\{physical\}/g, warranty.physicalCondition || 'N/A');
+            .replace(/\{physical\}/g, warranty.physicalCondition || 'N/A')
+            .replace(/\{details\}/g, warranty.phoneDetails || 'Ninguno');
     };
 
     const handleSendToGroup = (warranty: Warranty) => {
@@ -176,7 +176,7 @@ const Warranties: React.FC<WarrantiesProps> = ({
     const [formData, setFormData] = useState<Omit<Warranty, 'id' | 'status'>>({
         receptionDate: new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0') + '-' + String(new Date().getDate()).padStart(2, '0'),
         invoiceNumber: '',
-        possibleEntryDate: '', // Nuevo estado
+        possibleEntryDate: '',
         brand: Brand.SAMSUNG,
         model: '',
         imei: '',
@@ -184,10 +184,8 @@ const Warranties: React.FC<WarrantiesProps> = ({
         accessories: '',
         physicalCondition: '',
         contactNumber: '',
-        ticketImage: ''
+        phoneDetails: ''
     });
-
-    const [ticketPreview, setTicketPreview] = useState<string | null>(null);
 
     // --- HANDLERS ---
 
@@ -196,46 +194,13 @@ const Warranties: React.FC<WarrantiesProps> = ({
         setFormData(prev => ({ ...prev, [field]: numericValue }));
     };
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = (ev) => {
-                // Compress Image Logic (Simple version)
-                const img = new Image();
-                img.src = ev.target?.result as string;
-                img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    let width = img.width;
-                    let height = img.height;
-                    const maxDimension = 1000;
-
-                    if (width > height) {
-                        if (width > maxDimension) { height = Math.round((height * maxDimension) / width); width = maxDimension; }
-                    } else {
-                        if (height > maxDimension) { width = Math.round((width * maxDimension) / height); height = maxDimension; }
-                    }
-
-                    canvas.width = width;
-                    canvas.height = height;
-                    const ctx = canvas.getContext('2d');
-                    ctx?.drawImage(img, 0, 0, width, height);
-                    const compressed = canvas.toDataURL('image/jpeg', 0.7);
-                    setTicketPreview(compressed);
-                    setFormData(prev => ({ ...prev, ticketImage: compressed }));
-                };
-            };
-        }
-    };
-
     const validateForm = () => {
-        if (!formData.brand || !formData.model || !formData.issueDescription || !formData.physicalCondition) {
-            alert("⚠️ Todos los campos de texto son obligatorios.");
+        if (!formData.invoiceNumber || !formData.receptionDate || !formData.possibleEntryDate || !formData.brand || !formData.model || !formData.imei || !formData.issueDescription || !formData.accessories || !formData.physicalCondition || !formData.contactNumber || !formData.phoneDetails) {
+            alert("⚠️ Todos los campos son obligatorios para registrar la garantía.");
             return false;
         }
 
-        if (formData.imei && formData.imei.length !== 15) {
+        if (formData.imei.length !== 15) {
             alert("⚠️ El IMEI debe tener exactamente 15 dígitos.");
             return false;
         }
@@ -244,11 +209,6 @@ const Warranties: React.FC<WarrantiesProps> = ({
             alert("⚠️ El número de contacto debe tener 10 dígitos.");
             return false;
         }
-
-        // if (!formData.ticketImage) {
-        //     alert("⚠️ Debes adjuntar una foto del ticket o del equipo.");
-        //     return false;
-        // }
 
         return true;
     };
@@ -260,36 +220,10 @@ const Warranties: React.FC<WarrantiesProps> = ({
         setIsSubmitting(true);
 
         try {
-            let finalImageUrl = formData.ticketImage;
-
-            // 📸 NEW ROBUST UPLOAD LOGIC (Supabase + Background Drive Sync)
-            if (formData.ticketImage && formData.ticketImage.startsWith('data:')) {
-                try {
-                    const storeName = stores?.find((s: any) => s.id === (userProfile?.storeId))?.name || 'Sucursal Desconocida';
-                    const filename = `Garantia_${formData.model}_${formData.receptionDate}`;
-                    
-                    // Month Formatting: Only Name (e.g. "Abril")
-                    const [y, m, d] = formData.receptionDate.split('-');
-                    const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
-                    const monthIndex = parseInt(m) - 1;
-                    const formattedMonth = monthNames[monthIndex];
-                    
-                    // Set global hints for background sync
-                    (window as any)._activeStoreName = storeName;
-                    (window as any)._customMonthName = formattedMonth;
-
-                    finalImageUrl = await smartImageUpload(formData.ticketImage, filename, formData.receptionDate, storeName, 'warranties');
-                } catch (error) {
-                    console.error("Upload failed", error);
-                    alert("Error al guardar la imagen. La garantía se guardará sin ella.");
-                }
-            }
-
             if (warrantyToEdit && onUpdateWarranty) {
                 await onUpdateWarranty({
                     ...warrantyToEdit,
                     ...formData,
-                    ticketImage: finalImageUrl,
                     status: warrantyToEdit.status
                 });
                 setIsAdding(false);
@@ -297,7 +231,6 @@ const Warranties: React.FC<WarrantiesProps> = ({
             } else {
                 const created = await onAddWarranty({
                     ...formData,
-                    ticketImage: finalImageUrl,
                     status: 'received'
                 });
 
@@ -319,9 +252,8 @@ const Warranties: React.FC<WarrantiesProps> = ({
                 accessories: '',
                 physicalCondition: '',
                 contactNumber: '',
-                ticketImage: ''
+                phoneDetails: ''
             });
-            setTicketPreview(null);
 
         } catch (error) {
             console.error(error);
@@ -587,11 +519,12 @@ const Warranties: React.FC<WarrantiesProps> = ({
                                 </div>
 
                                 <div className="space-y-1">
-                                    <label className="text-xs font-bold text-slate-500 uppercase">Posible Fecha Ingreso (Opcional)</label>
+                                    <label className="text-xs font-bold text-slate-500 uppercase">Posible Fecha Ingreso</label>
                                     <div className="relative">
                                         <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                                         <input
                                             type="date"
+                                            required
                                             value={formData.possibleEntryDate || ''}
                                             onChange={(e) => setFormData({ ...formData, possibleEntryDate: e.target.value })}
                                             className="w-full pl-10 pr-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
@@ -689,7 +622,7 @@ const Warranties: React.FC<WarrantiesProps> = ({
 
                                 {/* Ticket Image Input */}
                                 <div className="space-y-1 md:col-span-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase">Evidencia (Ticket/Equipo)</label>
+                                    <label className="text-xs font-bold text-slate-500 uppercase">Detalles del Teléfono (si presenta algún detalle o daño)</label>
                                     <div className="flex gap-4 items-start">
                                         {ticketPreview ? (
                                             <div className="relative w-24 h-24 rounded-lg overflow-hidden border border-slate-200 group">

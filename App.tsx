@@ -1096,6 +1096,7 @@ create policy "Users delete store warranties" on public.warranties for delete to
               physicalCondition: data.physicalCondition || data.physical_condition || '',
               contactNumber: data.contactNumber || data.contact_number || '',
               ticketImage: data.ticketImage || data.ticket_image || '',
+              phoneDetails: data.phoneDetails || data.phone_details || '',
               possibleEntryDate: data.possibleEntryDate || data.possible_entry_date || '',
               status: data.status || 'received',
               storeId: data.storeId || data.store_id || ''
@@ -1206,6 +1207,7 @@ create policy "Users delete store warranties" on public.warranties for delete to
               physicalCondition: row.physical_condition,
               contactNumber: row.contact_number,
               ticketImage: row.ticket_image,
+              phoneDetails: row.phone_details,
               possibleEntryDate: row.possible_entry_date, 
               status: row.status,
               storeId: row.store_id
@@ -1823,6 +1825,7 @@ create policy "Users delete store warranties" on public.warranties for delete to
         physical_condition: newWarranty.physicalCondition,
         contact_number: newWarranty.contactNumber,
         ticket_image: newWarranty.ticketImage,
+        phone_details: newWarranty.phoneDetails,
         possible_entry_date: newWarranty.possibleEntryDate,
         status: newWarranty.status,
         store_id: finalStoreId
@@ -1849,6 +1852,7 @@ create policy "Users delete store warranties" on public.warranties for delete to
           physicalCondition: row.physical_condition,
           contactNumber: row.contact_number,
           ticketImage: row.ticket_image,
+          phoneDetails: row.phone_details,
           possibleEntryDate: row.possible_entry_date,
           status: row.status,
           storeId: row.store_id
@@ -1945,6 +1949,7 @@ create policy "Users delete store warranties" on public.warranties for delete to
         physical_condition: updatedWarranty.physicalCondition,
         contact_number: updatedWarranty.contactNumber,
         ticket_image: updatedWarranty.ticketImage,
+        phone_details: updatedWarranty.phoneDetails,
         possible_entry_date: updatedWarranty.possibleEntryDate,
         status: updatedWarranty.status,
         store_id: updatedWarranty.storeId
