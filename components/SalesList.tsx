@@ -29,7 +29,50 @@ const SalesList: React.FC<SalesListProps> = ({
   const [requestReason, setRequestReason] = useState('');
   const [isRequesting, setIsRequesting] = useState(false);
   const [suggestedData, setSuggestedData] = useState<Partial<Sale>>({});
-  const [activeTab, setActiveTab] = useState<'ALL' | 'KIT' | 'CHIP_0' | 'PORTABILITY' | 'EXPRESS'>('ALL');
+  const isCardenasStore = Boolean(
+    userProfile?.storeId === 'c90b4652-f98f-472b-acab-0d9bc6b4862e' ||
+    userProfile?.assignedStores?.includes('c90b4652-f98f-472b-acab-0d9bc6b4862e') ||
+    (storeName && (
+      storeName.toLowerCase().includes('cárdenas') ||
+      storeName.toLowerCase().includes('cardenas') ||
+      storeName.includes('1053')
+    ))
+  );
+
+  const isCardenasKitSeller = isCardenasStore && userProfile?.canSellKit !== false;
+
+  const [activeTab, setActiveTab] = useState<'ALL' | 'KIT' | 'CHIP_0' | 'PORTABILITY' | 'EXPRESS'>(() => {
+    try {
+      const saved = localStorage.getItem('coppel_sales_active_tab');
+      if (saved && ['ALL', 'KIT', 'CHIP_0', 'PORTABILITY', 'EXPRESS'].includes(saved)) {
+        return saved as any;
+      }
+    } catch (e) {}
+
+    // Si es vendedor de Coppel Cárdenas 1053 cargado para venta kit, su filtro predeterminado es 'KIT'
+    if (
+      userProfile?.storeId === 'c90b4652-f98f-472b-acab-0d9bc6b4862e' ||
+      userProfile?.assignedStores?.includes('c90b4652-f98f-472b-acab-0d9bc6b4862e') ||
+      (storeName && (
+        storeName.toLowerCase().includes('cárdenas') ||
+        storeName.toLowerCase().includes('cardenas') ||
+        storeName.includes('1053')
+      ))
+    ) {
+      if (userProfile?.canSellKit !== false) {
+        return 'KIT';
+      }
+    }
+
+    return 'ALL';
+  });
+
+  const handleTabChange = (tabId: 'ALL' | 'KIT' | 'CHIP_0' | 'PORTABILITY' | 'EXPRESS') => {
+    setActiveTab(tabId);
+    try {
+      localStorage.setItem('coppel_sales_active_tab', tabId);
+    } catch (e) {}
+  };
   const [displayLimit, setDisplayLimit] = useState(50);
   const summaryRef = useRef<HTMLDivElement>(null);
 
@@ -100,10 +143,15 @@ const SalesList: React.FC<SalesListProps> = ({
 
   // --- PERMISSIONS FILTERED TABS ---
   const getAllowedTabs = () => {
-    const tabs = [
-      { id: 'ALL', label: 'Todas las Ventas', icon: ShoppingBag }
-    ];
-    if (userProfile?.canSellKit !== false) tabs.push({ id: 'KIT', label: 'Equipos Kit', icon: Smartphone });
+    const tabs = [];
+    if (isCardenasKitSeller) {
+      // Para vendedores de Coppel Cárdenas 1053 cargados para kit, Equipos Kit va primero
+      tabs.push({ id: 'KIT', label: 'Equipos Kit', icon: Smartphone });
+      tabs.push({ id: 'ALL', label: 'Todas las Ventas', icon: ShoppingBag });
+    } else {
+      tabs.push({ id: 'ALL', label: 'Todas las Ventas', icon: ShoppingBag });
+      if (userProfile?.canSellKit !== false) tabs.push({ id: 'KIT', label: 'Equipos Kit', icon: Smartphone });
+    }
     if (userProfile?.canSellChip0) tabs.push({ id: 'CHIP_0', label: 'Chip 0', icon: Cpu });
     if (userProfile?.canSellPortability) tabs.push({ id: 'PORTABILITY', label: 'Portabilidad', icon: Share2 });
     if (userProfile?.canSellChipExpress) tabs.push({ id: 'EXPRESS', label: 'Chip Express', icon: Phone });
@@ -116,9 +164,23 @@ const SalesList: React.FC<SalesListProps> = ({
   // Switch tab if current one is not allowed
   React.useEffect(() => {
     if (!allowedTabs.find(t => t.id === activeTab)) {
-      setActiveTab(allowedTabs[0].id as any);
+      const fallback = isCardenasKitSeller ? 'KIT' : (allowedTabs[0]?.id as any || 'ALL');
+      setActiveTab(fallback);
+      try { localStorage.setItem('coppel_sales_active_tab', fallback); } catch (e) {}
     }
-  }, [userProfile, allowedTabs, activeTab]);
+  }, [userProfile, allowedTabs, activeTab, isCardenasKitSeller]);
+
+  React.useEffect(() => {
+    if (isCardenasKitSeller) {
+      try {
+        const saved = localStorage.getItem('coppel_sales_active_tab');
+        if (!saved) {
+          setActiveTab('KIT');
+          localStorage.setItem('coppel_sales_active_tab', 'KIT');
+        }
+      } catch (e) {}
+    }
+  }, [isCardenasKitSeller]);
 
   // --- TODAY'S STATS CALCULATIONS (BASED ON ACTIVE TAB) ---
   const todayDateObj = new Date();
@@ -292,7 +354,7 @@ const SalesList: React.FC<SalesListProps> = ({
         {allowedTabs.map((tab) => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
+            onClick={() => handleTabChange(tab.id as any)}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap border-2 ${
               activeTab === tab.id
                 ? 'bg-slate-900 text-white border-slate-900 shadow-md scale-105'

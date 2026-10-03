@@ -311,6 +311,13 @@ const SalesForm: React.FC<SalesFormProps> = ({
           brand: validatedItems[0]?.brand || Brand.OTRO,
           price: (commonData.category === 'portabilidad' || commonData.category === 'chip_express') ? 0 : (parseFloat(validatedItems[0]?.price) || 0)
         });
+        const targetTab = commonData.category === 'kit' ? 'KIT' : 
+                          commonData.category === 'chip_0' ? 'CHIP_0' : 
+                          commonData.category === 'portabilidad' ? 'PORTABILITY' : 
+                          commonData.category === 'chip_express' ? 'EXPRESS' : 'KIT';
+        try {
+          localStorage.setItem('coppel_sales_active_tab', targetTab);
+        } catch (e) {}
       } else {
         // CREATE MODE
         // Handle multiple items for Kit, or single for others
@@ -330,6 +337,13 @@ const SalesForm: React.FC<SalesFormProps> = ({
             price: (commonData.category === 'portabilidad' || commonData.category === 'chip_express') ? 0 : (parseFloat(item.price as string) || 0)
           });
         }));
+        const targetTab = commonData.category === 'kit' ? 'KIT' : 
+                          commonData.category === 'chip_0' ? 'CHIP_0' : 
+                          commonData.category === 'portabilidad' ? 'PORTABILITY' : 
+                          commonData.category === 'chip_express' ? 'EXPRESS' : 'KIT';
+        try {
+          localStorage.setItem('coppel_sales_active_tab', targetTab);
+        } catch (e) {}
         clearDraft();
       }
       onCancel();

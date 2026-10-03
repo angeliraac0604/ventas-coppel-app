@@ -1573,6 +1573,13 @@ create policy "Users delete store warranties" on public.warranties for delete to
         };
         await setDoc(doc(db, 'sales', saleId), cleanFirestoreData(newSale), { merge: true });
         setSales(prev => [newSale, ...prev]);
+        try {
+          const catTab = newSale.category === 'kit' ? 'KIT' : 
+                         newSale.category === 'chip_0' ? 'CHIP_0' : 
+                         newSale.category === 'portabilidad' ? 'PORTABILITY' : 
+                         newSale.category === 'chip_express' ? 'EXPRESS' : 'KIT';
+          localStorage.setItem('coppel_sales_active_tab', catTab);
+        } catch (e) {}
         setCurrentView('list');
         return;
       }
