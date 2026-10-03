@@ -18,7 +18,8 @@ import {
     Image as ImageIcon,
     Loader2,
     ExternalLink,
-    Trash2
+    Trash2,
+    Settings
 } from 'lucide-react';
 import { Warranty, Brand, BrandConfig } from '../types';
 import { uploadImageToDriveScript } from '../services/googleAppsScriptService';
@@ -60,6 +61,98 @@ const Warranties: React.FC<WarrantiesProps> = ({
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [filterStatus, setFilterStatus] = useState<'all' | Warranty['status']>('all');
+
+    const [whatsappGroupLink, setWhatsappGroupLink] = useState(() => {
+        try {
+            return localStorage.getItem('coppel_warranty_whatsapp_group') || '';
+        } catch {
+            return '';
+        }
+    });
+    const [showGroupConfigModal, setShowGroupConfigModal] = useState(false);
+    const [tempGroupLink, setTempGroupLink] = useState(whatsappGroupLink);
+
+    const saveGroupLink = (e: React.FormEvent) => {
+        e.preventDefault();
+        setWhatsappGroupLink(tempGroupLink);
+        try {
+            localStorage.setItem('coppel_warranty_whatsapp_group', tempGroupLink);
+        } catch {}
+        setShowGroupConfigModal(false);
+        alert("✅ Enlace del grupo de WhatsApp guardado correctamente.");
+    };
+
+    const defaultTemplates = {
+        received: '¡Hola! Te saludamos de Coppel. 📱 Te confirmamos que hemos recibido tu equipo *{brand} {model}* (IMEI: {imei}) e ingresado formalmente a garantía el día *{date}*. Le daremos seguimiento a su proceso y te avisaremos cualquier novedad. ¡Gracias por tu confianza!',
+        sent_to_provider: '¡Hola! Te informamos desde Coppel que tu equipo *{brand} {model}* (IMEI: {imei}) ya ha sido *enviado a centro de servicio / proveedor* para su revisión en garantía. Continuamos al pendiente y te avisaremos en cuanto regrese a tienda.',
+        in_store: '¡Hola! Tenemos excelentes noticias de Coppel. 🎉 Tu equipo *{brand} {model}* ya se encuentra de regreso en nuestra sucursal y *listo para que pases a recogerlo*. ¡Te esperamos!',
+        delivered: '¡Hola! Te saludamos de Coppel. 🤝 Queremos confirmar la entrega de tu equipo *{brand} {model}* ya reparado/atendido en garantía. Agradecemos tu preferencia y estamos para servirte.',
+        group: '*📋 REPORTE DE GARANTÍA - COPPEL*\n--------------------------------\n📅 Fecha: {date}\n📱 Equipo: {brand} {model}\n🔢 IMEI: {imei}\n👤 Teléfono Cliente: {phone}\n🔧 Falla: {issue}\n🔌 Accesorios: {accessories}\n🔍 Estado: {physical}'
+    };
+
+    const [templates, setTemplates] = useState(() => {
+        try {
+            const saved = localStorage.getItem('coppel_warranty_templates');
+            return saved ? JSON.parse(saved) : defaultTemplates;
+        } catch {
+            return defaultTemplates;
+        }
+    });
+
+    const [showTemplateModal, setShowTemplateModal] = useState(false);
+    const [tempTemplates, setTempTemplates] = useState(templates);
+
+    const saveTemplates = (e: React.FormEvent) => {
+        e.preventDefault();
+        setTemplates(tempTemplates);
+        try {
+            localStorage.setItem('coppel_warranty_templates', JSON.stringify(tempTemplates));
+        } catch {}
+        setShowTemplateModal(false);
+        alert("✅ Plantillas de mensajes actualizadas correctamente.");
+    };
+
+    const formatMessage = (template: string, warranty: Warranty) => {
+        const brandName = (safeBrandConfigs[warranty.brand]?.label || warranty.brand || 'Equipo').toUpperCase();
+        const modelName = warranty.model.toUpperCase();
+        return template
+            .replace(/\{brand\}/g, brandName)
+            .replace(/\{model\}/g, modelName)
+            .replace(/\{imei\}/g, warranty.imei || 'N/A')
+            .replace(/\{date\}/g, warranty.receptionDate)
+            .replace(/\{phone\}/g, warranty.contactNumber || 'N/A')
+            .replace(/\{issue\}/g, warranty.issueDescription || 'N/A')
+            .replace(/\{accessories\}/g, warranty.accessories || 'Ninguno')
+            .replace(/\{physical\}/g, warranty.physicalCondition || 'N/A');
+    };
+
+    const handleSendToGroup = (warranty: Warranty) => {
+        const text = `*📋 REPORTE DE GARANTÍA - COPPEL*\n--------------------------------\n📅 Fecha: ${warranty.receptionDate}\n📱 Equipo: ${(safeBrandConfigs[warranty.brand]?.label || warranty.brand || '').toUpperCase()} ${warranty.model.toUpperCase()}\n🔢 IMEI: ${warranty.imei || 'N/A'}\n👤 Teléfono Cliente: ${warranty.contactNumber}\n🔧 Falla: ${warranty.issueDescription}\n🔌 Accesorios: ${warranty.accessories}\n🔍 Estado: ${warranty.physicalCondition}${warranty.ticketImage ? `\n📷 Evidencia: ${warranty.ticketImage}` : ''}`;
+
+        if (whatsappGroupLink) {
+            const cleanNum = whatsappGroupLink.replace(/\D/g, '');
+            if (whatsappGroupLink.includes('chat.whatsapp.com')) {
+                navigator.clipboard.writeText(text).catch(() => {});
+                alert("📋 ¡Reporte copiado al portapapeles!\n\nSe abrirá el grupo de WhatsApp. Solo pega el mensaje (Ctrl+V o mantén presionado y pega).");
+                window.open(whatsappGroupLink, '_blank');
+            } else if (cleanNum.length >= 10) {
+                // Fully automatic pre-filled message just like customer!
+                const targetNum = cleanNum.startsWith('52') ? cleanNum : `52${cleanNum}`;
+                const url = `https://wa.me/${targetNum}?text=${encodeURIComponent(text)}`;
+                window.open(url, '_blank');
+            } else {
+                const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+                window.open(url, '_blank');
+            }
+        } else {
+            if (window.confirm("No has configurado un número o grupo de WhatsApp para reportes. ¿Deseas configurarlo ahora?")) {
+                setShowGroupConfigModal(true);
+            } else {
+                const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+                window.open(url, '_blank');
+            }
+        }
+    };
 
     // Form State
     const [formData, setFormData] = useState<Omit<Warranty, 'id' | 'status'>>({
@@ -221,6 +314,29 @@ ${warranty.ticketImage ? `*📷 Foto:* ${warranty.ticketImage}` : ''}
         window.open(url, '_blank');
     };
 
+    const handleSendCustomerWhatsApp = (warranty: Warranty, type: 'received' | 'sent_to_provider' | 'in_store' | 'delivered' | 'general') => {
+        const phone = warranty.contactNumber ? `52${warranty.contactNumber.replace(/\D/g, '')}` : '';
+        let msg = '';
+
+        const brandName = (safeBrandConfigs[warranty.brand]?.label || warranty.brand || 'Equipo').toUpperCase();
+        const modelName = warranty.model.toUpperCase();
+
+        if (type === 'received') {
+            msg = `¡Hola! Te saludamos de Coppel. 📱 Te confirmamos que hemos recibido tu equipo *${brandName} ${modelName}* (IMEI: ${warranty.imei || 'N/A'}) e ingresado formalmente a garantía el día *${warranty.receptionDate}*. Le daremos seguimiento a su proceso y te avisaremos cualquier novedad. ¡Gracias por tu confianza!`;
+        } else if (type === 'sent_to_provider') {
+            msg = `¡Hola! Te informamos desde Coppel que tu equipo *${brandName} ${modelName}* (IMEI: ${warranty.imei || 'N/A'}) ya ha sido *enviado a centro de servicio / proveedor* para su revisión en garantía. Continuamos al pendiente y te avisaremos en cuanto regrese a tienda.`;
+        } else if (type === 'in_store') {
+            msg = `¡Hola! Tenemos excelentes noticias de Coppel. 🎉 Tu equipo *${brandName} ${modelName}* ya se encuentra de regreso en nuestra sucursal y *listo para que pases a recogerlo*. ¡Te esperamos!`;
+        } else if (type === 'delivered') {
+            msg = `¡Hola! Te saludamos de Coppel. 🤝 Queremos confirmar la entrega de tu equipo *${brandName} ${modelName}* ya reparado/atendido en garantía. Agradecemos tu preferencia y estamos para servirte.`;
+        } else {
+            msg = `*📋 ESTADO DE GARANTÍA - COPPEL*\n--------------------------------\n📅 Recepción: ${warranty.receptionDate}\n📱 Equipo: ${brandName} ${modelName}\n🔢 IMEI: ${warranty.imei || 'N/A'}\n📌 Estado Actual: ${warranty.status === 'received' ? 'Recibido en Tienda' : warranty.status === 'sent_to_provider' ? 'Enviado a Proveedor' : warranty.status === 'in_store' ? 'Listo en Tienda' : 'Entregado'}\n🔧 Falla: ${warranty.issueDescription}`;
+        }
+
+        const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+        window.open(url, '_blank');
+    };
+
     // --- FILTERING ---
     const filteredWarranties = safeWarranties.filter(w => {
         if (!w) return false;
@@ -262,14 +378,7 @@ ${warranty.ticketImage ? `*📷 Foto:* ${warranty.ticketImage}` : ''}
     };
 
     const confirmStatusChange = (id: string, newStatus: Warranty['status']) => {
-        let message = "¿Estás seguro de cambiar el estado?";
-        if (newStatus === 'sent_to_provider') message = "¿Confirmas que el equipo se enviará a TALLER?";
-        if (newStatus === 'in_store') message = "¿Confirmas que el equipo ya llegó a TIENDA?";
-        if (newStatus === 'delivered') message = "¿Confirmas que el equipo se entregará al CLIENTE? Esta acción cerrará el ciclo.";
-
-        if (window.confirm(message)) {
-            onUpdateStatus(id, newStatus);
-        }
+        onUpdateStatus(id, newStatus);
     };
 
     return (
@@ -299,6 +408,23 @@ ${warranty.ticketImage ? `*📷 Foto:* ${warranty.ticketImage}` : ''}
                         <option value="in_store">En Tienda</option>
                         <option value="delivered">Entregados</option>
                     </select>
+                    <button
+                        onClick={() => { setTempGroupLink(whatsappGroupLink); setShowGroupConfigModal(true); }}
+                        className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-xl font-bold text-xs shadow-sm transition-all whitespace-nowrap"
+                        title="Configurar Grupo de WhatsApp"
+                    >
+                        👥 Grupo WhatsApp
+                    </button>
+                    {isAdmin && (
+                        <button
+                            onClick={() => { setTempTemplates(templates); setShowTemplateModal(true); }}
+                            className="flex items-center gap-1.5 bg-slate-700 hover:bg-slate-800 text-white px-3 py-2 rounded-xl font-bold text-xs shadow-sm transition-all whitespace-nowrap"
+                            title="Personalizar Mensajes de WhatsApp (Admin)"
+                        >
+                            <Settings className="w-4 h-4" />
+                            <span className="hidden md:inline">Mensajes</span>
+                        </button>
+                    )}
                     <button
                         onClick={() => setIsAdding(true)}
                         className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-bold shadow-sm transition-all hover:shadow-md whitespace-nowrap"
@@ -631,14 +757,32 @@ ${warranty.ticketImage ? `*📷 Foto:* ${warranty.ticketImage}` : ''}
                                     </a>
                                 )}
 
-                                {/* Share Button (WhatsApp) */}
-                                <button
-                                    onClick={() => handleShareWhatsApp(warranty)}
-                                    className="w-full flex items-center justify-center gap-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 py-2 rounded-lg transition-colors border border-slate-200"
-                                >
-                                    <Share2 className="w-3.5 h-3.5" />
-                                    Enviar Reporte por WhatsApp
-                                </button>
+                                {/* Automated WhatsApp Actions */}
+                                <div className="space-y-1.5">
+                                    {warranty.status === 'received' && (
+                                        <button
+                                            onClick={() => handleSendCustomerWhatsApp(warranty, 'received')}
+                                            className="w-full flex items-center justify-center gap-2 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 py-2 rounded-lg transition-colors border border-emerald-200"
+                                        >
+                                            📱 Enviar WhatsApp de Ingreso
+                                        </button>
+                                    )}
+                                    {warranty.status === 'in_store' && (
+                                        <button
+                                            onClick={() => handleSendCustomerWhatsApp(warranty, 'in_store')}
+                                            className="w-full flex items-center justify-center gap-2 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 py-2 rounded-lg transition-colors border border-emerald-200 animate-pulse"
+                                        >
+                                            🎉 Enviar WhatsApp de Listo en Tienda
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={() => handleSendCustomerWhatsApp(warranty, 'general')}
+                                        className="w-full flex items-center justify-center gap-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 py-2 rounded-lg transition-colors border border-slate-200"
+                                    >
+                                        <Share2 className="w-3.5 h-3.5" />
+                                        Enviar Reporte por WhatsApp
+                                    </button>
+                                </div>
 
                                 {/* State Transitions */}
                                 <div className="flex gap-2">
@@ -677,6 +821,155 @@ ${warranty.ticketImage ? `*📷 Foto:* ${warranty.ticketImage}` : ''}
                 <div className="text-center py-20 opacity-50">
                     <ShieldAlert className="w-16 h-16 mx-auto mb-4 text-slate-300" />
                     <p className="text-lg font-medium text-slate-500">No hay garantías registradas</p>
+                </div>
+            )}
+
+            {/* WhatsApp Group Config Modal */}
+            {showGroupConfigModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+                        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                    👥 Configurar Grupo de WhatsApp
+                                </h3>
+                                <p className="text-xs text-slate-500">Ingresa el enlace de invitación de tu grupo (ej. https://chat.whatsapp.com/...)</p>
+                            </div>
+                            <button onClick={() => setShowGroupConfigModal(false)} className="p-2 hover:bg-slate-200 rounded-full text-slate-400 transition-colors">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <form onSubmit={saveGroupLink} className="p-6 space-y-4">
+                            <div className="space-y-1">
+                                <label className="text-xs font-bold text-slate-600 uppercase">Número de WhatsApp o Enlace</label>
+                                <input
+                                    type="text"
+                                    placeholder="Ej. 6671234567 o https://chat.whatsapp.com/..."
+                                    value={tempGroupLink}
+                                    onChange={(e) => setTempGroupLink(e.target.value)}
+                                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+                                    required
+                                />
+                                <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
+                                    💡 <b>Modo Automático:</b> Si ingresas el número de celular del supervisor o de la persona a cargo del grupo (10 dígitos), el mensaje aparecerá <b>completamente prellenado de forma automática</b> (igual que con los clientes) listo para enviarse con 1 solo toque.
+                                </p>
+                            </div>
+                            <div className="flex justify-end gap-3 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowGroupConfigModal(false)}
+                                    className="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs hover:bg-slate-200 transition-colors"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="px-5 py-2 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition-colors shadow-md"
+                                >
+                                    Guardar Enlace
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* WhatsApp Templates Customization Modal (Admin Only) */}
+            {showTemplateModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                    <Settings className="w-5 h-5 text-slate-700" />
+                                    Personalizar Mensajes de WhatsApp (Admin)
+                                </h3>
+                                <p className="text-xs text-slate-500">Edita las plantillas. Puedes usar variables como &#123;brand&#125;, &#123;model&#125;, &#123;imei&#125;, &#123;date&#125;, &#123;phone&#125;.</p>
+                            </div>
+                            <button onClick={() => setShowTemplateModal(false)} className="p-2 hover:bg-slate-200 rounded-full text-slate-400 transition-colors">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <form onSubmit={saveTemplates} className="p-6 space-y-4">
+                            <div className="space-y-1">
+                                <label className="text-xs font-bold text-slate-600 uppercase">📱 1. Mensaje - Equipo Recibido</label>
+                                <textarea
+                                    rows={3}
+                                    value={tempTemplates.received}
+                                    onChange={(e) => setTempTemplates({ ...tempTemplates, received: e.target.value })}
+                                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-slate-700 font-mono"
+                                    required
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-xs font-bold text-slate-600 uppercase">🚚 2. Mensaje - Equipo Enviado a Taller/Proveedor</label>
+                                <textarea
+                                    rows={3}
+                                    value={tempTemplates.sent_to_provider}
+                                    onChange={(e) => setTempTemplates({ ...tempTemplates, sent_to_provider: e.target.value })}
+                                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-slate-700 font-mono"
+                                    required
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-xs font-bold text-slate-600 uppercase">🎉 3. Mensaje - Equipo en Tienda (Listo)</label>
+                                <textarea
+                                    rows={3}
+                                    value={tempTemplates.in_store}
+                                    onChange={(e) => setTempTemplates({ ...tempTemplates, in_store: e.target.value })}
+                                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-slate-700 font-mono"
+                                    required
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-xs font-bold text-slate-600 uppercase">✅ 4. Mensaje - Equipo Entregado</label>
+                                <textarea
+                                    rows={3}
+                                    value={tempTemplates.delivered}
+                                    onChange={(e) => setTempTemplates({ ...tempTemplates, delivered: e.target.value })}
+                                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-slate-700 font-mono"
+                                    required
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-xs font-bold text-slate-600 uppercase">📢 5. Mensaje - Reporte para Grupo de WhatsApp</label>
+                                <textarea
+                                    rows={4}
+                                    value={tempTemplates.group}
+                                    onChange={(e) => setTempTemplates({ ...tempTemplates, group: e.target.value })}
+                                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-slate-700 font-mono"
+                                    required
+                                />
+                                <p className="text-[11px] text-slate-400">
+                                    Variables: &#123;brand&#125;, &#123;model&#125;, &#123;imei&#125;, &#123;date&#125;, &#123;phone&#125;, &#123;issue&#125;, &#123;accessories&#125;, &#123;physical&#125;
+                                </p>
+                            </div>
+                            <div className="flex justify-between items-center pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setTempTemplates(defaultTemplates)}
+                                    className="px-4 py-2 bg-yellow-50 text-yellow-700 rounded-xl font-bold text-xs hover:bg-yellow-100 transition-colors border border-yellow-200"
+                                >
+                                    Restaurar Predeterminados
+                                </button>
+                                <div className="flex gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowTemplateModal(false)}
+                                        className="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs hover:bg-slate-200 transition-colors"
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        className="px-5 py-2 bg-slate-800 text-white rounded-xl font-bold text-xs hover:bg-slate-900 transition-colors shadow-md"
+                                    >
+                                        Guardar Plantillas
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
                 </div>
             )}
         </div>

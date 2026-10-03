@@ -21,7 +21,7 @@ interface SupervisionPanelProps {
 const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ sales: propSales, stores, selectedStoreId, userProfile }) => {
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [goals, setGoals] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
 
   // Goal Form State
   const [isSavingGoal, setIsSavingGoal] = useState(false);
@@ -37,38 +37,49 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ sales: propSales, s
   const [showGoalForm, setShowGoalForm] = useState(false);
 
   const fetchData = async () => {
-    setIsLoading(true);
     try {
-      const { data: profilesData } = await supabase.from('profiles').select('*');
-      const { data: goalsData } = await supabase.from('monthly_goals').select('*');
+      let profilesData: any[] = [];
+      let goalsData: any[] = [];
 
-      if (profilesData) setProfiles(profilesData);
-      if (goalsData) setGoals(goalsData);
-
-      // Load initial goal values for editing
-      const editingGoal = (goalsData || []).find(g => 
-        g.month === targetMonth && 
-        (selectedStoreId === 'all' ? !g.store_id : g.store_id === selectedStoreId)
-      );
-      
-      if (editingGoal) {
-        setRevenueGoal(editingGoal.revenue_goal?.toString() || '');
-        setDevicesGoal(editingGoal.devices_goal?.toString() || '');
-        setChip0Goal(editingGoal.chip_0_goal?.toString() || '');
-        setPortaGoal(editingGoal.portability_goal?.toString() || '');
-        setExpressGoal(editingGoal.chip_express_goal?.toString() || '');
-      } else {
-        setRevenueGoal('');
-        setDevicesGoal('');
-        setChip0Goal('');
-        setPortaGoal('');
-        setExpressGoal('');
+      try {
+        const res = await supabase.from('profiles').select('*');
+        if (res.data) profilesData = res.data;
+      } catch (e) {
+        console.warn("Profiles load warning:", e);
       }
 
+      try {
+        const res = await supabase.from('monthly_goals').select('*');
+        if (res.data) goalsData = res.data;
+      } catch (e) {
+        console.warn("Goals load warning:", e);
+      }
+
+      if (profilesData) setProfiles(profilesData);
+      if (goalsData) {
+        setGoals(goalsData);
+        // Load initial goal values for editing
+        const editingGoal = (goalsData || []).find(g => 
+          g.month === targetMonth && 
+          (selectedStoreId === 'all' ? !g.store_id : g.store_id === selectedStoreId)
+        );
+        
+        if (editingGoal) {
+          setRevenueGoal(editingGoal.revenue_goal?.toString() || '');
+          setDevicesGoal(editingGoal.devices_goal?.toString() || '');
+          setChip0Goal(editingGoal.chip_0_goal?.toString() || '');
+          setPortaGoal(editingGoal.portability_goal?.toString() || '');
+          setExpressGoal(editingGoal.chip_express_goal?.toString() || '');
+        } else {
+          setRevenueGoal('');
+          setDevicesGoal('');
+          setChip0Goal('');
+          setPortaGoal('');
+          setExpressGoal('');
+        }
+      }
     } catch (err) {
       console.error('Error loading supervision data:', err);
-    } finally {
-      setIsLoading(false);
     }
   };
 
