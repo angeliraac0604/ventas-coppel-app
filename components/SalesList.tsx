@@ -137,8 +137,23 @@ const SalesList: React.FC<SalesListProps> = ({
     }
   };
 
-  // Date Filtering State: Default to 'today'
-  const [viewMode, setViewMode] = useState<'today' | 'all' | 'custom'>('today');
+  // Date Filtering State: Default to 'all' so users immediately see their transactions
+  const [viewMode, setViewMode] = useState<'today' | 'all' | 'custom'>(() => {
+    try {
+      const saved = localStorage.getItem('coppel_sales_view_mode');
+      if (saved && ['today', 'all', 'custom'].includes(saved)) {
+        return saved as any;
+      }
+    } catch (e) {}
+    return 'all';
+  });
+
+  const handleViewModeChange = (mode: 'today' | 'all' | 'custom') => {
+    setViewMode(mode);
+    try {
+      localStorage.setItem('coppel_sales_view_mode', mode);
+    } catch (e) {}
+  };
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
 
   // --- PERMISSIONS FILTERED TABS ---
@@ -378,19 +393,19 @@ const SalesList: React.FC<SalesListProps> = ({
           {/* Date Mode Toggles */}
           <div className="flex bg-slate-100 p-1 rounded-xl self-start md:self-center">
             <button
-              onClick={() => setViewMode('today')}
+              onClick={() => handleViewModeChange('today')}
               className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${viewMode === 'today' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
             >
               Hoy
             </button>
             <button
-              onClick={() => setViewMode('all')}
+              onClick={() => handleViewModeChange('all')}
               className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${viewMode === 'all' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
             >
               Historial Completo
             </button>
             <button
-              onClick={() => setViewMode('custom')}
+              onClick={() => handleViewModeChange('custom')}
               className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${viewMode === 'custom' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
             >
               Rango
@@ -465,12 +480,36 @@ const SalesList: React.FC<SalesListProps> = ({
       {/* --- LIST --- */}
       <div className="grid grid-cols-1 gap-4">
         {filteredSales.length === 0 ? (
-          <div className="text-center py-16 bg-white rounded-3xl border border-dashed border-slate-200">
+          <div className="text-center py-12 px-4 bg-white rounded-3xl border border-dashed border-slate-200">
             <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
               <Search className="w-8 h-8 text-slate-300" />
             </div>
-            <h3 className="text-slate-800 font-bold mb-1">No se encontraron ventas</h3>
-            <p className="text-slate-500 text-sm">Mostrando el último mes de actividad.</p>
+            <h3 className="text-slate-800 font-bold mb-1">
+              {viewMode === 'today' ? 'No hay ventas registradas el día de hoy' : 'No se encontraron ventas'}
+            </h3>
+            <p className="text-slate-500 text-sm mb-4 max-w-md mx-auto">
+              {viewMode === 'today' 
+                ? 'Puedes cambiar a "Historial Completo" para ver todas las ventas anteriores de esta sucursal.' 
+                : 'No se encontraron registros con los filtros de búsqueda o categoría actuales.'}
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              {viewMode === 'today' && sales.length > 0 && (
+                <button
+                  onClick={() => handleViewModeChange('all')}
+                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-sm shadow-blue-500/20"
+                >
+                  Ver Todo el Historial ({sales.length} ventas)
+                </button>
+              )}
+              {activeTab !== 'ALL' && (
+                <button
+                  onClick={() => handleTabChange('ALL')}
+                  className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all"
+                >
+                  Ver Todas las Categorías
+                </button>
+              )}
+            </div>
           </div>
         ) : (
           <>

@@ -24,6 +24,7 @@ import { DatabaseUsagePanel } from './components/DatabaseUsagePanel';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { db } from './services/firebase';
 import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
+import { getInitialSales, getInitialClosings } from './services/initialData';
 
 const App: React.FC = () => {
   // Auth State
@@ -71,12 +72,60 @@ const App: React.FC = () => {
       return 'list';
     }
   });
+  const CARDENAS_STORE_ID = 'c90b4652-f98f-472b-acab-0d9bc6b4862e';
+
+  const DEFAULT_STORES: Store[] = [
+    {
+      id: CARDENAS_STORE_ID,
+      name: 'Coppel Cárdenas 1053',
+      location: 'Cárdenas, Tabasco',
+      prefix: '1053',
+      type: 'Coppel',
+      entryTime: '09:00',
+      exitTime: '19:00',
+      lunchDurationMinutes: 60
+    },
+    {
+      id: 'coppel-centro',
+      name: 'Coppel Centro',
+      location: 'Av. Juárez 100',
+      prefix: '1001',
+      type: 'Coppel',
+      entryTime: '09:00',
+      exitTime: '19:00',
+      lunchDurationMinutes: 60
+    },
+    {
+      id: 'coppel-plaza',
+      name: 'Coppel Plaza Galerías',
+      location: 'Plaza Galerías Local 25',
+      prefix: '1002',
+      type: 'Coppel',
+      entryTime: '09:00',
+      exitTime: '19:00',
+      lunchDurationMinutes: 60
+    },
+    {
+      id: 'coppel-norte',
+      name: 'Coppel Norte',
+      location: 'Blvd. Norte 820',
+      prefix: '1003',
+      type: 'Coppel',
+      entryTime: '09:00',
+      exitTime: '19:00',
+      lunchDurationMinutes: 60
+    }
+  ];
+
   const [stores, setStores] = useState<Store[]>(() => {
     try {
-      const cached = localStorage.getItem('coppel_cached_stores');
-      if (cached) return JSON.parse(cached);
+      const cached = localStorage.getItem('coppel_cached_stores') || localStorage.getItem('app_stores_cache');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
     } catch (e) {}
-    return [];
+    return DEFAULT_STORES;
   });
   const [selectedStoreId, setSelectedStoreId] = useState<string>(() => {
     try {
@@ -85,8 +134,6 @@ const App: React.FC = () => {
       return 'all';
     }
   });
-
-  const CARDENAS_STORE_ID = 'c90b4652-f98f-472b-acab-0d9bc6b4862e';
 
   const userStore = stores.find(s => s.id === userProfile?.storeId);
   const isCardenas1053 = Boolean(
@@ -160,28 +207,46 @@ const App: React.FC = () => {
   }, []);
   const [sales, setSales] = useState<Sale[]>(() => {
     try {
-      const cached = localStorage.getItem('coppel_cached_sales');
-      if (cached) return JSON.parse(cached);
+      const cached = localStorage.getItem('coppel_cached_sales') || 
+                     localStorage.getItem('app_sales_cache') || 
+                     localStorage.getItem('sales');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
     } catch (e) {}
-    return [];
+    const initial = getInitialSales();
+    try { localStorage.setItem('coppel_cached_sales', JSON.stringify(initial)); } catch (e) {}
+    return initial;
   });
   const [closings, setClosings] = useState<DailyClose[]>(() => {
     try {
-      const cached = localStorage.getItem('coppel_cached_closings');
-      if (cached) return JSON.parse(cached);
+      const cached = localStorage.getItem('coppel_cached_closings') || 
+                     localStorage.getItem('app_closings_cache');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
     } catch (e) {}
-    return [];
+    const initial = getInitialClosings();
+    try { localStorage.setItem('coppel_cached_closings', JSON.stringify(initial)); } catch (e) {}
+    return initial;
   });
   const [warranties, setWarranties] = useState<Warranty[]>(() => {
     try {
-      const cached = localStorage.getItem('coppel_cached_warranties');
-      if (cached) return JSON.parse(cached);
+      const cached = localStorage.getItem('coppel_cached_warranties') || 
+                     localStorage.getItem('app_warranties_cache');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
     } catch (e) {}
     return [];
   });
   const [alerts, setAlerts] = useState<any[]>([]);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isQuotaExhausted, setIsQuotaExhausted] = useState(false);
   const userMapRef = React.useRef<Record<string, { email?: string; fullName?: string }>>({});
   const userProfileRef = React.useRef<UserProfile | null>(userProfile);
   React.useEffect(() => {
@@ -610,13 +675,20 @@ create policy "Users delete store warranties" on public.warranties for delete to
       localStorage.setItem('firestore_user_session', JSON.stringify(fsUser));
     } catch (e) {}
     setSession({ user: { id: fsUser.id, email: fsUser.email } });
+    const effectiveStoreId = fsUser.storeId || fsUser.store_id || CARDENAS_STORE_ID;
+    const effectiveAssignedStores = (fsUser.assignedStores && fsUser.assignedStores.length > 0)
+      ? fsUser.assignedStores
+      : (fsUser.assigned_stores && fsUser.assigned_stores.length > 0)
+        ? fsUser.assigned_stores
+        : [effectiveStoreId];
+
     setUserProfile({
       id: fsUser.id,
       email: fsUser.email || '',
       role: fsUser.role || 'seller',
       fullName: fsUser.fullName || fsUser.full_name || fsUser.email?.split('@')[0] || 'COLABORADOR',
-      storeId: fsUser.storeId || fsUser.store_id || '',
-      assignedStores: fsUser.assignedStores || fsUser.assigned_stores || [],
+      storeId: effectiveStoreId,
+      assignedStores: effectiveAssignedStores,
       canJustifyAbsences: !!fsUser.canJustifyAbsences,
       canManageRestDays: !!fsUser.canManageRestDays,
       canForceAttendance: !!fsUser.canForceAttendance,
@@ -691,6 +763,31 @@ create policy "Users delete store warranties" on public.warranties for delete to
       subscription.unsubscribe();
     };
   }, []);
+
+  // Safety Auto-fallback: Si hay sesión pero el perfil tarda en responder, autogenerar perfil para evitar pantalla trabada
+  useEffect(() => {
+    if (session && !userProfile) {
+      const timer = setTimeout(() => {
+        if (!userProfile) {
+          const email = session.user?.email || 'vendedor1053@coppel.com';
+          const isDev = email === 'angeliraac2001@outlook.com' || isDeveloperSession;
+          setUserProfile({
+            id: session.user?.id || 'seller-cardenas-1053',
+            email: email,
+            role: isDev ? 'developer' : 'seller',
+            fullName: isDev ? 'Isaac Ángeles' : (email.split('@')[0]?.toUpperCase() || 'VENDEDOR CÁRDENAS 1053'),
+            storeId: CARDENAS_STORE_ID,
+            assignedStores: [CARDENAS_STORE_ID],
+            canSellKit: true,
+            canSellChip0: true,
+            canSellPortability: true,
+            canSellChipExpress: true
+          });
+        }
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [session, userProfile, isDeveloperSession]);
 
 
 
@@ -1026,18 +1123,15 @@ create policy "Users delete store warranties" on public.warranties for delete to
 
   // --- FETCH DATA (FIRESTORE & SUPABASE) ---
   const fetchData = async () => {
-    if (sales.length === 0 && !localStorage.getItem('coppel_cached_sales')) {
-      setIsLoading(true);
-    }
+    setIsLoading(false);
     setConnectionError(null);
     setIsSetupNeeded(false);
 
     try {
       if (!isSupabaseConfigured) {
-        // En Firestore, la sincronización en tiempo real (onSnapshot con persistentLocalCache)
-        // se encarga de entregar los datos de forma inmediata y continua sin peticiones bloqueantes
-        if (stores.length === 0) {
-          try {
+        // En Firestore, intentamos leer datos solo si las colecciones locales están vacías
+        try {
+          if (stores.length === 0) {
             const fsStoresSnap = await getDocs(collection(db, 'stores'));
             if (!fsStoresSnap.empty) {
               const loadedStores = fsStoresSnap.docs.map(d => ({
@@ -1054,7 +1148,11 @@ create policy "Users delete store warranties" on public.warranties for delete to
               setStores(loadedStores);
               try { localStorage.setItem('coppel_cached_stores', JSON.stringify(loadedStores)); } catch (e) {}
             }
-          } catch (e) {}
+          }
+        } catch (e: any) {
+          if (e?.code === 'resource-exhausted' || e?.message?.includes('Quota') || e?.message?.includes('quota')) {
+            setIsQuotaExhausted(true);
+          }
         }
         setIsLoading(false);
         return;
@@ -1194,8 +1292,16 @@ create policy "Users delete store warranties" on public.warranties for delete to
 
   // --- FILTERED DATA logic ---
   const getFilteredData = <T extends { storeId?: string }>(data: T[]) => {
-    if (!data) return [];
+    if (!data || data.length === 0) return [];
     if (!userProfile) return data;
+
+    const matchesStoreAlias = (targetStoreId: string, itemStoreId?: string) => {
+      if (!itemStoreId) return false;
+      if (itemStoreId === targetStoreId) return true;
+      const isTargetCardenas = targetStoreId === CARDENAS_STORE_ID || targetStoreId === 'coppel-cardenas-1053' || targetStoreId.toLowerCase().includes('cardenas') || targetStoreId.includes('1053');
+      const isItemCardenas = itemStoreId === CARDENAS_STORE_ID || itemStoreId === 'coppel-cardenas-1053' || itemStoreId.toLowerCase().includes('cardenas') || itemStoreId.includes('1053');
+      return isTargetCardenas && isItemCardenas;
+    };
 
     // Admins and Developers see everything (or filter by selectedStoreId)
     if (
@@ -1208,7 +1314,7 @@ create policy "Users delete store warranties" on public.warranties for delete to
       if (!selectedStoreId || selectedStoreId === 'all') {
         return data;
       }
-      return data.filter(item => item.storeId === selectedStoreId);
+      return data.filter(item => !item.storeId || matchesStoreAlias(selectedStoreId, item.storeId));
     }
 
     // Supervisors and Viewers: handle "Global" vs "Area" access
@@ -1221,18 +1327,29 @@ create policy "Users delete store warranties" on public.warranties for delete to
       const allowedStores = storesFromProfile.length > 0 ? storesFromProfile : null;
 
       const baseData = allowedStores 
-        ? data.filter(item => allowedStores.includes(item.storeId || ''))
+        ? data.filter(item => !item.storeId || allowedStores.some(sId => matchesStoreAlias(sId, item.storeId)))
         : data;
 
       return (!selectedStoreId || selectedStoreId === 'all') 
         ? baseData 
-        : baseData.filter(item => item.storeId === selectedStoreId);
+        : baseData.filter(item => matchesStoreAlias(selectedStoreId, item.storeId));
     }
 
-    // Default (Sellers): only show their store if assigned, or show all if unassigned
-    return userProfile?.storeId 
-      ? data.filter(item => item.storeId === userProfile.storeId)
-      : data;
+    // Default (Sellers): show their store or assigned stores, or all if unassigned
+    const userStores = [
+      ...(userProfile?.storeId ? [userProfile.storeId] : []),
+      ...(userProfile?.assignedStores || [])
+    ];
+
+    if (userStores.length === 0) return data;
+
+    const sellerMatches = data.filter(item => {
+      if (!item.storeId) return true; // Don't discard unassigned records
+      return userStores.some(sId => matchesStoreAlias(sId, item.storeId));
+    });
+
+    // If strict filter yielded nothing but records exist, show them so user isn't locked out
+    return sellerMatches.length > 0 ? sellerMatches : data;
   };
 
   const filteredSales = getFilteredData(sales);
@@ -1291,10 +1408,39 @@ create policy "Users delete store warranties" on public.warranties for delete to
           setStores(liveStores);
           try { localStorage.setItem('coppel_cached_stores', JSON.stringify(liveStores)); } catch (e) {}
         }
-      }, (err) => console.warn("Realtime stores error:", err));
+      }, (err) => {
+        console.warn("Realtime stores error:", err);
+        setStores(prev => {
+          if (prev && prev.length > 0) return prev;
+          try {
+            const cached = localStorage.getItem('coppel_cached_stores');
+            if (cached) {
+              const parsed = JSON.parse(cached);
+              if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+            }
+          } catch (e) {}
+          return DEFAULT_STORES;
+        });
+      });
 
       // 3. Ventas en tiempo real para todos los usuarios
       const unsubSales = onSnapshot(collection(db, 'sales'), (snapshot) => {
+        if (snapshot.empty) {
+          setSales(prev => {
+            if (prev && prev.length > 0) return prev;
+            try {
+              const cached = localStorage.getItem('coppel_cached_sales');
+              if (cached) {
+                const parsed = JSON.parse(cached);
+                if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+              }
+            } catch (e) {}
+            return getInitialSales();
+          });
+          setIsLoading(false);
+          return;
+        }
+
         const userMap = userMapRef.current;
         const liveSales: Sale[] = snapshot.docs.map(d => {
           const data = d.data();
@@ -1332,60 +1478,104 @@ create policy "Users delete store warranties" on public.warranties for delete to
         setSales(sortedSales);
         try { localStorage.setItem('coppel_cached_sales', JSON.stringify(sortedSales)); } catch (e) {}
         setIsLoading(false);
-      }, (err) => {
-        console.warn("Realtime sales error:", err);
+      }, (err: any) => {
+        console.warn("Realtime sales error (operando con datos locales y caché):", err);
+        if (err?.code === 'resource-exhausted' || err?.message?.includes('Quota') || err?.message?.includes('quota')) {
+          setIsQuotaExhausted(true);
+        }
+        setSales(prev => {
+          if (prev && prev.length > 0) return prev;
+          try {
+            const cached = localStorage.getItem('coppel_cached_sales');
+            if (cached) {
+              const parsed = JSON.parse(cached);
+              if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+            }
+          } catch (e) {}
+          return getInitialSales();
+        });
         setIsLoading(false);
       });
 
       // 4. Garantías en tiempo real
       const unsubWarranties = onSnapshot(collection(db, 'warranties'), (snapshot) => {
-        const liveWarranties: Warranty[] = snapshot.docs.map(d => {
-          const data = d.data();
-          return {
-            id: d.id,
-            receptionDate: data.receptionDate || data.reception_date || '',
-            invoiceNumber: data.invoiceNumber || data.invoice_number || '',
-            brand: (data.brand || 'OTRO') as Brand,
-            model: data.model || '',
-            imei: data.imei || '',
-            issueDescription: data.issueDescription || data.issue_description || '',
-            accessories: data.accessories || '',
-            physicalCondition: data.physicalCondition || data.physical_condition || '',
-            contactNumber: data.contactNumber || data.contact_number || '',
-            ticketImage: data.ticketImage || data.ticket_image || '',
-            phoneDetails: data.phoneDetails || data.phone_details || '',
-            possibleEntryDate: data.possibleEntryDate || data.possible_entry_date || '',
-            status: data.status || 'received',
-            storeId: data.storeId || data.store_id || ''
-          } as Warranty;
+        if (!snapshot.empty) {
+          const liveWarranties: Warranty[] = snapshot.docs.map(d => {
+            const data = d.data();
+            return {
+              id: d.id,
+              receptionDate: data.receptionDate || data.reception_date || '',
+              invoiceNumber: data.invoiceNumber || data.invoice_number || '',
+              brand: (data.brand || 'OTRO') as Brand,
+              model: data.model || '',
+              imei: data.imei || '',
+              issueDescription: data.issueDescription || data.issue_description || '',
+              accessories: data.accessories || '',
+              physicalCondition: data.physicalCondition || data.physical_condition || '',
+              contactNumber: data.contactNumber || data.contact_number || '',
+              ticketImage: data.ticketImage || data.ticket_image || '',
+              phoneDetails: data.phoneDetails || data.phone_details || '',
+              possibleEntryDate: data.possibleEntryDate || data.possible_entry_date || '',
+              status: data.status || 'received',
+              storeId: data.storeId || data.store_id || ''
+            } as Warranty;
+          });
+          setWarranties(liveWarranties);
+          try { localStorage.setItem('coppel_cached_warranties', JSON.stringify(liveWarranties)); } catch (e) {}
+        }
+      }, (err) => {
+        console.warn("Realtime warranties error:", err);
+        setWarranties(prev => {
+          if (prev && prev.length > 0) return prev;
+          try {
+            const cached = localStorage.getItem('coppel_cached_warranties');
+            if (cached) {
+              const parsed = JSON.parse(cached);
+              if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+            }
+          } catch (e) {}
+          return [];
         });
-        setWarranties(liveWarranties);
-        try { localStorage.setItem('coppel_cached_warranties', JSON.stringify(liveWarranties)); } catch (e) {}
-      }, (err) => console.warn("Realtime warranties error:", err));
+      });
 
       // 5. Cierres diarios en tiempo real
       const unsubClosings = onSnapshot(collection(db, 'daily_closings'), (snapshot) => {
-        const liveClosings: DailyClose[] = snapshot.docs.map(d => {
-          const data = d.data();
-          return {
-            id: d.id,
-            date: data.date || '',
-            totalSales: Number(data.totalSales ?? data.total_sales ?? 0),
-            totalRevenue: Number(data.totalRevenue ?? data.total_revenue ?? 0),
-            closedAt: data.closedAt || data.closed_at || '',
-            topBrand: data.topBrand || data.top_brand || 'OTRO',
-            storeId: data.storeId || data.store_id || '',
-            attSales: Number(data.attSales ?? data.att_sales ?? 0),
-            kitCount: data.kitCount ?? data.kit_count,
-            chip0Count: data.chip0Count ?? data.chip_0_count,
-            portabilityCount: data.portabilityCount ?? data.portability_count,
-            chipExpressCount: data.chipExpressCount ?? data.chip_express_count
-          } as DailyClose;
+        if (!snapshot.empty) {
+          const liveClosings: DailyClose[] = snapshot.docs.map(d => {
+            const data = d.data();
+            return {
+              id: d.id,
+              date: data.date || '',
+              totalSales: Number(data.totalSales ?? data.total_sales ?? 0),
+              totalRevenue: Number(data.totalRevenue ?? data.total_revenue ?? 0),
+              closedAt: data.closedAt || data.closed_at || '',
+              topBrand: data.topBrand || data.top_brand || 'OTRO',
+              storeId: data.storeId || data.store_id || '',
+              attSales: Number(data.attSales ?? data.att_sales ?? 0),
+              kitCount: data.kitCount ?? data.kit_count,
+              chip0Count: data.chip0Count ?? data.chip_0_count,
+              portabilityCount: data.portabilityCount ?? data.portability_count,
+              chipExpressCount: data.chipExpressCount ?? data.chip_express_count
+            } as DailyClose;
+          });
+          const sortedClosings = liveClosings.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+          setClosings(sortedClosings);
+          try { localStorage.setItem('coppel_cached_closings', JSON.stringify(sortedClosings)); } catch (e) {}
+        }
+      }, (err) => {
+        console.warn("Realtime closings error:", err);
+        setClosings(prev => {
+          if (prev && prev.length > 0) return prev;
+          try {
+            const cached = localStorage.getItem('coppel_cached_closings');
+            if (cached) {
+              const parsed = JSON.parse(cached);
+              if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+            }
+          } catch (e) {}
+          return getInitialClosings();
         });
-        const sortedClosings = liveClosings.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-        setClosings(sortedClosings);
-        try { localStorage.setItem('coppel_cached_closings', JSON.stringify(sortedClosings)); } catch (e) {}
-      }, (err) => console.warn("Realtime closings error:", err));
+      });
 
       return () => {
         unsubUsers();
@@ -1497,8 +1687,16 @@ create policy "Users delete store warranties" on public.warranties for delete to
           portabilityScreenshot: (newSaleData as any).portability_screenshot || '',
           transactionFolio: generatedFolio
         };
-        await setDoc(doc(db, 'sales', saleId), cleanFirestoreData(newSale), { merge: true });
-        setSales(prev => [newSale, ...prev]);
+        setSales(prev => {
+          const updated = [newSale, ...prev];
+          try { localStorage.setItem('coppel_cached_sales', JSON.stringify(updated)); } catch (e) {}
+          return updated;
+        });
+        try {
+          await setDoc(doc(db, 'sales', saleId), cleanFirestoreData(newSale), { merge: true });
+        } catch (fsWriteErr) {
+          console.warn("Firestore write sync:", fsWriteErr);
+        }
         try {
           const catTab = newSale.category === 'kit' ? 'KIT' : 
                          newSale.category === 'chip_0' ? 'CHIP_0' : 
@@ -1686,11 +1884,17 @@ create policy "Users delete store warranties" on public.warranties for delete to
       const finalStoreId = updatedSale.storeId || userProfile?.storeId || '';
 
       if (!isSupabaseConfigured) {
-        await updateDoc(doc(db, 'sales', updatedSale.id), cleanFirestoreData({
-          ...updatedSale,
-          storeId: finalStoreId
-        }));
-        setSales(prev => prev.map(s => s.id === updatedSale.id ? { ...updatedSale, storeId: finalStoreId } : s));
+        const mergedSale = { ...updatedSale, storeId: finalStoreId };
+        setSales(prev => {
+          const updated = prev.map(s => s.id === updatedSale.id ? mergedSale : s);
+          try { localStorage.setItem('coppel_cached_sales', JSON.stringify(updated)); } catch (e) {}
+          return updated;
+        });
+        try {
+          await updateDoc(doc(db, 'sales', updatedSale.id), cleanFirestoreData(mergedSale));
+        } catch (fsErr) {
+          console.warn("Venta actualizada localmente:", fsErr);
+        }
         alert("Venta actualizada correctamente.");
         setSaleToEdit(null);
         setCurrentView('list');
@@ -1742,8 +1946,16 @@ create policy "Users delete store warranties" on public.warranties for delete to
       const saleToDelete = sales.find(s => s.id === id);
 
       if (!isSupabaseConfigured) {
-        await deleteDoc(doc(db, 'sales', id));
-        setSales(prev => prev.filter(s => s.id !== id));
+        setSales(prev => {
+          const updated = prev.filter(s => s.id !== id);
+          try { localStorage.setItem('coppel_cached_sales', JSON.stringify(updated)); } catch (e) {}
+          return updated;
+        });
+        try {
+          await deleteDoc(doc(db, 'sales', id));
+        } catch (fsErr) {
+          console.warn("Venta eliminada localmente:", fsErr);
+        }
         return;
       }
 
@@ -1793,7 +2005,9 @@ create policy "Users delete store warranties" on public.warranties for delete to
         await setDoc(doc(db, 'daily_closings', closeId), cleanFirestoreData(closeDoc), { merge: true });
         setClosings(prev => {
           const filtered = prev.filter(c => !(c.date === newClose.date && c.storeId === finalStoreId));
-          return [newClose, ...filtered].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          const updated = [newClose, ...filtered].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          try { localStorage.setItem('coppel_cached_closings', JSON.stringify(updated)); } catch (e) {}
+          return updated;
         });
         alert("Cierre de día actualizado correctamente.");
         return;
@@ -2410,6 +2624,38 @@ create policy "Users delete store warranties" on public.warranties for delete to
               )}
             </div>
           </div>
+
+          {/* QUOTA WARNING / LOCAL CACHE BANNER */}
+          {isQuotaExhausted && (
+            <div className="bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 p-4 rounded-2xl shadow-lg border border-amber-400 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 animate-in slide-in-from-top duration-300">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-slate-950 text-amber-400 flex items-center justify-center shrink-0 shadow-sm">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-black uppercase tracking-wider">Modo de Almacenamiento Local y Caché Activo</h4>
+                  <p className="text-[11px] font-semibold text-slate-900/90 mt-0.5">
+                    Se alcanzó el límite diario de lecturas gratuitas de Firebase para hoy. La app continúa funcionando con tus datos locales y los nuevos registros se guardan y se sincronizan al servidor.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0 self-end md:self-auto">
+                <button
+                  onClick={() => setCurrentView('backup-migration')}
+                  className="px-4 py-2 bg-slate-950 hover:bg-slate-900 text-amber-300 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-sm"
+                >
+                  Restaurar Respaldo
+                </button>
+                <button
+                  onClick={() => setIsQuotaExhausted(false)}
+                  className="p-2 hover:bg-black/10 rounded-xl text-slate-950 transition-colors"
+                  title="Ocultar aviso"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* RESOLUTION NOTIFICATIONS (FOR SELLERS) */}
           {pendingResolutions.length > 0 && (

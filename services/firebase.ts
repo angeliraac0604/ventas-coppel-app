@@ -13,19 +13,21 @@ const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
 export const auth = getAuth(app);
 
-// Use persistent IndexedDB cache for instant zero-latency loads across multiple tabs
-let firestoreDb;
+// Initialize Firestore with IndexedDB persistent local cache for instant zero-latency loading
+let dbInstance: any;
 try {
-  firestoreDb = initializeFirestore(app, {
-    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+  dbInstance = initializeFirestore(app, {
+    localCache: persistentLocalCache({
+      tabManager: persistentMultipleTabManager()
+    })
   }, firebaseConfig.firestoreDatabaseId || undefined);
-} catch (e) {
-  firestoreDb = firebaseConfig.firestoreDatabaseId 
+} catch {
+  dbInstance = firebaseConfig.firestoreDatabaseId 
     ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
     : getFirestore(app);
 }
 
-export const db = firestoreDb;
+export const db = dbInstance;
 export const storage = getStorage(app);
 
 export default app;
