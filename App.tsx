@@ -158,6 +158,7 @@ const App: React.FC = () => {
   const [alerts, setAlerts] = useState<any[]>([]);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const userMapRef = React.useRef<Record<string, { email?: string; fullName?: string }>>({});
 
   // --- SECURITY: Force redirect unauthorized users from admin views ---
   useEffect(() => {
@@ -1025,6 +1026,7 @@ create policy "Users delete store warranties" on public.warranties for delete to
             };
           });
         }
+        userMapRef.current = userMap;
 
         let loadedStores: Store[] = [];
 
@@ -1340,11 +1342,131 @@ create policy "Users delete store warranties" on public.warranties for delete to
   }, [stores, selectedStoreId]);
 
   useEffect(() => {
-    if (session) {
+    if (session || userProfile || isDeveloperSession) {
       fetchData();
 
       if (!isSupabaseConfigured) {
-        return;
+        // --- REAL-TIME SYNCHRONIZATION WITH FIRESTORE ---
+        console.log("🔥 [Firestore Realtime] Sincronización en tiempo real activa para ventas, garantías, cortes y sucursales.");
+
+        // 1. Usuarios en tiempo real para nombres y creadores
+        const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
+          const map: Record<string, { email?: string; fullName?: string }> = {};
+          snapshot.docs.forEach(uDoc => {
+            const uData = uDoc.data();
+            map[uDoc.id] = {
+              email: uData.email,
+              fullName: uData.fullName || uData.full_name
+            };
+          });
+          userMapRef.current = map;
+        }, (err) => console.warn("Realtime users error:", err));
+
+        // 2. Sucursales en tiempo real
+        const unsubStores = onSnapshot(collection(db, 'stores'), (snapshot) => {
+          if (!snapshot.empty) {
+            const liveStores: Store[] = snapshot.docs.map(d => {
+              const data = d.data();
+              return {
+                id: d.id,
+                name: data.name || 'Sucursal',
+                location: data.location || '',
+                createdAt: data.createdAt || data.created_at || '',
+                prefix: data.prefix || '',
+                entryTime: data.entryTime || data.entry_time || '09:00',
+                exitTime: data.exitTime || data.exit_time || '19:00',
+                lunchDurationMinutes: Number(data.lunchDurationMinutes ?? data.lunch_duration_minutes ?? 60),
+                daySchedules: data.daySchedules || data.day_schedules || {}
+              };
+            });
+            setStores(liveStores);
+          }
+        }, (err) => console.warn("Realtime stores error:", err));
+
+        // 3. Ventas en tiempo real para todos los usuarios
+        const unsubSales = onSnapshot(collection(db, 'sales'), (snapshot) => {
+          const userMap = userMapRef.current;
+          const liveSales: Sale[] = snapshot.docs.map(d => {
+            const data = d.data();
+            const creatorInfo = userMap[data.createdBy || data.created_by] || {};
+            return {
+              id: d.id,
+              invoiceNumber: data.invoiceNumber || data.invoice_number || 'S/N',
+              customerName: data.customerName || data.customer_name || 'Cliente',
+              price: Number(data.price || 0),
+              brand: (data.brand || 'OTRO') as Brand,
+              date: data.date || '',
+              ticketImage: data.ticketImage || data.ticket_image || '',
+              createdBy: data.createdBy || data.created_by || '',
+              createdAt: data.createdAt || data.created_at || '',
+              createdByEmail: data.createdByEmail || creatorInfo.email || data.profiles?.email || '',
+              createdByName: data.createdByName || creatorInfo.fullName || data.profiles?.full_name || '',
+              storeId: data.storeId || data.store_id || '',
+              transactionFolio: data.transactionFolio || data.transaction_folio || '',
+              category: (data.category || 'kit').toLowerCase() as any,
+              iccid: data.iccid || '',
+              phoneNumber: data.phoneNumber || data.phone_number || '',
+              portabilityScreenshot: data.portabilityScreenshot || data.portability_screenshot || ''
+            } as Sale;
+          });
+          setSales(liveSales.sort((a, b) => (b.date || '').localeCompare(a.date || '')));
+          setIsLoading(false);
+        }, (err) => console.warn("Realtime sales error:", err));
+
+        // 4. Garantías en tiempo real
+        const unsubWarranties = onSnapshot(collection(db, 'warranties'), (snapshot) => {
+          const liveWarranties: Warranty[] = snapshot.docs.map(d => {
+            const data = d.data();
+            return {
+              id: d.id,
+              receptionDate: data.receptionDate || data.reception_date || '',
+              invoiceNumber: data.invoiceNumber || data.invoice_number || '',
+              brand: (data.brand || 'OTRO') as Brand,
+              model: data.model || '',
+              imei: data.imei || '',
+              issueDescription: data.issueDescription || data.issue_description || '',
+              accessories: data.accessories || '',
+              physicalCondition: data.physicalCondition || data.physical_condition || '',
+              contactNumber: data.contactNumber || data.contact_number || '',
+              ticketImage: data.ticketImage || data.ticket_image || '',
+              phoneDetails: data.phoneDetails || data.phone_details || '',
+              possibleEntryDate: data.possibleEntryDate || data.possible_entry_date || '',
+              status: data.status || 'received',
+              storeId: data.storeId || data.store_id || ''
+            } as Warranty;
+          });
+          setWarranties(liveWarranties);
+        }, (err) => console.warn("Realtime warranties error:", err));
+
+        // 5. Cierres diarios en tiempo real
+        const unsubClosings = onSnapshot(collection(db, 'daily_closings'), (snapshot) => {
+          const liveClosings: DailyClose[] = snapshot.docs.map(d => {
+            const data = d.data();
+            return {
+              id: d.id,
+              date: data.date || '',
+              totalSales: Number(data.totalSales ?? data.total_sales ?? 0),
+              totalRevenue: Number(data.totalRevenue ?? data.total_revenue ?? 0),
+              closedAt: data.closedAt || data.closed_at || '',
+              topBrand: data.topBrand || data.top_brand || 'OTRO',
+              storeId: data.storeId || data.store_id || '',
+              attSales: Number(data.attSales ?? data.att_sales ?? 0),
+              kitCount: data.kitCount ?? data.kit_count,
+              chip0Count: data.chip0Count ?? data.chip_0_count,
+              portabilityCount: data.portabilityCount ?? data.portability_count,
+              chipExpressCount: data.chipExpressCount ?? data.chip_express_count
+            } as DailyClose;
+          });
+          setClosings(liveClosings.sort((a, b) => (b.date || '').localeCompare(a.date || '')));
+        }, (err) => console.warn("Realtime closings error:", err));
+
+        return () => {
+          unsubUsers();
+          unsubStores();
+          unsubSales();
+          unsubWarranties();
+          unsubClosings();
+        };
       }
 
       // Realtime Subscription
@@ -1405,7 +1527,7 @@ create policy "Users delete store warranties" on public.warranties for delete to
         supabase.removeChannel(channel);
       };
     }
-  }, [session]);
+  }, [session, userProfile, isDeveloperSession]);
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(REQUIRED_SQL);

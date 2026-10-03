@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Clock, Calendar, User, Search, Filter, ArrowRight, CheckCircle, AlertCircle, Coffee, LogOut, Loader2, Building, Eye, MapPin, Smartphone, X, Camera, Edit2 } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
 import { db } from '../services/firebase';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, onSnapshot } from 'firebase/firestore';
 import { AttendanceRecord, UserProfile, Store, AttendanceType } from '../types';
 import AttendanceSummary from './AttendanceSummary';
 import { transformImageUrl } from '../services/imageUtils';
@@ -339,6 +339,13 @@ const AttendanceReport: React.FC<AttendanceReportProps> = ({ selectedStoreId, st
 
   useEffect(() => {
     fetchData();
+
+    if (!isSupabaseConfigured) {
+      const unsub = onSnapshot(collection(db, 'attendance'), () => {
+        fetchData();
+      }, (err) => console.warn("Realtime attendance error:", err));
+      return () => unsub();
+    }
   }, [filterDate, selectedStoreId, activeTab, month]);
 
   // Sync edit states when selected store changes
