@@ -41,9 +41,10 @@ interface AdminPanelProps {
   userProfile?: UserProfile | null;
   onRefresh?: () => void;
   onViewRequests?: () => void;
+  onOpenDatabaseUsage?: () => void;
 }
 
-const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewRequests }) => {
+const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewRequests, onOpenDatabaseUsage }) => {
   const role = userProfile?.role;
   const [activeModal, setActiveModal] = useState<'none' | 'store' | 'invite' | 'direct' | 'stores-list' | 'profile-edit'>('none');
   const [isLoading, setIsLoading] = useState(false);
@@ -806,6 +807,38 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
           <p className="text-xs font-black text-white uppercase tracking-widest">Alta Directa</p>
         </button>
       </div>
+
+      {/* Shortcut to Spark Plan Limits & Database Usage */}
+      {onOpenDatabaseUsage && (
+        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-6 md:p-8 rounded-[2.5rem] text-white shadow-xl border border-indigo-500/20 flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+          <div className="flex items-center gap-5 relative z-10">
+            <div className="w-14 h-14 bg-indigo-600/30 rounded-2xl flex items-center justify-center border border-indigo-500/30 text-indigo-400 shrink-0 shadow-lg">
+              <Database className="w-7 h-7" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider border border-emerald-500/30">
+                  Plan Spark Gratuito
+                </span>
+                <span className="text-[10px] bg-indigo-500/20 text-indigo-300 font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider border border-indigo-500/30">
+                  Uso y Fotos en BD
+                </span>
+              </div>
+              <h3 className="text-lg font-black uppercase tracking-tight">Estadísticas de Límites del Plan Spark y Uso de BD</h3>
+              <p className="text-xs text-indigo-200/80 mt-0.5">
+                Verifica en tiempo real el consumo de lecturas, escrituras, almacenamiento y fotos de tickets guardadas.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onOpenDatabaseUsage}
+            className="bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs px-6 py-3 rounded-xl shadow-lg transition-all flex items-center gap-2 shrink-0 cursor-pointer relative z-10"
+          >
+            Ver Uso de Base de Datos <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Contenido de Administración (Personal y Sucursales) */}
 

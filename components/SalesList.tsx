@@ -94,23 +94,9 @@ const SalesList: React.FC<SalesListProps> = ({
     }
   };
 
-  // Date Filtering State: Default to 'all' if no sales match today so imported backups are immediately visible
-  const [viewMode, setViewMode] = useState<'today' | 'all' | 'custom'>(() => {
-    const today = new Date().toISOString().split('T')[0];
-    return sales.some(s => s.date === today) ? 'today' : 'all';
-  });
+  // Date Filtering State: Default to 'today'
+  const [viewMode, setViewMode] = useState<'today' | 'all' | 'custom'>('today');
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
-
-  // If sales prop updates and today has 0 sales but there are historical sales, ensure viewMode isn't stuck on empty 'today'
-  React.useEffect(() => {
-    if (sales.length > 0 && viewMode === 'today') {
-      const today = new Date().toISOString().split('T')[0];
-      const hasToday = sales.some(s => s.date === today);
-      if (!hasToday) {
-        setViewMode('all');
-      }
-    }
-  }, [sales.length]);
 
   // --- PERMISSIONS FILTERED TABS ---
   const getAllowedTabs = () => {
@@ -350,27 +336,6 @@ const SalesList: React.FC<SalesListProps> = ({
           </div>
         </div>
 
-        {/* Banner if filtered to Today but there are historical sales in backup */}
-        {viewMode === 'today' && sales.length > filteredSales.length && (
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/80 text-blue-900 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm animate-in fade-in">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-blue-600/10 flex items-center justify-center text-blue-600 shrink-0">
-                <Calendar className="w-5 h-5" />
-              </div>
-              <div>
-                <p className="text-xs md:text-sm font-bold">Filtro activo: Solo ventas de hoy ({todayStr}) &bull; {filteredSales.length} registro(s)</p>
-                <p className="text-xs text-blue-700/80">Tienes <strong className="text-blue-900 font-extrabold">{sales.length} ventas registradas</strong> en el respaldo y base de datos.</p>
-              </div>
-            </div>
-            <button
-              onClick={() => setViewMode('all')}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-black text-xs px-5 py-2.5 rounded-xl shadow-md transition-all self-start sm:self-auto cursor-pointer flex items-center gap-1.5 shrink-0"
-            >
-              Ver Historial Completo ({sales.length} ventas)
-            </button>
-          </div>
-        )}
-
         {/* Custom Date Inputs */}
         {viewMode === 'custom' && (
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex flex-col sm:flex-row items-center gap-4 animate-in fade-in slide-in-from-top-2">
@@ -556,6 +521,18 @@ const SalesList: React.FC<SalesListProps> = ({
 
                 {/* Right: Actions & Ticket */}
                 <div className="flex items-center justify-end w-full md:w-auto gap-3 pt-3 md:pt-0 border-t md:border-t-0 border-slate-50 mt-2 md:mt-0">
+                  {/* Google Cloud / Firebase direct link */}
+                  <a
+                    href={`https://console.firebase.google.com/project/ai-studio-ventascoppelapp-c2f97129-24ee-41a0-a21e-6ed774a589f5/firestore/data/~2Fsales~2F${sale.id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 transition-colors border border-amber-200/50"
+                    title="Ver documento y fotos guardadas en Google Cloud / Firebase Console"
+                  >
+                    <Database className="w-3.5 h-3.5 text-amber-600" />
+                    Google Cloud
+                  </a>
+
                   {sale.ticketImage ? (
                     <button
                       onClick={() => setSelectedImage(sale.ticketImage!)}

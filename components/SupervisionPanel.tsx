@@ -12,14 +12,14 @@ interface PerformanceData {
 }
 
 interface SupervisionPanelProps {
+  sales: any[];
   stores: Store[];
   selectedStoreId: string;
   userProfile: UserProfile;
 }
 
-const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedStoreId, userProfile }) => {
+const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ sales: propSales, stores, selectedStoreId, userProfile }) => {
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
-  const [sales, setSales] = useState<any[]>([]);
   const [goals, setGoals] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -39,29 +39,10 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const { data: storesData } = await supabase.from('stores').select('*').order('name');
       const { data: profilesData } = await supabase.from('profiles').select('*');
-      
-      let salesQuery = supabase.from('sales')
-        .select('*')
-        .gte('date', `${targetMonth}-01`)
-        .lte('date', `${targetMonth}-31`)
-        .order('date', { ascending: false })
-        .range(0, 1999);
-
-      if (selectedStoreId !== 'all') {
-        salesQuery = salesQuery.eq('store_id', selectedStoreId);
-      } else if (userProfile.role === 'supervisor' || userProfile.role === 'viewer') {
-        if (userProfile.assignedStores && userProfile.assignedStores.length > 0) {
-          salesQuery = salesQuery.in('store_id', userProfile.assignedStores);
-        }
-      }
-        
-      const { data: salesData } = await salesQuery;
       const { data: goalsData } = await supabase.from('monthly_goals').select('*');
 
       if (profilesData) setProfiles(profilesData);
-      if (salesData) setSales(salesData || []);
       if (goalsData) setGoals(goalsData);
 
       // Load initial goal values for editing
@@ -94,6 +75,14 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ stores, selectedSto
   useEffect(() => {
     fetchData();
   }, [selectedStoreId, targetMonth]);
+
+  // Normalize propSales to support both camelCase and snake_case
+  const sales = propSales.map(s => ({
+    ...s,
+    store_id: s.storeId || s.store_id,
+    created_by: s.createdBy || s.created_by,
+    price: Number(s.price) || 0
+  }));
 
   const handleSaveGoal = async (e: React.FormEvent) => {
     e.preventDefault();

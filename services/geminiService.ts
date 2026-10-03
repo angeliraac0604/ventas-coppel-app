@@ -3,6 +3,7 @@ import { TicketAnalysisResult, Brand } from "../types";
 
 // --- CONFIGURACIÓN ---
 const API_KEYS = [
+  'AIzaSyA4t7Xl0isnr39VAaO4E3VVh9tuOCFd_nY',
   import.meta.env.VITE_GEMINI_API_KEY_1,
   import.meta.env.VITE_GEMINI_API_KEY_2,
   import.meta.env.VITE_GEMINI_API_KEY_3,
@@ -54,6 +55,38 @@ const parseSpanishDate = (dateStr: string | undefined): string | undefined => {
   return undefined; 
 };
 
+const compressImageBase64 = (base64Str: string): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = base64Str;
+    img.onload = () => {
+      let width = img.width;
+      let height = img.height;
+      const MAX = 1024;
+      if (width > MAX || height > MAX) {
+        if (width > height) {
+          height = Math.round((height * MAX) / width);
+          width = MAX;
+        } else {
+          width = Math.round((width * MAX) / height);
+          height = MAX;
+        }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.8));
+      } else {
+        resolve(base64Str);
+      }
+    };
+    img.onerror = () => resolve(base64Str);
+  });
+};
+
 export const analyzeTicketImage = async (
   base64Image: string, 
   storeName: string = 'Sucursal', 
@@ -63,16 +96,20 @@ export const analyzeTicketImage = async (
   const apiKeys = API_KEYS;
 
   if (apiKeys.length === 0) {
-    throw new Error("Faltan las API Keys de Gemini.");
+    console.warn("Faltan las API Keys de Gemini (VITE_GEMINI_API_KEY). El escaneo OCR con IA está desactivado.");
+    return null;
   }
 
+  // Comprimir imagen para optimizar velocidad y evitar payloads pesados
+  const optimizedBase64 = await compressImageBase64(base64Image);
+
   const candidateModels = [
-    "gemini-2.5-flash",
-    "gemini-3.5-flash",
-    "gemini-2.5-flash-lite",
+    "gemini-3.8-flash",
+    "gemini-1.5-flash",
+    "gemini-1.5-pro",
   ];
 
-  const base64Data = base64Image.split(',')[1] || base64Image;
+  const base64Data = optimizedBase64.split(',')[1] || optimizedBase64;
   const now = new Date();
   const currentDateContext = `Hoy es ${now.toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })}.`;
 
@@ -112,40 +149,14 @@ export const analyzeTicketImage = async (
     },
   };
 
-  // Schema para forzar respuesta JSON
-  const schema: any = {
-    description: "Ticket data extraction",
-    type: SchemaType.OBJECT,
-    properties: {
-      invoiceNumber: { type: SchemaType.STRING },
-      date: { type: SchemaType.STRING },
-      customerName: { type: SchemaType.STRING },
-      items: {
-        type: SchemaType.ARRAY,
-        items: {
-          type: SchemaType.OBJECT,
-          properties: {
-            brand: { type: SchemaType.STRING },
-            price: { type: SchemaType.NUMBER }
-          },
-          required: ["brand", "price"]
-        }
-      }
-    },
-    required: ["invoiceNumber", "date", "customerName", "items"]
-  };
-
+  // Solicitar respuesta en formato JSON mediante prompt sin schema estricto para evitar errores de red o CORS
   for (const [keyIndex, currentApiKey] of apiKeys.entries()) {
     const genAI = new GoogleGenerativeAI(currentApiKey);
 
     for (const modelName of candidateModels) {
       try {
         const model = genAI.getGenerativeModel({ 
-          model: modelName,
-          generationConfig: {
-            responseMimeType: "application/json",
-            responseSchema: schema,
-          }
+          model: modelName
         });
 
         const result = await model.generateContent([prompt, imagePart]);
@@ -153,7 +164,14 @@ export const analyzeTicketImage = async (
         const text = response.text();
 
         if (text) {
-          const data = JSON.parse(text);
+          // Extraer JSON de la respuesta (puede venir entre bloques ```json ... ```)
+          let jsonStr = text;
+          const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+          if (jsonMatch) {
+            jsonStr = jsonMatch[1];
+          }
+
+          const data = JSON.parse(jsonStr);
           
           // Limpieza de datos extraídos
           const cleanDate = parseSpanishDate(data.date);
@@ -177,12 +195,12 @@ export const analyzeTicketImage = async (
                   break;
                 }
               }
-              return { brand: b, price: item.price };
-            })
+              return { brand: b, price: Number(item.price) || 0 };
+            }) || []
           };
         }
       } catch (error: any) {
-        console.error(`Error con ${modelName} y Key #${keyIndex + 1}:`, error);
+        console.warn(`Error con ${modelName} y Key #${keyIndex + 1}:`, error.message || error);
         // Continuar al siguiente modelo o llave
       }
     }

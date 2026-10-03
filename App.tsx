@@ -2284,7 +2284,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
           )}
 
           {/* ADMIN PENDING REQUESTS NOTIFICATION (TRANSIENT) */}
-          {(effectiveRole === 'admin' || effectiveRole === 'developer') && showAdminNotification && (
+          {userProfile?.role === 'developer' && showAdminNotification && (
             <div className="fixed top-4 md:top-8 right-0 md:right-8 z-[60] w-full md:max-w-md px-4 md:px-0 animate-in slide-in-from-top-10 md:slide-in-from-right-10 fade-in duration-700">
               <div 
                 onClick={() => {
@@ -2463,6 +2463,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
             )}
             {currentView === 'supervision' && (effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'developer') && (
               <SupervisionPanel 
+                sales={sales}
                 stores={stores}
                 selectedStoreId={selectedStoreId}
                 userProfile={userProfile}
@@ -2476,6 +2477,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
                   fetchPendingRequestsCount();
                 }} 
                 onViewRequests={() => setCurrentView('requests')}
+                onOpenDatabaseUsage={() => setCurrentView('database-usage')}
               />
             )}
             {currentView === 'requests' && (effectiveRole === 'admin' || effectiveRole === 'developer') && (

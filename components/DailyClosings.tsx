@@ -239,8 +239,9 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
       // AUTOMATIC SYNC for Special Store
       if (isSpecialStore) {
         console.log("Iniciando sincronización automática para tienda 1053...");
-        // Incluimos el nuevo cierre directamente para asegurar que se suba a Excel hoy mismo
-        handleSyncToSheets([newClose, ...closings]);
+        handleSyncToSheets([newClose, ...closings]).catch(err => {
+          console.warn("Google Sheets auto-sync warning (non-blocking):", err);
+        });
       }
     }
   };
@@ -272,7 +273,6 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
     try {
       const sourceData = Array.isArray(manualData) ? manualData : filteredClosings;
       
-      // Prepare the data for the current month or filtered range
       const dataToSync = sourceData.map(c => ({
         date: c.date,
         telcel: c.totalSales,
@@ -280,20 +280,18 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
       }));
 
       if (dataToSync.length === 0) {
-        alert("No hay cierres para sincronizar.");
         return;
       }
 
       const result = await syncMarketParticipationScript(MARKET_SHARE_SHEET_ID, dataToSync);
       
       if (result.status === 'success') {
-        alert("✅ Sincronización exitosa con Google Sheets.");
+        console.log("✅ Sincronización exitosa con Google Sheets.");
       } else {
-        alert(`❌ Error al sincronizar: ${result.message}`);
+        console.warn(`Sincronización con Google Sheets omitida por red: ${result.message}`);
       }
     } catch (error) {
-      console.error("Sync error:", error);
-      alert("Ocurrió un error inesperado al sincronizar.");
+      console.warn("Sync error (non-blocking):", error);
     } finally {
       setIsSyncing(false);
     }
