@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell, Legend } from 'recharts';
 import { Building, Target, TrendingUp, Users, Smartphone, DollarSign, Calendar, Filter, ChevronRight, Award, AlertCircle, Loader2, Save, ShoppingBag, Edit2, Trophy, Cpu } from 'lucide-react';
-import { supabase } from '../services/supabaseClient';
+import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
+import { db } from '../services/firebase';
+import { collection, doc, getDocs, setDoc } from 'firebase/firestore';
+import { cleanFirestoreData } from './BackupMigration';
 import { Store, UserProfile, Brand } from '../types';
 import { BRAND_CONFIGS } from '../constants';
 
@@ -41,18 +44,62 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ sales: propSales, s
       let profilesData: any[] = [];
       let goalsData: any[] = [];
 
+      // 1. Cargar perfiles y usuarios desde Firestore
       try {
-        const res = await supabase.from('profiles').select('*');
-        if (res.data) profilesData = res.data;
-      } catch (e) {
-        console.warn("Profiles load warning:", e);
+        const [usersSnap, profSnap] = await Promise.all([
+          getDocs(collection(db, 'users')).catch(() => ({ empty: true, docs: [] } as any)),
+          getDocs(collection(db, 'profiles')).catch(() => ({ empty: true, docs: [] } as any))
+        ]);
+
+        const profMap = new Map<string, any>();
+        if (!usersSnap.empty) {
+          usersSnap.docs.forEach((d: any) => profMap.set(d.id, { id: d.id, ...d.data() }));
+        }
+        if (!profSnap.empty) {
+          profSnap.docs.forEach((d: any) => {
+            const existing = profMap.get(d.id);
+            profMap.set(d.id, { ...(existing || {}), id: d.id, ...d.data() });
+          });
+        }
+        profilesData = Array.from(profMap.values());
+      } catch (fsErr) {
+        console.warn("Firestore profiles warning:", fsErr);
       }
 
+      // 2. Cargar metas desde Firestore
       try {
-        const res = await supabase.from('monthly_goals').select('*');
-        if (res.data) goalsData = res.data;
-      } catch (e) {
-        console.warn("Goals load warning:", e);
+        const goalsSnap = await getDocs(collection(db, 'monthly_goals'));
+        if (!goalsSnap.empty) {
+          goalsData = goalsSnap.docs.map(d => ({
+            id: d.id,
+            store_id: d.data().storeId || d.data().store_id,
+            storeId: d.data().storeId || d.data().store_id,
+            month: d.data().month,
+            revenue_goal: Number(d.data().revenueGoal ?? d.data().revenue_goal ?? 0),
+            devices_goal: Number(d.data().devicesGoal ?? d.data().devices_goal ?? 0),
+            chip_0_goal: Number(d.data().chip0Goal ?? d.data().chip_0_goal ?? 0),
+            portability_goal: Number(d.data().portabilityGoal ?? d.data().portability_goal ?? 0),
+            chip_express_goal: Number(d.data().chipExpressGoal ?? d.data().chip_express_goal ?? 0)
+          }));
+        }
+      } catch (fsErr) {
+        console.warn("Firestore goals warning:", fsErr);
+      }
+
+      // 3. Fallback a Supabase si está activo
+      if (isSupabaseConfigured) {
+        try {
+          if (profilesData.length === 0) {
+            const res = await supabase.from('profiles').select('*');
+            if (res.data) profilesData = res.data;
+          }
+          if (goalsData.length === 0) {
+            const res = await supabase.from('monthly_goals').select('*');
+            if (res.data) goalsData = res.data;
+          }
+        } catch (e) {
+          console.warn("Supabase load warning:", e);
+        }
       }
 
       if (profilesData) setProfiles(profilesData);
@@ -61,7 +108,7 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ sales: propSales, s
         // Load initial goal values for editing
         const editingGoal = (goalsData || []).find(g => 
           g.month === targetMonth && 
-          (selectedStoreId === 'all' ? !g.store_id : g.store_id === selectedStoreId)
+          (selectedStoreId === 'all' ? (!g.store_id || g.store_id === 'all') : g.store_id === selectedStoreId)
         );
         
         if (editingGoal) {
@@ -98,20 +145,52 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ sales: propSales, s
   const handleSaveGoal = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSavingGoal(true);
-    try {
-      const { error } = await supabase.from('monthly_goals').upsert({
-        store_id: selectedStoreId === 'all' ? null : selectedStoreId,
-        month: targetMonth,
-        revenue_goal: parseFloat(revenueGoal) || 0,
-        devices_goal: parseInt(devicesGoal) || 0,
-        chip_0_goal: parseInt(chip0Goal) || 0,
-        portability_goal: parseInt(portaGoal) || 0,
-        chip_express_goal: parseInt(expressGoal) || 0
-      }, { onConflict: 'store_id, month' });
+    const targetStore = selectedStoreId === 'all' ? (userProfile?.storeId || 'all') : selectedStoreId;
+    const docId = `${targetMonth}_${targetStore}`;
+    const rGoal = parseFloat(revenueGoal) || 0;
+    const dGoal = parseInt(devicesGoal, 10) || 0;
+    const c0Goal = parseInt(chip0Goal, 10) || 0;
+    const pGoal = parseInt(portaGoal, 10) || 0;
+    const eGoal = parseInt(expressGoal, 10) || 0;
 
-      if (error) throw error;
+    const payload = {
+      id: docId,
+      month: targetMonth,
+      store_id: targetStore,
+      storeId: targetStore,
+      revenue_goal: rGoal,
+      revenueGoal: rGoal,
+      devices_goal: dGoal,
+      devicesGoal: dGoal,
+      chip_0_goal: c0Goal,
+      chip0Goal: c0Goal,
+      portability_goal: pGoal,
+      portabilityGoal: pGoal,
+      chip_express_goal: eGoal,
+      chipExpressGoal: eGoal,
+      updatedAt: new Date().toISOString()
+    };
+
+    try {
+      await setDoc(doc(db, 'monthly_goals', docId), cleanFirestoreData(payload), { merge: true });
+
+      if (isSupabaseConfigured) {
+        try {
+          await supabase.from('monthly_goals').upsert({
+            store_id: targetStore === 'all' ? null : targetStore,
+            month: targetMonth,
+            revenue_goal: rGoal,
+            devices_goal: dGoal,
+            chip_0_goal: c0Goal,
+            portability_goal: pGoal,
+            chip_express_goal: eGoal
+          }, { onConflict: 'store_id, month' });
+        } catch (sbErr) {}
+      }
+
       alert('Meta actualizada correctamente');
-      fetchData();
+      setShowGoalForm(false);
+      await fetchData();
     } catch (err: any) {
       alert('Error al guardar meta: ' + err.message);
     } finally {

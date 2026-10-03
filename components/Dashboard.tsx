@@ -7,6 +7,9 @@ import { jsPDF } from 'jspdf';
 import { Sale, Brand, DailyClose } from '../types';
 import { BRAND_CONFIGS } from '../constants';
 import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
+import { db } from '../services/firebase';
+import { collection, doc, getDocs, setDoc, onSnapshot } from 'firebase/firestore';
+import { cleanFirestoreData } from './BackupMigration';
 
 interface DashboardProps {
   sales: Sale[];
@@ -79,43 +82,64 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
       try {
         const isGlobal = !storeId || storeId === 'all';
         
-        // 1. Fetch Goals
-        if (isSupabaseConfigured) {
+        // 1. Fetch Goals from Firestore and Supabase
+        let loadedGoals: any[] = [];
+        try {
+          const fsGoalsSnap = await getDocs(collection(db, 'monthly_goals'));
+          if (!fsGoalsSnap.empty) {
+            fsGoalsSnap.docs.forEach(d => {
+              const data = d.data();
+              if (data.month === selectedMonth) {
+                loadedGoals.push({ id: d.id, ...data });
+              }
+            });
+          }
+        } catch (fsErr) {
+          console.warn("Firestore goals fetch note:", fsErr);
+        }
+
+        if (loadedGoals.length === 0 && isSupabaseConfigured) {
           try {
             let goalQuery = supabase.from('monthly_goals').select('*').eq('month', selectedMonth);
-            if (!isGlobal) {
-              goalQuery = goalQuery.eq('store_id', storeId);
-            } else if (userProfile?.role === 'supervisor' || userProfile?.role === 'viewer') {
-              if (userProfile.assignedStores && userProfile.assignedStores.length > 0) {
-                goalQuery = goalQuery.in('store_id', userProfile.assignedStores);
-              }
-            }
             const { data: goalData } = await goalQuery;
-
             if (goalData && goalData.length > 0) {
-              if (isGlobal) {
-                setMonthlyGoal(goalData.reduce((sum, g) => sum + Number(g.revenue_goal || 0), 0));
-                setDevicesGoal(goalData.reduce((sum, g) => sum + Number(g.devices_goal || 0), 0));
-                setChip0Goal(goalData.reduce((sum, g) => sum + Number(g.chip_0_goal || 0), 0));
-                setPortaGoal(goalData.reduce((sum, g) => sum + Number(g.portability_goal || 0), 0));
-                setExpressGoal(goalData.reduce((sum, g) => sum + Number(g.chip_express_goal || 0), 0));
-              } else {
-                setMonthlyGoal(goalData[0].revenue_goal !== null ? Number(goalData[0].revenue_goal) : 0);
-                setDevicesGoal(goalData[0].devices_goal !== null ? Number(goalData[0].devices_goal) : 0);
-                setChip0Goal(goalData[0].chip_0_goal !== null ? Number(goalData[0].chip_0_goal) : 0);
-                setPortaGoal(goalData[0].portability_goal !== null ? Number(goalData[0].portability_goal) : 0);
-                setExpressGoal(goalData[0].chip_express_goal !== null ? Number(goalData[0].chip_express_goal) : 0);
-              }
-            } else {
-              setMonthlyGoal(0);
-              setDevicesGoal(0);
-              setChip0Goal(0);
-              setPortaGoal(0);
-              setExpressGoal(0);
+              loadedGoals = goalData;
             }
           } catch (goalErr) {
             console.warn("Goals query note:", goalErr);
           }
+        }
+
+        let matchingGoals = loadedGoals;
+        if (!isGlobal) {
+          matchingGoals = loadedGoals.filter(g => (g.storeId || g.store_id) === storeId);
+        } else if (userProfile?.role === 'supervisor' || userProfile?.role === 'viewer') {
+          if (userProfile.assignedStores && userProfile.assignedStores.length > 0) {
+            matchingGoals = loadedGoals.filter(g => userProfile.assignedStores.includes(g.storeId || g.store_id));
+          }
+        }
+
+        if (matchingGoals.length > 0) {
+          if (isGlobal) {
+            setMonthlyGoal(matchingGoals.reduce((sum, g) => sum + Number(g.revenueGoal ?? g.revenue_goal ?? 0), 0));
+            setDevicesGoal(matchingGoals.reduce((sum, g) => sum + Number(g.devicesGoal ?? g.devices_goal ?? 0), 0));
+            setChip0Goal(matchingGoals.reduce((sum, g) => sum + Number(g.chip0Goal ?? g.chip_0_goal ?? 0), 0));
+            setPortaGoal(matchingGoals.reduce((sum, g) => sum + Number(g.portabilityGoal ?? g.portability_goal ?? 0), 0));
+            setExpressGoal(matchingGoals.reduce((sum, g) => sum + Number(g.chipExpressGoal ?? g.chip_express_goal ?? 0), 0));
+          } else {
+            const g = matchingGoals[0];
+            setMonthlyGoal(Number(g.revenueGoal ?? g.revenue_goal ?? 0));
+            setDevicesGoal(Number(g.devicesGoal ?? g.devices_goal ?? 0));
+            setChip0Goal(Number(g.chip0Goal ?? g.chip_0_goal ?? 0));
+            setPortaGoal(Number(g.portabilityGoal ?? g.portability_goal ?? 0));
+            setExpressGoal(Number(g.chipExpressGoal ?? g.chip_express_goal ?? 0));
+          }
+        } else {
+          setMonthlyGoal(0);
+          setDevicesGoal(0);
+          setChip0Goal(0);
+          setPortaGoal(0);
+          setExpressGoal(0);
         }
 
         // 2. Fetch Sales for specifically this month
@@ -336,126 +360,117 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
 
   const radius = 40;
   const circumference = 2 * Math.PI * radius; 
-  const safeRevProgress = isFinite(revenueProgress) ? Math.min(revenueProgress, 100) : 0;
-  const safeDevProgress = isFinite(devicesProgress) ? Math.min(devicesProgress, 100) : 0;
+  const safeRevProgress = isFinite(revenueProgress) ? Math.min(Math.max(revenueProgress, 0), 100) : 0;
+  const safeDevProgress = isFinite(devicesProgress) ? Math.min(Math.max(devicesProgress, 0), 100) : 0;
   const strokeDashoffsetRevenue = circumference - (safeRevProgress / 100) * circumference;
   const strokeDashoffsetDevices = circumference - (safeDevProgress / 100) * circumference;
 
-  // --- HANDLERS ---
+  const safePercent = (count: number, goal: number) => {
+    if (!goal || goal <= 0 || !isFinite(goal)) return 0;
+    const p = (count / goal) * 100;
+    return isFinite(p) ? Math.min(Math.max(p, 0), 100) : 0;
+  };
+
+  // --- HANDLERS FOR GOALS (FIRESTORE & SUPABASE) ---
+  const saveGoalToFirestore = async (newGoalObj: {
+    revenue?: number;
+    devices?: number;
+    chip0?: number;
+    porta?: number;
+    express?: number;
+  }) => {
+    const targetStore = (!storeId || storeId === 'all') 
+      ? (userProfile?.storeId || 'all') 
+      : storeId;
+
+    const docId = `${selectedMonth}_${targetStore}`;
+    const rGoal = newGoalObj.revenue !== undefined ? newGoalObj.revenue : monthlyGoal;
+    const dGoal = newGoalObj.devices !== undefined ? newGoalObj.devices : devicesGoal;
+    const c0Goal = newGoalObj.chip0 !== undefined ? newGoalObj.chip0 : chip0Goal;
+    const pGoal = newGoalObj.porta !== undefined ? newGoalObj.porta : portaGoal;
+    const eGoal = newGoalObj.express !== undefined ? newGoalObj.express : expressGoal;
+
+    const payload = {
+      id: docId,
+      month: selectedMonth,
+      storeId: targetStore,
+      store_id: targetStore,
+      revenueGoal: rGoal,
+      revenue_goal: rGoal,
+      devicesGoal: dGoal,
+      devices_goal: dGoal,
+      chip0Goal: c0Goal,
+      chip_0_goal: c0Goal,
+      portabilityGoal: pGoal,
+      portability_goal: pGoal,
+      chipExpressGoal: eGoal,
+      chip_express_goal: eGoal,
+      updatedAt: new Date().toISOString()
+    };
+
+    try {
+      await setDoc(doc(db, 'monthly_goals', docId), cleanFirestoreData(payload), { merge: true });
+    } catch (fsErr: any) {
+      console.warn("Error guardando meta en Firestore:", fsErr);
+    }
+
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('monthly_goals').upsert({
+          month: selectedMonth,
+          store_id: targetStore === 'all' ? null : targetStore,
+          revenue_goal: rGoal,
+          devices_goal: dGoal,
+          chip_0_goal: c0Goal,
+          portability_goal: pGoal,
+          chip_express_goal: eGoal
+        }, { onConflict: 'month,store_id' });
+      } catch (sbErr) {}
+    }
+  };
+
   const handleSaveGoal = async () => {
     const val = parseFloat(tempGoal);
-    if (!isNaN(val) && val > 0) {
-      if (!storeId || storeId === 'all') {
-        alert("Selecciona una tienda específica para editar sus metas.");
-        return;
-      }
+    if (!isNaN(val) && val >= 0) {
       setMonthlyGoal(val);
       setIsEditingGoal(false);
-
-      const { error } = await supabase.from('monthly_goals').upsert({
-        month: selectedMonth,
-        revenue_goal: val,
-        devices_goal: devicesGoal,
-        store_id: storeId
-      }, { onConflict: 'month,store_id' });
-
-      if (error) alert("Error al guardar meta: " + error.message);
+      await saveGoalToFirestore({ revenue: val });
     }
   };
 
   const handleSaveDevicesGoal = async () => {
-    const val = parseInt(tempDevicesGoal);
+    const val = parseInt(tempDevicesGoal, 10);
     if (!isNaN(val) && val >= 0) {
-      if (!storeId || storeId === 'all') {
-        alert("Selecciona una tienda específica para editar sus metas.");
-        return;
-      }
       setDevicesGoal(val);
       setIsEditingDevices(false);
-
-      const { error } = await supabase.from('monthly_goals').upsert({
-        month: selectedMonth,
-        revenue_goal: monthlyGoal,
-        devices_goal: val,
-        chip_0_goal: chip0Goal,
-        portability_goal: portaGoal,
-        chip_express_goal: expressGoal,
-        store_id: storeId
-      }, { onConflict: 'month,store_id' });
-
-      if (error) alert("Error al guardar meta: " + error.message);
+      await saveGoalToFirestore({ devices: val });
     }
   };
 
   const handleSaveChip0Goal = async () => {
-    const val = parseInt(tempChip0Goal);
+    const val = parseInt(tempChip0Goal, 10);
     if (!isNaN(val) && val >= 0) {
-      if (!storeId || storeId === 'all') {
-        alert("Selecciona una tienda específica para editar sus metas.");
-        return;
-      }
       setChip0Goal(val);
       setIsEditingChip0(false);
-
-      const { error } = await supabase.from('monthly_goals').upsert({
-        month: selectedMonth,
-        revenue_goal: monthlyGoal,
-        devices_goal: devicesGoal,
-        chip_0_goal: val,
-        portability_goal: portaGoal,
-        chip_express_goal: expressGoal,
-        store_id: storeId
-      }, { onConflict: 'month,store_id' });
-
-      if (error) alert("Error al guardar meta: " + error.message);
+      await saveGoalToFirestore({ chip0: val });
     }
   };
 
   const handleSavePortaGoal = async () => {
-    const val = parseInt(tempPortaGoal);
+    const val = parseInt(tempPortaGoal, 10);
     if (!isNaN(val) && val >= 0) {
-      if (!storeId || storeId === 'all') {
-        alert("Selecciona una tienda específica para editar sus metas.");
-        return;
-      }
       setPortaGoal(val);
       setIsEditingPorta(false);
-
-      const { error } = await supabase.from('monthly_goals').upsert({
-        month: selectedMonth,
-        revenue_goal: monthlyGoal,
-        devices_goal: devicesGoal,
-        chip_0_goal: chip0Goal,
-        portability_goal: val,
-        chip_express_goal: expressGoal,
-        store_id: storeId
-      }, { onConflict: 'month,store_id' });
-
-      if (error) alert("Error al guardar meta: " + error.message);
+      await saveGoalToFirestore({ porta: val });
     }
   };
 
   const handleSaveExpressGoal = async () => {
-    const val = parseInt(tempExpressGoal);
+    const val = parseInt(tempExpressGoal, 10);
     if (!isNaN(val) && val >= 0) {
-      if (!storeId || storeId === 'all') {
-        alert("Selecciona una tienda específica para editar sus metas.");
-        return;
-      }
       setExpressGoal(val);
       setIsEditingExpress(false);
-
-      const { error } = await supabase.from('monthly_goals').upsert({
-        month: selectedMonth,
-        revenue_goal: monthlyGoal,
-        devices_goal: devicesGoal,
-        chip_0_goal: chip0Goal,
-        portability_goal: portaGoal,
-        chip_express_goal: val,
-        store_id: storeId
-      }, { onConflict: 'month,store_id' });
-
-      if (error) alert("Error al guardar meta: " + error.message);
+      await saveGoalToFirestore({ express: val });
     }
   };
 
@@ -857,7 +872,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
                 {chip0Goal > 0 && (
                   <>
                     <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden mt-3">
-                      <div className={`h-full rounded-full transition-all duration-1000 ${chip0Count >= chip0Goal ? 'bg-purple-400' : 'bg-purple-600'}`} style={{ width: `${Math.min((chip0Count/chip0Goal)*100, 100)}%` }}></div>
+                      <div className={`h-full rounded-full transition-all duration-1000 ${chip0Count >= chip0Goal ? 'bg-purple-400' : 'bg-purple-600'}`} style={{ width: `${safePercent(chip0Count, chip0Goal)}%` }}></div>
                     </div>
                     <p className="text-xs text-slate-400 pt-1">{chip0Goal - chip0Count > 0 ? `Faltan ${chip0Goal - chip0Count}` : '¡Meta Superada!'}</p>
                   </>
@@ -867,9 +882,9 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
                 <div className="relative w-20 h-20 shrink-0">
                   <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
                     <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" className="text-slate-800" />
-                    <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" strokeDasharray={circumference} strokeDashoffset={circumference - (Math.min((chip0Count/chip0Goal)*100, 100) / 100) * circumference} strokeLinecap="round" className="text-purple-500 transition-all duration-1000" />
+                    <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" strokeDasharray={circumference} strokeDashoffset={circumference - (safePercent(chip0Count, chip0Goal) / 100) * circumference} strokeLinecap="round" className="text-purple-500 transition-all duration-1000" />
                   </svg>
-                  <div className="absolute inset-0 flex items-center justify-center text-xs font-bold">{Math.min((chip0Count/chip0Goal)*100, 100).toFixed(0)}%</div>
+                  <div className="absolute inset-0 flex items-center justify-center text-xs font-bold">{safePercent(chip0Count, chip0Goal).toFixed(0)}%</div>
                 </div>
               )}
             </div>
@@ -914,7 +929,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
                 {portaGoal > 0 && (
                   <>
                     <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden mt-3">
-                      <div className={`h-full rounded-full transition-all duration-1000 ${portaCount >= portaGoal ? 'bg-rose-400' : 'bg-rose-600'}`} style={{ width: `${Math.min((portaCount/portaGoal)*100, 100)}%` }}></div>
+                      <div className={`h-full rounded-full transition-all duration-1000 ${portaCount >= portaGoal ? 'bg-rose-400' : 'bg-rose-600'}`} style={{ width: `${safePercent(portaCount, portaGoal)}%` }}></div>
                     </div>
                     <p className="text-xs text-slate-400 pt-1">{portaGoal - portaCount > 0 ? `Faltan ${portaGoal - portaCount}` : '¡Meta Superada!'}</p>
                   </>
@@ -924,9 +939,9 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
                 <div className="relative w-20 h-20 shrink-0">
                   <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
                     <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" className="text-slate-800" />
-                    <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" strokeDasharray={circumference} strokeDashoffset={circumference - (Math.min((portaCount/portaGoal)*100, 100) / 100) * circumference} strokeLinecap="round" className="text-rose-500 transition-all duration-1000" />
+                    <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" strokeDasharray={circumference} strokeDashoffset={circumference - (safePercent(portaCount, portaGoal) / 100) * circumference} strokeLinecap="round" className="text-rose-500 transition-all duration-1000" />
                   </svg>
-                  <div className="absolute inset-0 flex items-center justify-center text-xs font-bold">{Math.min((portaCount/portaGoal)*100, 100).toFixed(0)}%</div>
+                  <div className="absolute inset-0 flex items-center justify-center text-xs font-bold">{safePercent(portaCount, portaGoal).toFixed(0)}%</div>
                 </div>
               )}
             </div>
@@ -971,7 +986,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
                 {expressGoal > 0 && (
                   <>
                     <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden mt-3">
-                      <div className={`h-full rounded-full transition-all duration-1000 ${expressCount >= expressGoal ? 'bg-orange-400' : 'bg-orange-600'}`} style={{ width: `${Math.min((expressCount/expressGoal)*100, 100)}%` }}></div>
+                      <div className={`h-full rounded-full transition-all duration-1000 ${expressCount >= expressGoal ? 'bg-orange-400' : 'bg-orange-600'}`} style={{ width: `${safePercent(expressCount, expressGoal)}%` }}></div>
                     </div>
                     <p className="text-xs text-slate-400 pt-1">{expressGoal - expressCount > 0 ? `Faltan ${expressGoal - expressCount}` : '¡Meta Superada!'}</p>
                   </>
@@ -981,9 +996,9 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
                 <div className="relative w-20 h-20 shrink-0">
                   <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
                     <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" className="text-slate-800" />
-                    <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" strokeDasharray={circumference} strokeDashoffset={circumference - (Math.min((expressCount/expressGoal)*100, 100) / 100) * circumference} strokeLinecap="round" className="text-orange-500 transition-all duration-1000" />
+                    <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" strokeDasharray={circumference} strokeDashoffset={circumference - (safePercent(expressCount, expressGoal) / 100) * circumference} strokeLinecap="round" className="text-orange-500 transition-all duration-1000" />
                   </svg>
-                  <div className="absolute inset-0 flex items-center justify-center text-xs font-bold">{Math.min((expressCount/expressGoal)*100, 100).toFixed(0)}%</div>
+                  <div className="absolute inset-0 flex items-center justify-center text-xs font-bold">{safePercent(expressCount, expressGoal).toFixed(0)}%</div>
                 </div>
               )}
             </div>
