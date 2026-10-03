@@ -4,14 +4,18 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0 --port 3000",
+    "dev": "tsx server.ts",
     "build": "vite build",
+    "start": "node server.ts",
     "preview": "vite preview --host 0.0.0.0 --port 3000"
   },
   "dependencies": {
+    "@google/genai": "^2.27.0",
     "@google/generative-ai": "^0.24.1",
     "@posthog/react": "^1.9.0",
     "@supabase/supabase-js": "2.39.3",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
     "firebase": "^12.19.0",
     "html2canvas": "^1.4.1",
     "html5-qrcode": "^2.3.8",
@@ -23,8 +27,11 @@
     "recharts": "^3.6.0"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "tsx": "^4.23.15",
     "typescript": "~5.8.2",
     "vite": "^6.2.0",
     "vite-plugin-pwa": "^1.2.0"

@@ -1,27 +1,11 @@
-import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import { TicketAnalysisResult, Brand } from "../types";
-
-// --- CONFIGURACIÓN ---
-const API_KEYS = [
-  'AIzaSyA4t7Xl0isnr39VAaO4E3VVh9tuOCFd_nY',
-  import.meta.env.VITE_GEMINI_API_KEY_1,
-  import.meta.env.VITE_GEMINI_API_KEY_2,
-  import.meta.env.VITE_GEMINI_API_KEY_3,
-  import.meta.env.VITE_GEMINI_API_KEY,
-  process.env.GEMINI_API_KEY,
-  process.env.API_KEY,
-].filter(Boolean) as string[];
 
 const parseSpanishDate = (dateStr: string | undefined): string | undefined => {
   if (!dateStr) return undefined;
   
-  // Limpiar strings basura que a veces mete la IA
   let cleanStr = dateStr.toLowerCase().trim().replace(/fecha[:.]?\s*/, '');
-  
-  // Intento 1: Ya está en formato YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(cleanStr)) return cleanStr;
 
-  // Mapeo de meses español a número
   const monthMap: { [key: string]: string } = {
     'ene': '01', 'feb': '02', 'mar': '03', 'abr': '04', 'may': '05', 'jun': '06',
     'jul': '07', 'ago': '08', 'sep': '09', 'oct': '10', 'nov': '11', 'dic': '12',
@@ -30,7 +14,6 @@ const parseSpanishDate = (dateStr: string | undefined): string | undefined => {
   };
 
   try {
-    // Buscar patrones: 02-Jun-25, 02/06/2025, 02 Jun 2025, 26/4/26
     const parts = cleanStr.match(/(\d{1,2})[-/ ]([a-z0-9]{1,})[-/ ](\d{2,4})/);
     if (parts) {
       const day = parts[1].padStart(2, '0');
@@ -93,118 +76,175 @@ export const analyzeTicketImage = async (
   chainName: string = 'Coppel',
   category: string = 'kit'
 ): Promise<TicketAnalysisResult | null> => {
-  const apiKeys = API_KEYS;
+  try {
+    const optimizedBase64 = await compressImageBase64(base64Image);
+    const base64Data = optimizedBase64.split(',')[1] || optimizedBase64;
+    
+    const now = new Date();
+    const currentDateContext = `Hoy es ${now.toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })}.`;
+    const categoryContext = category === 'chip_0' 
+      ? 'ESTA ES UNA VENTA DE CHIP 0 (EQUIPO LIBRE). Extrae el precio real del EQUIPO/TELÉFONO principal.' 
+      : 'ESTA ES UNA VENTA DE EQUIPO KIT. Incluye solo equipos móviles de marcas reconocidas.';
 
-  if (apiKeys.length === 0) {
-    console.warn("Faltan las API Keys de Gemini (VITE_GEMINI_API_KEY). El escaneo OCR con IA está desactivado.");
-    return null;
-  }
+    const prompt = `Analiza este ticket de compra de la tienda ${chainName} (${storeName}). ${currentDateContext} ${categoryContext}
+    
+    REGLAS ESTRICTAS DE FILTRADO Y ENFOQUE:
+    1. ENFOQUE EXCLUSIVO EN EQUIPOS MÓVILES (TELÉFONOS): Solo extrae teléfonos celulares/smartphones de marcas reconocidas (SAMSUNG, APPLE, OPPO, ZTE, MOTOROLA, REALME, VIVO, XIAOMI, HONOR, HUAWEI, etc.).
+    2. IGNORAR ACCESORIOS: Ignora seguros, micas, fundas, cargadores, servicios, etc.
 
-  // Comprimir imagen para optimizar velocidad y evitar payloads pesados
-  const optimizedBase64 = await compressImageBase64(base64Image);
+    Extrae los siguientes datos en formato JSON estricto:
+    1. invoiceNumber: Folio o factura (sin espacios).
+    2. date: Fecha de transacción.
+    3. customerName: Nombre del cliente en MAYÚSCULAS.
+    4. items: Lista de equipos vendidos (brand y price).
+    
+    RESPONDE ÚNICAMENTE CON EL JSON VÁLIDO.`;
 
-  const candidateModels = [
-    "gemini-3.8-flash",
-    "gemini-1.5-flash",
-    "gemini-1.5-pro",
-  ];
+    let text = null;
 
-  const base64Data = optimizedBase64.split(',')[1] || optimizedBase64;
-  const now = new Date();
-  const currentDateContext = `Hoy es ${now.toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })}.`;
+    try {
+      const res = await fetch('/api/gemini-ocr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ base64Data, prompt })
+      });
+      if (res.ok) {
+        const dataJson = await res.json();
+        text = dataJson.text;
+      }
+    } catch (e) {
+      // Server not available (e.g. running on static GitHub Pages)
+    }
 
-  const categoryContext = category === 'chip_0' 
-    ? 'ESTA ES UNA VENTA DE CHIP 0 (EQUIPO LIBRE). Extrae el precio real del EQUIPO/TELÉFONO principal. Aunque el ticket mencione un chip de $1, debes buscar el precio significativo del dispositivo libre.' 
-    : 'ESTA ES UNA VENTA DE EQUIPO KIT. Incluye solo equipos móviles de marcas reconocidas. IGNORA chips sueltos o seguros.';
-
-  const prompt = `Analiza este ticket de compra de la tienda ${chainName} (${storeName}). 
-  ${currentDateContext}
-  ${categoryContext}
-  
-  REGLAS ESTRICTAS DE FILTRADO Y ENFOQUE:
-  1. ENFOQUE EXCLUSIVO EN EQUIPOS MÓVILES (TELÉFONOS): Solo debes extraer teléfonos celulares/smartphones de marcas reconocidas (como SAMSUNG, APPLE, OPPO, ZTE, MOTOROLA, REALME, VIVO, XIAOMI, HONOR, HUAWEI, SENWA, NUBIA, etc.).
-  2. IGNORAR ACCESORIOS Y OTROS ARTÍCULOS: Ignora por completo cualquier otro artículo que no sea un teléfono celular. NO incluyas en la lista de items: seguros, micas protectoras, fundas/carcasas, cargadores, cables, tarjetas de memoria, audífonos, servicios, membresías (ej. "Club de Protección"), ni garantías extendidas.
-  3. COMPORTAMIENTO CON EL TICKET: Céntrate únicamente en la información impresa del ticket de compra. Ignora cualquier objeto de fondo, manos, o texto que no pertenezca al ticket.
-
-  REGLAS DE DESCUENTO INTELIGENTE Y CÁLCULO DE PRECIO NETO:
-  1. DESCUENTO POR LÍNEA: Para cada teléfono celular, busca si inmediatamente abajo, al lado o asociado a él aparece un descuento, ahorro, promoción, bonificación o una cantidad negativa (ej. "Ahorro: $500", "Descuento -$300", "Promo -$1,000", "-500.00").
-  2. APLICACIÓN AUTOMÁTICA DEL DESCUENTO: Si encuentras un descuento asociado al teléfono, debes restarlo automáticamente del precio base del equipo para calcular el PRECIO NETO FINAL.
-     - Ejemplo: Si dice "Teléfono Samsung $3,999.00" y abajo dice "Ahorro -$500.00", el precio neto final a reportar en el JSON debe ser 3499.
-  3. PRECIO NETO FINAL: El valor numérico de 'price' en el JSON debe representar este precio neto final calculado (Precio Base menos todos los descuentos/ahorros aplicados a ese artículo). No incluyas símbolos de moneda ni comas.
-
-  Extrae los siguientes datos en formato JSON estricto:
-  1. invoiceNumber: Busca el folio, factura o número de ticket. (Únelo sin espacios).
-  2. date: Busca la fecha de la transacción.
-  3. customerName: El nombre del cliente en MAYÚSCULAS.
-  4. items: Lista de equipos móviles vendidos (solo teléfonos):
-     - brand: La marca del equipo (ej. SAMSUNG, MOTOROLA, etc.).
-     - price: El PRECIO NETO FINAL pagado por el equipo (después de aplicar los descuentos correspondientes automáticamente).
-  
-  RESPONDE ÚNICAMENTE CON EL JSON.`;
-
-  const imagePart = {
-    inlineData: {
-      data: base64Data,
-      mimeType: "image/jpeg",
-    },
-  };
-
-  // Solicitar respuesta en formato JSON mediante prompt sin schema estricto para evitar errores de red o CORS
-  for (const [keyIndex, currentApiKey] of apiKeys.entries()) {
-    const genAI = new GoogleGenerativeAI(currentApiKey);
-
-    for (const modelName of candidateModels) {
-      try {
-        const model = genAI.getGenerativeModel({ 
-          model: modelName
-        });
-
-        const result = await model.generateContent([prompt, imagePart]);
-        const response = await result.response;
-        const text = response.text();
-
-        if (text) {
-          // Extraer JSON de la respuesta (puede venir entre bloques ```json ... ```)
-          let jsonStr = text;
-          const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-          if (jsonMatch) {
-            jsonStr = jsonMatch[1];
+    // Fallback: If running on static GitHub Pages without server.ts
+    if (!text) {
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY || (typeof process !== 'undefined' ? process.env?.GEMINI_API_KEY : '');
+      if (apiKey) {
+        try {
+          const directRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: "image/jpeg", data: base64Data } }] }]
+            })
+          });
+          if (directRes.ok) {
+            const directJson = await directRes.json();
+            text = directJson?.candidates?.[0]?.content?.parts?.[0]?.text;
           }
+        } catch (e) {}
+      }
+    }
 
-          const data = JSON.parse(jsonStr);
-          
-          // Limpieza de datos extraídos
-          const cleanDate = parseSpanishDate(data.date);
-          let cleanName = (data.customerName || '').trim().replace(/^(nombre|cliente|nom|cli)\s*[:.]?\s*/i, '');
-          
-          // Formatear Folio de Coppel (Quitar espacios)
-          let cleanInvoice = (data.invoiceNumber || '').replace(/\s/g, '');
+    // Second Fallback: OCR.space API (works 100% on static GitHub Pages)
+    if (!text) {
+      try {
+        const formData = new URLSearchParams();
+        formData.append('apikey', 'K88513112888957');
+        formData.append('base64Image', optimizedBase64);
+        formData.append('language', 'spa');
+        formData.append('scale', 'true');
+        formData.append('OCREngine', '2');
 
-          return {
-            invoiceNumber: cleanInvoice,
-            price: 0,
-            date: cleanDate,
-            customerName: cleanName.toUpperCase(),
-            items: data.items?.map((item: any) => {
-              // Mapeo inteligente de marca
-              const brandText = item.brand?.toUpperCase() || '';
-              let b = Brand.OTRO;
-              for (const brandKey of Object.values(Brand)) {
-                if (brandText.includes(brandKey)) {
-                  b = brandKey;
+        const ocrRes = await fetch('https://api.ocr.space/parse/image', {
+          method: 'POST',
+          body: formData
+        });
+        if (ocrRes.ok) {
+          const ocrData = await ocrRes.json();
+          const parsed = ocrData.ParsedResults?.[0]?.ParsedText || '';
+          if (parsed) {
+            let invoiceNumber = '';
+            const folioMatch = parsed.match(/(?:folio|factura|ticket|nota|vta)[\s#:.]*([0-9a-zA-Z]{4,12})/i);
+            if (folioMatch) {
+              invoiceNumber = folioMatch[1].replace(/\D/g, '');
+            } else {
+              const sixDigits = parsed.match(/\b\d{6}\b/);
+              if (sixDigits) invoiceNumber = sixDigits[0];
+            }
+
+            let dateStr = undefined;
+            const dateMatch = parsed.match(/(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})/);
+            if (dateMatch) {
+              const d = dateMatch[1].padStart(2, '0');
+              const m = dateMatch[2].padStart(2, '0');
+              let y = dateMatch[3];
+              if (y.length === 2) y = `20${y}`;
+              dateStr = `${y}-${m}-${d}`;
+            }
+
+            let customerName = '';
+            const clienteMatch = parsed.match(/(?:cliente|nombre|cli)[\s:.]*([A-ZÁÉÍÓÚÑ\s]{3,30})/i);
+            if (clienteMatch) customerName = clienteMatch[1].trim().toUpperCase();
+
+            const items: { brand: Brand; price: number }[] = [];
+            for (const line of parsed.split('\n')) {
+              const upperLine = line.toUpperCase();
+              let foundBrand: Brand | null = null;
+              for (const bKey of Object.values(Brand)) {
+                if (upperLine.includes(bKey)) {
+                  foundBrand = bKey;
                   break;
                 }
               }
-              return { brand: b, price: Number(item.price) || 0 };
-            }) || []
-          };
-        }
-      } catch (error: any) {
-        console.warn(`Error con ${modelName} y Key #${keyIndex + 1}:`, error.message || error);
-        // Continuar al siguiente modelo o llave
-      }
-    }
-  }
+              if (foundBrand) {
+                const priceMatch = line.match(/\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)/);
+                const price = priceMatch ? parseFloat(priceMatch[1].replace(/,/g, '')) || 0 : 0;
+                items.push({ brand: foundBrand, price });
+              }
+            }
 
-  return null;
+            return {
+              invoiceNumber: invoiceNumber.slice(-6),
+              price: 0,
+              date: dateStr,
+              customerName: customerName || 'CLIENTE',
+              items: items.length > 0 ? items : [{ brand: Brand.OTRO, price: 0 }]
+            };
+          }
+        }
+      } catch (e) {}
+    }
+
+    if (text) {
+      console.log("🤖 [Gemini OCR] Model Response:\n", text);
+      let jsonStr = text;
+      const jsonBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+      if (jsonBlockMatch) {
+        jsonStr = jsonBlockMatch[1];
+      } else {
+        const objectMatch = text.match(/\{[\s\S]*\}/);
+        if (objectMatch) {
+          jsonStr = objectMatch[0];
+        }
+      }
+
+      const data = JSON.parse(jsonStr);
+      const cleanDate = parseSpanishDate(data.date);
+      let cleanName = (data.customerName || '').trim().replace(/^(nombre|cliente|nom|cli)\s*[:.]?\s*/i, '');
+      let cleanInvoice = (data.invoiceNumber || '').replace(/\s/g, '');
+
+      return {
+        invoiceNumber: cleanInvoice,
+        price: 0,
+        date: cleanDate,
+        customerName: cleanName.toUpperCase(),
+        items: data.items?.map((item: any) => {
+          const brandText = item.brand?.toUpperCase() || '';
+          let b = Brand.OTRO;
+          for (const brandKey of Object.values(Brand)) {
+            if (brandText.includes(brandKey)) {
+              b = brandKey;
+              break;
+            }
+          }
+          return { brand: b, price: Number(item.price) || 0 };
+        }) || []
+      };
+    }
+    return null;
+  } catch (err) {
+    console.warn("Gemini Server Proxy OCR error:", err);
+    return null;
+  }
 };

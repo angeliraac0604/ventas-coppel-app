@@ -62,42 +62,45 @@ export const smartImageUpload = async (
   chainName: string = 'Coppel',
   subFolder: string = ''
 ): Promise<string> => {
-  // 1. COMPRESS AND UPLOAD TO FIREBASE STORAGE (Instant & Free)
-  const dateObj = date ? new Date(date + "T12:00:00") : new Date();
-  const y = dateObj.getFullYear().toString();
-  const m = getSpanishMonth(dateObj.getMonth());
-  const d = dateObj.getDate().toString();
-  
-  const cleanName = userName.replace(/[^a-zA-Z0-9 ]/g, '').trim().replace(/ /g, '_');
-  const cleanFilename = filename.replace(/[^a-zA-Z0-9]/g, '_');
+  // Compress immediately so saving is instantaneous (0 network delay)
+  const compressed = await compressImage(base64Image, 1000, 0.75);
 
-  const storagePath = folderType === 'attendance'
-    ? `attendance/${cleanName}/${y}/${m}/${d}/${Date.now()}-${cleanFilename}.jpg`
-    : `${folderType}/${storeName}/${y}/${m}/${d}/${Date.now()}-${cleanFilename}.jpg`;
-  
-  const firebaseUrl = await uploadToFirebaseStorage(base64Image, storagePath);
-  
-  // 2. BACKGROUND SYNC TO GOOGLE DRIVE (Non-blocking)
+  // Background upload to Firebase Storage and Google Drive (non-blocking)
   setTimeout(async () => {
     try {
+      const dateObj = date ? new Date(date + "T12:00:00") : new Date();
+      const y = dateObj.getFullYear().toString();
+      const m = getSpanishMonth(dateObj.getMonth());
+      const d = dateObj.getDate().toString();
+      
+      const cleanName = userName.replace(/[^a-zA-Z0-9 ]/g, '').trim().replace(/ /g, '_');
+      const cleanFilename = filename.replace(/[^a-zA-Z0-9]/g, '_');
+
+      const storagePath = folderType === 'attendance'
+        ? `attendance/${cleanName}/${y}/${m}/${d}/${Date.now()}-${cleanFilename}.jpg`
+        : `${folderType}/${storeName}/${y}/${m}/${d}/${Date.now()}-${cleanFilename}.jpg`;
+      
+      await uploadToFirebaseStorage(base64Image, storagePath);
+    } catch (err) {
+      console.warn("Background Firebase upload note:", err);
+    }
+
+    try {
       const { uploadImageToDriveScript } = await import('./googleAppsScriptService');
-      const compressedForDrive = await compressImage(base64Image, 1000, 0.75);
+      const dateObj = date ? new Date(date + "T12:00:00") : new Date();
+      const m = getSpanishMonth(dateObj.getMonth());
       
       (window as any)._activeStoreName = storeName;
       (window as any)._activeStoreChain = chainName;
       (window as any)._customMonthName = m;
       
-      const driveUrl = await uploadImageToDriveScript(compressedForDrive, filename, date, folderType as any, userName, chainName, subFolder);
-      
-      if (driveUrl) {
-        console.log(`✅ [Background] Photo synced to Google Drive: ${driveUrl}`);
-      }
+      await uploadImageToDriveScript(compressed, filename, date, folderType as any, userName, chainName, subFolder);
     } catch (err) {
-      console.error(`❌ [Background] Drive sync failed:`, err);
+      console.warn(`Background Drive sync note:`, err);
     }
-  }, 2000);
+  }, 100);
 
-  return firebaseUrl;
+  return compressed;
 };
 
 export const deleteFromSupabaseStorage = async (path: string): Promise<void> => {
