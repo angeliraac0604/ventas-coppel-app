@@ -195,83 +195,10 @@ export const analyzeTicketImage = async (
       };
     }
 
-    // 2. Respaldo secundario si la red bloquea Google (OCR.space)
-    try {
-      const parts = optimizedBase64.split(';base64,');
-      const raw = window.atob(parts[1] || parts[0]);
-      const uInt8Array = new Uint8Array(raw.length);
-      for (let i = 0; i < raw.length; ++i) uInt8Array[i] = raw.charCodeAt(i);
-      const blob = new Blob([uInt8Array], { type: 'image/jpeg' });
-
-      const formData = new FormData();
-      formData.append('file', blob, 'ticket.jpg');
-      formData.append('language', 'spa');
-      formData.append('scale', 'true');
-      formData.append('OCREngine', '2');
-
-      const ocrRes = await fetch('https://api.ocr.space/parse/image', {
-        method: 'POST',
-        headers: { 'apikey': 'K88513112888957' },
-        body: formData
-      });
-
-      if (ocrRes.ok) {
-        const ocrData = await ocrRes.json();
-        const parsedText = ocrData.ParsedResults?.[0]?.ParsedText || '';
-        if (parsedText) {
-          let invoiceNumber = '';
-          const folioMatch = parsedText.match(/(?:folio|factura|ticket|nota|vta|no\.?)[\s#:.]*([0-9a-zA-Z]{4,12})/i);
-          if (folioMatch) invoiceNumber = folioMatch[1].replace(/\D/g, '');
-          else {
-            const sixDigits = parsedText.match(/\b\d{6}\b/);
-            if (sixDigits) invoiceNumber = sixDigits[0];
-          }
-
-          let dateStr = undefined;
-          const dateMatch = parsedText.match(/(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})/);
-          if (dateMatch) {
-            const d = dateMatch[1].padStart(2, '0');
-            const m = dateMatch[2].padStart(2, '0');
-            let y = dateMatch[3];
-            if (y.length === 2) y = `20${y}`;
-            dateStr = `${y}-${m}-${d}`;
-          }
-
-          let customerName = '';
-          const clienteMatch = parsedText.match(/(?:cliente|nombre|cli)[\s:.]*([A-ZÁÉÍÓÚÑ\s]{3,30})/i);
-          if (clienteMatch) customerName = clienteMatch[1].trim().toUpperCase();
-
-          const items: { brand: Brand; price: number }[] = [];
-          for (const line of parsedText.split('\n')) {
-            const upperLine = line.toUpperCase();
-            let foundBrand: Brand | null = null;
-            for (const bKey of Object.values(Brand)) {
-              if (upperLine.includes(bKey)) {
-                foundBrand = bKey;
-                break;
-              }
-            }
-            if (foundBrand) {
-              const priceMatch = line.match(/\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)/);
-              const price = priceMatch ? parseFloat(priceMatch[1].replace(/,/g, '')) || 0 : 0;
-              items.push({ brand: foundBrand, price });
-            }
-          }
-
-          return {
-            invoiceNumber: invoiceNumber.slice(-6),
-            price: 0,
-            date: dateStr,
-            customerName: customerName || 'CLIENTE',
-            items: items.length > 0 ? items : [{ brand: Brand.OTRO, price: 0 }]
-          };
-        }
-      }
-    } catch (e) {}
-
+    // OCR Space desactivado. El escaneo funciona exclusivamente mediante Gemini.
     return null;
   } catch (err) {
-    console.warn("Error en escaneo de ticket:", err);
+    console.warn("Error en escaneo de ticket con Gemini:", err);
     return null;
   }
 };
