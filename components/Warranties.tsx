@@ -19,7 +19,8 @@ import {
     Loader2,
     ExternalLink,
     Trash2,
-    Settings
+    Settings,
+    Pencil
 } from 'lucide-react';
 import { Warranty, Brand, BrandConfig } from '../types';
 import { uploadImageToDriveScript } from '../services/googleAppsScriptService';
@@ -27,7 +28,8 @@ import { smartImageUpload } from '../services/storageService';
 
 interface WarrantiesProps {
     warranties: Warranty[];
-    onAddWarranty: (warranty: Omit<Warranty, 'id'>) => Promise<void>;
+    onAddWarranty: (warranty: Omit<Warranty, 'id'>) => Promise<Warranty | null>;
+    onUpdateWarranty?: (warranty: Warranty) => Promise<void>;
     onUpdateStatus: (id: string, status: Warranty['status']) => Promise<void>;
     onDeleteWarranty: (warranty: Warranty) => Promise<void>;
     brandConfigs: Record<Brand, BrandConfig>;
@@ -39,6 +41,7 @@ interface WarrantiesProps {
 const Warranties: React.FC<WarrantiesProps> = ({
     warranties,
     onAddWarranty,
+    onUpdateWarranty,
     onUpdateStatus,
     onDeleteWarranty,
     brandConfigs,
@@ -58,9 +61,29 @@ const Warranties: React.FC<WarrantiesProps> = ({
     });
 
     const [isAdding, setIsAdding] = useState(false);
+    const [warrantyToEdit, setWarrantyToEdit] = useState<Warranty | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [filterStatus, setFilterStatus] = useState<'all' | Warranty['status']>('all');
+
+    const startEditingWarranty = (warranty: Warranty) => {
+        setWarrantyToEdit(warranty);
+        setFormData({
+            receptionDate: warranty.receptionDate,
+            invoiceNumber: warranty.invoiceNumber,
+            possibleEntryDate: warranty.possibleEntryDate || '',
+            brand: warranty.brand,
+            model: warranty.model,
+            imei: warranty.imei || '',
+            issueDescription: warranty.issueDescription,
+            accessories: warranty.accessories || '',
+            physicalCondition: warranty.physicalCondition,
+            contactNumber: warranty.contactNumber,
+            ticketImage: warranty.ticketImage || ''
+        });
+        setTicketPreview(warranty.ticketImage || null);
+        setIsAdding(true);
+    };
 
     const [whatsappGroupLink, setWhatsappGroupLink] = useState(() => {
         try {
@@ -127,30 +150,25 @@ const Warranties: React.FC<WarrantiesProps> = ({
     };
 
     const handleSendToGroup = (warranty: Warranty) => {
-        const text = `*📋 REPORTE DE GARANTÍA - COPPEL*\n--------------------------------\n📅 Fecha: ${warranty.receptionDate}\n📱 Equipo: ${(safeBrandConfigs[warranty.brand]?.label || warranty.brand || '').toUpperCase()} ${warranty.model.toUpperCase()}\n🔢 IMEI: ${warranty.imei || 'N/A'}\n👤 Teléfono Cliente: ${warranty.contactNumber}\n🔧 Falla: ${warranty.issueDescription}\n🔌 Accesorios: ${warranty.accessories}\n🔍 Estado: ${warranty.physicalCondition}${warranty.ticketImage ? `\n📷 Evidencia: ${warranty.ticketImage}` : ''}`;
+        const text = formatMessage(templates.group, warranty) + (warranty.ticketImage ? `\n📷 Evidencia: ${warranty.ticketImage}` : '');
 
-        if (whatsappGroupLink) {
-            const cleanNum = whatsappGroupLink.replace(/\D/g, '');
-            if (whatsappGroupLink.includes('chat.whatsapp.com')) {
-                navigator.clipboard.writeText(text).catch(() => {});
-                alert("📋 ¡Reporte copiado al portapapeles!\n\nSe abrirá el grupo de WhatsApp. Solo pega el mensaje (Ctrl+V o mantén presionado y pega).");
-                window.open(whatsappGroupLink, '_blank');
-            } else if (cleanNum.length >= 10) {
-                // Fully automatic pre-filled message just like customer!
-                const targetNum = cleanNum.startsWith('52') ? cleanNum : `52${cleanNum}`;
-                const url = `https://wa.me/${targetNum}?text=${encodeURIComponent(text)}`;
-                window.open(url, '_blank');
-            } else {
-                const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
-                window.open(url, '_blank');
-            }
+        if (!whatsappGroupLink || whatsappGroupLink.trim() === '') {
+            alert("⚠️ No has configurado el enlace o número de tu grupo de WhatsApp.\n\nPor favor, haz clic en el botón verde '👥 Grupo WhatsApp' en la parte superior.");
+            setShowGroupConfigModal(true);
+            return;
+        }
+
+        navigator.clipboard.writeText(text).catch(() => {});
+
+        const cleanNum = whatsappGroupLink.replace(/\D/g, '');
+        if (whatsappGroupLink.includes('chat.whatsapp.com') || cleanNum.length < 10) {
+            alert("📋 ¡Reporte copiado al portapapeles!\n\nSe abrirá tu grupo de WhatsApp. Selecciona el grupo y pega el mensaje (Ctrl+V o Mantén presionado y Pegar).");
+            window.open(whatsappGroupLink.startsWith('http') ? whatsappGroupLink : `https://${whatsappGroupLink}`, '_blank');
         } else {
-            if (window.confirm("No has configurado un número o grupo de WhatsApp para reportes. ¿Deseas configurarlo ahora?")) {
-                setShowGroupConfigModal(true);
-            } else {
-                const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
-                window.open(url, '_blank');
-            }
+            const targetNum = cleanNum.startsWith('52') ? cleanNum : `52${cleanNum}`;
+            alert("📋 ¡Reporte copiado! Abriendo chat del supervisor...");
+            const url = `https://wa.me/${targetNum}?text=${encodeURIComponent(text)}`;
+            window.open(url, '_blank');
         }
     };
 
@@ -267,13 +285,29 @@ const Warranties: React.FC<WarrantiesProps> = ({
                 }
             }
 
-            await onAddWarranty({
-                ...formData,
-                ticketImage: finalImageUrl,
-                status: 'received'
-            });
+            if (warrantyToEdit && onUpdateWarranty) {
+                await onUpdateWarranty({
+                    ...warrantyToEdit,
+                    ...formData,
+                    ticketImage: finalImageUrl,
+                    status: warrantyToEdit.status
+                });
+                setIsAdding(false);
+                setWarrantyToEdit(null);
+            } else {
+                const created = await onAddWarranty({
+                    ...formData,
+                    ticketImage: finalImageUrl,
+                    status: 'received'
+                });
 
-            setIsAdding(false);
+                setIsAdding(false);
+                setWarrantyToEdit(null);
+
+                if (created && window.confirm("¿Deseas enviar el mensaje de WhatsApp de ingreso al cliente?")) {
+                    handleSendCustomerWhatsApp(created, 'received');
+                }
+            }
             setFormData({
                 receptionDate: new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0') + '-' + String(new Date().getDate()).padStart(2, '0'),
                 invoiceNumber: '',
@@ -297,40 +331,72 @@ const Warranties: React.FC<WarrantiesProps> = ({
         }
     };
 
-    const handleShareWhatsApp = (warranty: Warranty) => {
-        const text = `
-*📋 REPORTE DE GARANTÍA - TELCEL*
---------------------------------
-*📅 Fecha de Recepción:* ${warranty.receptionDate}
-*📱 Equipo:* ${(brandConfigs[warranty.brand]?.label || warranty.brand || 'Equipo').toUpperCase()} ${warranty.model.toUpperCase()}
-*🔢 IMEI:* ${warranty.imei || 'N/A'}
-*🔧 Falla Reportada:* ${warranty.issueDescription}
-*🔌 Accesorios:* ${warranty.accessories || 'Ninguno'}
-*🔍 Estado Físico:* ${warranty.physicalCondition}
-${warranty.ticketImage ? `*📷 Foto:* ${warranty.ticketImage}` : ''}
-`.trim();
+    const handleShareWhatsApp = async (warranty: Warranty) => {
+        const text = formatMessage(templates.group || defaultTemplates.group, warranty);
+        
+        if (whatsappGroupLink && whatsappGroupLink.includes('chat.whatsapp.com')) {
+            try {
+                await navigator.clipboard.writeText(text);
+                alert("📋 ¡Reporte copiado al portapapeles!\n\nSe abrirá el grupo de WhatsApp. Pega el mensaje (Ctrl+V o Pegar) para enviarlo.");
+            } catch (e) {
+                console.warn("Clipboard failed", e);
+            }
+            window.open(whatsappGroupLink, '_blank');
+            return;
+        }
 
-        const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+        let targetPhone = '';
+        if (whatsappGroupLink) {
+            const clean = whatsappGroupLink.replace(/\D/g, '');
+            if (clean.length >= 10) {
+                targetPhone = clean.startsWith('52') ? clean : `52${clean}`;
+            }
+        }
+
+        const url = targetPhone 
+            ? `https://wa.me/${targetPhone}?text=${encodeURIComponent(text)}`
+            : `https://wa.me/?text=${encodeURIComponent(text)}`;
         window.open(url, '_blank');
     };
 
-    const handleSendCustomerWhatsApp = (warranty: Warranty, type: 'received' | 'sent_to_provider' | 'in_store' | 'delivered' | 'general') => {
-        const phone = warranty.contactNumber ? `52${warranty.contactNumber.replace(/\D/g, '')}` : '';
+    const handleSendCustomerWhatsApp = async (warranty: Warranty, type: 'received' | 'sent_to_provider' | 'in_store' | 'delivered' | 'general') => {
+        let phone = '';
         let msg = '';
 
-        const brandName = (safeBrandConfigs[warranty.brand]?.label || warranty.brand || 'Equipo').toUpperCase();
-        const modelName = warranty.model.toUpperCase();
-
         if (type === 'received') {
-            msg = `¡Hola! Te saludamos de Coppel. 📱 Te confirmamos que hemos recibido tu equipo *${brandName} ${modelName}* (IMEI: ${warranty.imei || 'N/A'}) e ingresado formalmente a garantía el día *${warranty.receptionDate}*. Le daremos seguimiento a su proceso y te avisaremos cualquier novedad. ¡Gracias por tu confianza!`;
+            phone = warranty.contactNumber ? `52${warranty.contactNumber.replace(/\D/g, '')}` : '';
+            msg = formatMessage(templates.received, warranty);
         } else if (type === 'sent_to_provider') {
-            msg = `¡Hola! Te informamos desde Coppel que tu equipo *${brandName} ${modelName}* (IMEI: ${warranty.imei || 'N/A'}) ya ha sido *enviado a centro de servicio / proveedor* para su revisión en garantía. Continuamos al pendiente y te avisaremos en cuanto regrese a tienda.`;
+            phone = warranty.contactNumber ? `52${warranty.contactNumber.replace(/\D/g, '')}` : '';
+            msg = formatMessage(templates.sent_to_provider, warranty);
         } else if (type === 'in_store') {
-            msg = `¡Hola! Tenemos excelentes noticias de Coppel. 🎉 Tu equipo *${brandName} ${modelName}* ya se encuentra de regreso en nuestra sucursal y *listo para que pases a recogerlo*. ¡Te esperamos!`;
+            phone = warranty.contactNumber ? `52${warranty.contactNumber.replace(/\D/g, '')}` : '';
+            msg = formatMessage(templates.in_store, warranty);
         } else if (type === 'delivered') {
-            msg = `¡Hola! Te saludamos de Coppel. 🤝 Queremos confirmar la entrega de tu equipo *${brandName} ${modelName}* ya reparado/atendido en garantía. Agradecemos tu preferencia y estamos para servirte.`;
+            phone = warranty.contactNumber ? `52${warranty.contactNumber.replace(/\D/g, '')}` : '';
+            msg = formatMessage(templates.delivered, warranty);
         } else {
-            msg = `*📋 ESTADO DE GARANTÍA - COPPEL*\n--------------------------------\n📅 Recepción: ${warranty.receptionDate}\n📱 Equipo: ${brandName} ${modelName}\n🔢 IMEI: ${warranty.imei || 'N/A'}\n📌 Estado Actual: ${warranty.status === 'received' ? 'Recibido en Tienda' : warranty.status === 'sent_to_provider' ? 'Enviado a Proveedor' : warranty.status === 'in_store' ? 'Listo en Tienda' : 'Entregado'}\n🔧 Falla: ${warranty.issueDescription}`;
+            // General / Report -> Send to WhatsApp Group if configured!
+            msg = formatMessage(templates.group, warranty);
+
+            if (whatsappGroupLink && whatsappGroupLink.includes('chat.whatsapp.com')) {
+                try {
+                    await navigator.clipboard.writeText(msg);
+                    alert("📋 ¡Reporte copiado al portapapeles!\n\nSe abrirá el grupo de WhatsApp. Pega el mensaje (Ctrl+V o Pegar) para enviarlo.");
+                } catch (e) {}
+                window.open(whatsappGroupLink, '_blank');
+                return;
+            }
+
+            if (whatsappGroupLink) {
+                const clean = whatsappGroupLink.replace(/\D/g, '');
+                if (clean.length >= 10) {
+                    phone = clean.startsWith('52') ? clean : `52${clean}`;
+                }
+            }
+            if (!phone) {
+                phone = warranty.contactNumber ? `52${warranty.contactNumber.replace(/\D/g, '')}` : '';
+            }
         }
 
         const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
@@ -377,30 +443,41 @@ ${warranty.ticketImage ? `*📷 Foto:* ${warranty.ticketImage}` : ''}
         }
     };
 
-    const confirmStatusChange = (id: string, newStatus: Warranty['status']) => {
-        onUpdateStatus(id, newStatus);
+    const confirmStatusChange = (warranty: Warranty, newStatus: Warranty['status']) => {
+        const statusLabels: Record<string, string> = {
+            'sent_to_provider': 'Enviado a Proveedor',
+            'in_store': 'Recibido / Listo en Tienda',
+            'delivered': 'Entregado al Cliente'
+        };
+
+        if (window.confirm(`¿Deseas actualizar a "${statusLabels[newStatus] || newStatus}"?\n\n¿Deseas enviar el mensaje de WhatsApp al cliente?`)) {
+            onUpdateStatus(warranty.id, newStatus);
+            handleSendCustomerWhatsApp(warranty, newStatus);
+        } else if (window.confirm("¿Deseas actualizar el estado sin enviar mensaje de WhatsApp?")) {
+            onUpdateStatus(warranty.id, newStatus);
+        }
     };
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
             {/* Header & Controls */}
-            <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-                <div className="relative w-full md:w-96">
+            <div className="flex flex-col xl:flex-row gap-3 items-stretch xl:items-center justify-between">
+                <div className="relative w-full xl:w-80">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
                     <input
                         type="text"
                         placeholder="Buscar por modelo, IMEI o teléfono..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                        className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 outline-none shadow-sm"
                     />
                 </div>
 
-                <div className="flex items-center gap-2 w-full md:w-auto">
+                <div className="flex flex-wrap items-center gap-2 w-full xl:w-auto">
                     <select
                         value={filterStatus}
                         onChange={(e) => setFilterStatus(e.target.value as any)}
-                        className="flex-1 md:flex-none px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                        className="flex-1 sm:flex-none px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
                     >
                         <option value="all">Todos los estados</option>
                         <option value="received">Recibidos</option>
@@ -408,30 +485,34 @@ ${warranty.ticketImage ? `*📷 Foto:* ${warranty.ticketImage}` : ''}
                         <option value="in_store">En Tienda</option>
                         <option value="delivered">Entregados</option>
                     </select>
-                    <button
-                        onClick={() => { setTempGroupLink(whatsappGroupLink); setShowGroupConfigModal(true); }}
-                        className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-xl font-bold text-xs shadow-sm transition-all whitespace-nowrap"
-                        title="Configurar Grupo de WhatsApp"
-                    >
-                        👥 Grupo WhatsApp
-                    </button>
+
+                    {isAdmin && (
+                        <button
+                            onClick={() => { setTempGroupLink(whatsappGroupLink); setShowGroupConfigModal(true); }}
+                            className="flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2.5 rounded-xl font-bold text-xs shadow-sm transition-all whitespace-nowrap"
+                            title="Configurar Grupo de WhatsApp"
+                        >
+                            👥 <span className="hidden sm:inline">Grupo WA</span>
+                        </button>
+                    )}
+
                     {isAdmin && (
                         <button
                             onClick={() => { setTempTemplates(templates); setShowTemplateModal(true); }}
-                            className="flex items-center gap-1.5 bg-slate-700 hover:bg-slate-800 text-white px-3 py-2 rounded-xl font-bold text-xs shadow-sm transition-all whitespace-nowrap"
+                            className="flex items-center justify-center gap-1.5 bg-slate-700 hover:bg-slate-800 text-white px-3 py-2.5 rounded-xl font-bold text-xs shadow-sm transition-all whitespace-nowrap"
                             title="Personalizar Mensajes de WhatsApp (Admin)"
                         >
                             <Settings className="w-4 h-4" />
-                            <span className="hidden md:inline">Mensajes</span>
+                            <span className="hidden sm:inline">Mensajes</span>
                         </button>
                     )}
+
                     <button
                         onClick={() => setIsAdding(true)}
-                        className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-bold shadow-sm transition-all hover:shadow-md whitespace-nowrap"
+                        className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-sm transition-all hover:shadow-md whitespace-nowrap"
                     >
                         <Plus className="w-4 h-4" />
-                        <span className="hidden md:inline">Nueva Garantía</span>
-                        <span className="md:hidden">Nueva</span>
+                        <span>Nueva Garantía</span>
                     </button>
                 </div>
             </div>
@@ -444,12 +525,12 @@ ${warranty.ticketImage ? `*📷 Foto:* ${warranty.ticketImage}` : ''}
                             <div>
                                 <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                                     <ShieldAlert className="w-5 h-5 text-blue-600" />
-                                    Registrar Garantía
+                                    {warrantyToEdit ? 'Editar Garantía' : 'Registrar Garantía'}
                                 </h2>
                                 <p className="text-slate-500 text-sm">Todos los campos son obligatorios.</p>
                             </div>
                             {!isSubmitting && (
-                                <button onClick={() => setIsAdding(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 transition-colors">
+                                <button onClick={() => { setIsAdding(false); setWarrantyToEdit(null); }} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 transition-colors">
                                     <X className="w-5 h-5" />
                                 </button>
                             )}
@@ -639,7 +720,7 @@ ${warranty.ticketImage ? `*📷 Foto:* ${warranty.ticketImage}` : ''}
                             <div className="pt-4 flex gap-3 justify-end border-t border-slate-100 mt-4">
                                 <button
                                     type="button"
-                                    onClick={() => setIsAdding(false)}
+                                    onClick={() => { setIsAdding(false); setWarrantyToEdit(null); }}
                                     disabled={isSubmitting}
                                     className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium text-sm transition-colors disabled:opacity-50"
                                 >
@@ -651,7 +732,7 @@ ${warranty.ticketImage ? `*📷 Foto:* ${warranty.ticketImage}` : ''}
                                     className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-sm shadow-md transition-all hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                                 >
                                     {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldAlert className="w-4 h-4" />}
-                                    {isSubmitting ? "Guardando..." : "Registrar Equipo"}
+                                    {isSubmitting ? "Guardando..." : (warrantyToEdit ? "Actualizar Garantía" : "Registrar Equipo")}
                                 </button>
                             </div>
                         </form>
@@ -684,16 +765,28 @@ ${warranty.ticketImage ? `*📷 Foto:* ${warranty.ticketImage}` : ''}
                                 <div className="flex items-center gap-2">
                                     {getStatusBadge(warranty.status)}
                                     {isAdmin && (
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                onDeleteWarranty(warranty);
-                                            }}
-                                            className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                            title="Eliminar Garantía"
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
+                                        <div className="flex items-center gap-1">
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    startEditingWarranty(warranty);
+                                                }}
+                                                className="p-1.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+                                                title="Editar Garantía"
+                                            >
+                                                <Pencil className="w-4 h-4" />
+                                            </button>
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    onDeleteWarranty(warranty);
+                                                }}
+                                                className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                                title="Eliminar Garantía"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        </div>
                                     )}
                                 </div>
                             </div>
@@ -788,7 +881,7 @@ ${warranty.ticketImage ? `*📷 Foto:* ${warranty.ticketImage}` : ''}
                                 <div className="flex gap-2">
                                     {warranty.status === 'received' && (
                                         <button
-                                            onClick={() => confirmStatusChange(warranty.id, 'sent_to_provider')}
+                                            onClick={() => confirmStatusChange(warranty, 'sent_to_provider')}
                                             className="flex-1 bg-blue-50 hover:bg-blue-100 text-blue-700 py-2 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1"
                                         >
                                             <Truck className="w-3.5 h-3.5" /> Enviar
@@ -796,7 +889,7 @@ ${warranty.ticketImage ? `*📷 Foto:* ${warranty.ticketImage}` : ''}
                                     )}
                                     {warranty.status === 'sent_to_provider' && (
                                         <button
-                                            onClick={() => confirmStatusChange(warranty.id, 'in_store')}
+                                            onClick={() => confirmStatusChange(warranty, 'in_store')}
                                             className="flex-1 bg-purple-50 hover:bg-purple-100 text-purple-700 py-2 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1"
                                         >
                                             <PackageCheck className="w-3.5 h-3.5" /> Recibir
@@ -804,7 +897,7 @@ ${warranty.ticketImage ? `*📷 Foto:* ${warranty.ticketImage}` : ''}
                                     )}
                                     {warranty.status === 'in_store' && (
                                         <button
-                                            onClick={() => confirmStatusChange(warranty.id, 'delivered')}
+                                            onClick={() => confirmStatusChange(warranty, 'delivered')}
                                             className="flex-1 bg-green-50 hover:bg-green-100 text-green-700 py-2 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1"
                                         >
                                             <CheckCircle2 className="w-3.5 h-3.5" /> Entregar

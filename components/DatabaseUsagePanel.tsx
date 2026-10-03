@@ -89,9 +89,6 @@ export const DatabaseUsagePanel: React.FC<DatabaseUsagePanelProps> = ({
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                 Plan Spark Gratuito Activo
               </span>
-              <span className="bg-indigo-500/20 text-indigo-300 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider border border-indigo-500/30">
-                Google Cloud Firestore
-              </span>
             </div>
             <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight">
               Control de Uso y Cuotas de Base de Datos

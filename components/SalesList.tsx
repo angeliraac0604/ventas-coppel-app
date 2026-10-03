@@ -424,10 +424,7 @@ const SalesList: React.FC<SalesListProps> = ({
                     >
                       {BRAND_CONFIGS[sale.brand].label}
                     </span>
-                    {sale.invoiceNumber && 
-                     sale.invoiceNumber.length > 7 && 
-                     sale.category !== 'chip_express' && 
-                     sale.category !== 'portabilidad' && (
+                    {sale.invoiceNumber && (
                       <span className="text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded text-[10px] md:text-xs font-mono font-bold tracking-wide">
                         {sale.invoiceNumber}
                       </span>
@@ -521,17 +518,7 @@ const SalesList: React.FC<SalesListProps> = ({
 
                 {/* Right: Actions & Ticket */}
                 <div className="flex items-center justify-end w-full md:w-auto gap-3 pt-3 md:pt-0 border-t md:border-t-0 border-slate-50 mt-2 md:mt-0">
-                  {/* Google Cloud / Firebase direct link */}
-                  <a
-                    href={`https://console.firebase.google.com/project/ai-studio-ventascoppelapp-c2f97129-24ee-41a0-a21e-6ed774a589f5/firestore/data/~2Fsales~2F${sale.id}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 transition-colors border border-amber-200/50"
-                    title="Ver documento y fotos guardadas en Google Cloud / Firebase Console"
-                  >
-                    <Database className="w-3.5 h-3.5 text-amber-600" />
-                    Google Cloud
-                  </a>
+
 
                   {sale.ticketImage ? (
                     <button

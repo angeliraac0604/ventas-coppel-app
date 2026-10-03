@@ -510,6 +510,8 @@ create policy "Admins see all warranties" on public.warranties for select to aut
 create policy "Supervisors see all warranties" on public.warranties for select to authenticated using (public.is_supervisor());
 create policy "Sellers see store warranties" on public.warranties for select to authenticated using (store_id = public.get_user_store_id());
 create policy "Users insert store warranties" on public.warranties for insert to authenticated with check (store_id = public.get_user_store_id());
+create policy "Users update store warranties" on public.warranties for update to authenticated using (store_id = public.get_user_store_id() or public.is_admin() or public.is_supervisor());
+create policy "Users delete store warranties" on public.warranties for delete to authenticated using (store_id = public.get_user_store_id() or public.is_admin() or public.is_supervisor());
 `;
 
   const handleDeveloperLogin = () => {
@@ -892,6 +894,24 @@ create policy "Users insert store warranties" on public.warranties for insert to
             top_brand: topBrand as Brand,
             store_id: userProfile?.storeId
           };
+
+          if (!isSupabaseConfigured) {
+            const formattedClose: DailyClose = {
+              id: (newClose as any).id,
+              date: (newClose as any).date,
+              totalSales: (newClose as any).total_sales,
+              totalRevenue: (newClose as any).total_revenue,
+              closedAt: (newClose as any).closed_at,
+              topBrand: (newClose as any).top_brand,
+              storeId: (newClose as any).store_id
+            };
+            setClosings(prev => {
+              const exists = prev.some(c => c.date === formattedClose.date && c.storeId === formattedClose.storeId);
+              if (exists) return prev;
+              return [formattedClose, ...prev].sort((a, b) => b.date.localeCompare(a.date));
+            });
+            continue;
+          }
 
           const { error } = await supabase
             .from('daily_closings')
@@ -1722,11 +1742,10 @@ create policy "Users insert store warranties" on public.warranties for insert to
   };
 
   const handleDeleteClosing = async (id: string) => {
-    if (!session || userProfile?.role !== 'admin') {
-      alert("Solo el administrador puede eliminar cierres.");
+    if (!session && !userProfile) {
+      alert("Debes iniciar sesión para eliminar cierres.");
       return;
     }
-    if (!window.confirm("¿Estás seguro de que deseas eliminar este cierre? Esta acción no se puede deshacer.")) return;
     
     setIsLoading(true);
     try {
@@ -1790,7 +1809,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
         await setDoc(doc(db, 'warranties', warrantyId), cleanFirestoreData(addedWarranty), { merge: true });
         setWarranties(prev => [addedWarranty, ...prev]);
         alert("Garantía registrada correctamente.");
-        return;
+        return addedWarranty;
       }
 
       const dbPayload = {
@@ -1836,10 +1855,13 @@ create policy "Users insert store warranties" on public.warranties for insert to
         };
         setWarranties(prev => [insertedWarranty, ...prev]);
         alert("Garantía registrada correctamente.");
+        return insertedWarranty;
       }
+      return null;
     } catch (error: any) {
       console.error('Error adding warranty:', error);
       alert(`Error al registrar garantía: ${formatError(error)}`);
+      return null;
     } finally {
       setIsLoading(false);
     }
@@ -1871,8 +1893,7 @@ create policy "Users insert store warranties" on public.warranties for insert to
   };
 
   const handleDeleteWarranty = async (warranty: Warranty) => {
-    if (!window.confirm("¿Estás seguro de eliminar esta garantía PERMANENTEMENTE?")) return;
-    if (!session) return;
+    if (!userProfile && !session && !isDeveloperSession) return;
 
     // Optimistic remove
     setWarranties(prev => prev.filter(w => w.id !== warranty.id));
@@ -1897,6 +1918,51 @@ create policy "Users insert store warranties" on public.warranties for insert to
       console.error('Error deleting warranty:', error);
       alert(`Error al eliminar garantía: ${formatError(error)}`);
       fetchData(); // Rollback
+    }
+  };
+
+  const handleUpdateWarranty = async (updatedWarranty: Warranty) => {
+    if (!userProfile && !session && !isDeveloperSession) return;
+    setIsLoading(true);
+    try {
+      setWarranties(prev => prev.map(w => w.id === updatedWarranty.id ? updatedWarranty : w));
+
+      if (!isSupabaseConfigured) {
+        await setDoc(doc(db, 'warranties', updatedWarranty.id), cleanFirestoreData(updatedWarranty), { merge: true });
+        alert("Garantía actualizada correctamente.");
+        setIsLoading(false);
+        return;
+      }
+
+      const dbPayload = {
+        reception_date: updatedWarranty.receptionDate,
+        invoice_number: updatedWarranty.invoiceNumber,
+        brand: updatedWarranty.brand,
+        model: updatedWarranty.model,
+        imei: updatedWarranty.imei,
+        issue_description: updatedWarranty.issueDescription,
+        accessories: updatedWarranty.accessories,
+        physical_condition: updatedWarranty.physicalCondition,
+        contact_number: updatedWarranty.contactNumber,
+        ticket_image: updatedWarranty.ticketImage,
+        possible_entry_date: updatedWarranty.possibleEntryDate,
+        status: updatedWarranty.status,
+        store_id: updatedWarranty.storeId
+      };
+
+      const { error } = await supabase
+        .from('warranties')
+        .update(dbPayload)
+        .eq('id', updatedWarranty.id);
+
+      if (error) throw error;
+      alert("Garantía actualizada correctamente.");
+    } catch (error: any) {
+      console.error('Error updating warranty:', error);
+      alert(`Error al actualizar garantía: ${formatError(error)}`);
+      fetchData();
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -2033,6 +2099,23 @@ create policy "Users insert store warranties" on public.warranties for insert to
     );
   }
 
+  const userStore = stores.find(s => s.id === userProfile?.storeId);
+  const isCardenas1053 = userStore && (
+    userStore.name.toLowerCase().includes('cárdenas') ||
+    userStore.name.toLowerCase().includes('cardenas') ||
+    userStore.name.includes('1053') ||
+    userStore.id.toLowerCase().includes('cardenas') ||
+    userStore.id.includes('1053')
+  );
+  const canAccessWarranties = 
+    effectiveRole === 'admin' || 
+    effectiveRole === 'developer' || 
+    isCardenas1053;
+  const isWarrantyAdmin = 
+    effectiveRole === 'admin' || 
+    effectiveRole === 'developer' || 
+    isCardenas1053;
+
   // --- MAIN APP RENDER ---
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col md:flex-row font-sans">
@@ -2080,15 +2163,15 @@ create policy "Users insert store warranties" on public.warranties for insert to
               )}
               <NavButton view="dashboard" icon={BarChart3} label="Estadísticas" />
               <NavButton view="closings" icon={CalendarCheck} label="Cierre de Venta" />
+              {canAccessWarranties && (
+                <NavButton view="warranties" icon={ShieldAlert} label="Garantías" />
+              )}
             </>
           )}
           
           {(effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'developer') && (
             <>
               <div className="text-[10px] font-bold text-slate-500 px-4 py-2 mt-4 uppercase tracking-wider">Administración</div>
-              {(effectiveRole === 'admin' || effectiveRole === 'developer') && (
-                <NavButton view="warranties" icon={ShieldAlert} label="Garantías" />
-              )}
               <NavButton 
                 view="attendance-report" 
                 icon={CalendarCheck} 
@@ -2435,14 +2518,15 @@ create policy "Users insert store warranties" on public.warranties for insert to
                 userProfile={userProfile}
               />
             )}
-            {currentView === 'warranties' && effectiveRole !== 'supervisor' && (
+            {currentView === 'warranties' && canAccessWarranties && (
               <Warranties
                 warranties={filteredWarranties}
                 onAddWarranty={handleAddWarranty}
+                onUpdateWarranty={handleUpdateWarranty}
                 onUpdateStatus={handleUpdateWarrantyStatus}
                 onDeleteWarranty={handleDeleteWarranty}
                 brandConfigs={BRAND_CONFIGS}
-                isAdmin={effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'developer'}
+                isAdmin={isWarrantyAdmin}
                 userProfile={userProfile}
                 stores={stores}
               />
