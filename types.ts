@@ -67,6 +67,32 @@ export interface DailyClose {
 
 export type UserRole = 'admin' | 'supervisor' | 'seller' | 'viewer' | 'developer';
 
+export type StoreTier = 'A' | 'B';
+
+export interface CommissionTier {
+  id: number;
+  minPrice: number;
+  maxPrice: number;
+  commissionCoppelA: number;
+  commissionCoppelCanadaB: number;
+  rangeLabel: string;
+}
+
+export interface SellerCommissionSummary {
+  sellerId: string;
+  sellerName: string;
+  sellerEmail?: string;
+  storeId?: string;
+  totalUnits: number;
+  totalRevenue: number;
+  totalCommission: number;
+  tier1Count: number; // $1 - $2,500
+  tier2Count: number; // $2,500.01 - $7,000
+  tier3Count: number; // $7,000.01 - $16,500
+  tier4Count: number; // $16,500.01+
+}
+
+
 export interface Store {
   id: string;
   name: string;

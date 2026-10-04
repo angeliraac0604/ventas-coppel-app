@@ -5,7 +5,7 @@ import { Target, Edit2, Check, TrendingUp, Trophy, PartyPopper, DollarSign, Smar
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { Sale, Brand, DailyClose } from '../types';
-import { BRAND_CONFIGS } from '../constants';
+import { BRAND_CONFIGS, calculateCommissionForPrice, COMMISSION_TIERS, getCommissionTierInfo } from '../constants';
 import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
 import { db } from '../services/firebase';
 import { collection, doc, getDocs, setDoc, onSnapshot } from 'firebase/firestore';
@@ -221,7 +221,13 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
     kitTodayCount,
     chip0TodayCount,
     portaTodayCount,
-    expressTodayCount
+    expressTodayCount,
+    monthCommission,
+    todayCommission,
+    avgCommissionPerUnit,
+    phoneUnitsCount,
+    phoneTodayCount,
+    tierBreakdown
   } = React.useMemo(() => {
     // 🟠 REAL-TIME MERGE: Combine state from DB fetch with the realtime 'sales' prop
     const combinedSales = Array.isArray(monthlySales) ? [...monthlySales] : [];
@@ -322,6 +328,22 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
       };
     });
 
+    // Comisiones Oficiales Telcel Coppel Tienda A (Precios con IVA incluido)
+    const phoneMonthSales = monthSales.filter(s => (s.category === 'kit' || s.category === 'chip_0' || !s.category) && Number(s.price) > 0);
+    const mCommission = phoneMonthSales.reduce((sum, s) => sum + calculateCommissionForPrice(Number(s.price), 'A'), 0);
+    
+    const phoneTodaySales = todaySales.filter(s => (s.category === 'kit' || s.category === 'chip_0' || !s.category) && Number(s.price) > 0);
+    const tCommission = phoneTodaySales.reduce((sum, s) => sum + calculateCommissionForPrice(Number(s.price), 'A'), 0);
+    
+    const avgCommission = phoneMonthSales.length > 0 ? mCommission / phoneMonthSales.length : 0;
+
+    const tierBreakdown = {
+      1: phoneMonthSales.filter(s => (getCommissionTierInfo(Number(s.price))?.id === 1)).length,
+      2: phoneMonthSales.filter(s => (getCommissionTierInfo(Number(s.price))?.id === 2)).length,
+      3: phoneMonthSales.filter(s => (getCommissionTierInfo(Number(s.price))?.id === 3)).length,
+      4: phoneMonthSales.filter(s => (getCommissionTierInfo(Number(s.price))?.id === 4)).length,
+    };
+
     return {
       totalRevenue: totalRev,
       currentMonthSales: monthSales,
@@ -354,7 +376,15 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
       kitTodayCount: kitTodaySales.length,
       chip0TodayCount: todaySales.filter(s => s.category === 'chip_0').length,
       portaTodayCount: todaySales.filter(s => s.category === 'portabilidad').length,
-      expressTodayCount: todaySales.filter(s => s.category === 'chip_express').length
+      expressTodayCount: todaySales.filter(s => s.category === 'chip_express').length,
+
+      // Comisiones Coppel A
+      monthCommission: mCommission,
+      todayCommission: tCommission,
+      avgCommissionPerUnit: avgCommission,
+      phoneUnitsCount: phoneMonthSales.length,
+      phoneTodayCount: phoneTodaySales.length,
+      tierBreakdown
     };
   }, [monthlySales, monthlyGoal, devicesGoal, chip0Goal, portaGoal, expressGoal, sales, selectedMonth, storeId]);
 
@@ -1006,6 +1036,83 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
         )}
       </div>
 
+      {/* 💰 TARJETA DE RENDIMIENTO DE COMISIONES OFICIALES (EXCLUSIVO ADMINISTRADOR / DESARROLLADOR) */}
+      {(role === 'admin' || role === 'developer') && (
+        <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-amber-950 rounded-3xl p-6 md:p-8 shadow-2xl border border-amber-500/30 relative overflow-hidden text-white">
+          <div className="absolute -right-10 -top-10 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
+          <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+            <div className="flex items-start gap-4">
+              <div className="p-3.5 bg-gradient-to-br from-amber-400 to-yellow-500 text-slate-950 rounded-2xl shadow-lg shadow-amber-500/20 shrink-0 mt-1">
+                <DollarSign className="w-8 h-8" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-full">
+                    Tabulador Oficial Coppel Tienda A
+                  </span>
+                  <span className="text-[10px] font-bold text-slate-400">Precios con IVA incluido (Panel Exclusivo Admin)</span>
+                </div>
+                <h3 className="text-xl md:text-2xl font-black text-white">Rendimiento de Comisiones</h3>
+                <p className="text-xs text-slate-300 max-w-xl font-medium">
+                  Cálculo en tiempo real de las comisiones generadas por ventas de celulares en base al valor del equipo con IVA.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full lg:w-auto">
+              {/* Mes */}
+              <div className="bg-slate-800/80 backdrop-blur border border-slate-700/60 p-4 rounded-2xl">
+                <p className="text-[10px] font-black uppercase text-amber-400 tracking-wider">Comisiones del Mes</p>
+                <p className="text-2xl font-black text-white mt-1">
+                  ${monthCommission.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+                <p className="text-[10px] text-slate-400 font-semibold mt-0.5">{phoneUnitsCount} celulares en {selectedMonth}</p>
+              </div>
+
+              {/* Hoy */}
+              <div className="bg-slate-800/80 backdrop-blur border border-slate-700/60 p-4 rounded-2xl">
+                <p className="text-[10px] font-black uppercase text-emerald-400 tracking-wider">Comisiones de Hoy</p>
+                <p className="text-2xl font-black text-white mt-1">
+                  ${todayCommission.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+                <p className="text-[10px] text-slate-400 font-semibold mt-0.5">{phoneTodayCount} celulares hoy</p>
+              </div>
+
+              {/* Promedio */}
+              <div className="bg-slate-800/80 backdrop-blur border border-slate-700/60 p-4 rounded-2xl col-span-2 sm:col-span-1">
+                <p className="text-[10px] font-black uppercase text-blue-400 tracking-wider">Promedio por Celular</p>
+                <p className="text-2xl font-black text-white mt-1">
+                  ${avgCommissionPerUnit.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+                <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Por equipo vendido</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Desglose por rango del tabulador oficial */}
+          <div className="mt-6 pt-6 border-t border-slate-800 grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {COMMISSION_TIERS.map((tier) => {
+              const count = tierBreakdown ? (tierBreakdown as any)[tier.id] || 0 : 0;
+              const subtotal = count * tier.commissionCoppelA;
+              return (
+                <div key={tier.id} className="bg-slate-950/60 border border-slate-800/80 p-3.5 rounded-2xl flex flex-col justify-between hover:border-amber-500/30 transition-colors">
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-[10px] font-bold text-slate-400">{tier.rangeLabel}</span>
+                    <span className="text-[10px] font-black text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                      ${tier.commissionCoppelA}
+                    </span>
+                  </div>
+                  <div className="mt-2.5 flex items-baseline justify-between">
+                    <span className="text-xl font-black text-white">{count} <span className="text-xs font-normal text-slate-400">eq.</span></span>
+                    <span className="text-xs font-bold text-amber-400">${subtotal.toLocaleString('es-MX')}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* NO GOALS PLACEHOLDER - Only for stores with no goals at all */}
       {role !== 'admin' && monthlyGoal <= 0 && devicesGoal <= 0 && (
         <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl p-12 text-center">
@@ -1215,7 +1322,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
 
         {/* 1. TODAY'S Brand Distribution (Moved to Top) */}
-        {role === 'admin' && (
+        {(role === 'admin' || role === 'developer' || role === 'supervisor') && (
           <div id="brand-distribution-today-card" className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 min-h-[350px] flex flex-col xl:col-span-2 relative overflow-hidden">
             <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
               <PartyPopper className="w-32 h-32 text-orange-500 transform rotate-12" />
@@ -1307,7 +1414,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
         )}
 
         {/* 2. Brand Distribution (Monthly) */}
-        {role === 'admin' && (
+        {(role === 'admin' || role === 'developer' || role === 'supervisor') && (
           <div id="brand-distribution-monthly-card" className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 min-h-[350px] flex flex-col">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-base sm:text-lg font-bold text-slate-800">Marcas (Mes Actual)</h3>
@@ -1373,7 +1480,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
         )}
 
         {/* 2. Brand Revenue (Global Amount) */}
-        {role === 'admin' && (
+        {(role === 'admin' || role === 'developer' || role === 'supervisor') && (
           <div id="brand-revenue-monthly-card" className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 min-h-[350px] flex flex-col">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-base sm:text-lg font-bold text-slate-800">Ingresos por Marca</h3>

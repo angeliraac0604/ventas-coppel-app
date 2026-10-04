@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Smartphone, LayoutList, BarChart3, Menu, X, CalendarCheck, Plus, LogOut, User as UserIcon, ChevronRight, Loader2, RefreshCcw, Database, AlertTriangle, Copy, Check, Shield, ShieldAlert, Wand2, Clock, Building, TrendingUp, Bell, CheckCircle } from 'lucide-react';
+import { Smartphone, LayoutList, BarChart3, Menu, X, CalendarCheck, Plus, LogOut, User as UserIcon, ChevronRight, Loader2, RefreshCcw, Database, AlertTriangle, Copy, Check, Shield, ShieldAlert, Wand2, Clock, Building, TrendingUp, Bell, CheckCircle, DollarSign } from 'lucide-react';
 import SalesForm from './components/SalesForm';
 import SalesList from './components/SalesList';
 import Dashboard from './components/Dashboard';
@@ -12,6 +12,7 @@ import RequestsPanel from './components/RequestsPanel';
 import AttendanceReport from './components/AttendanceReport';
 import AuthForm from './components/AuthForm';
 import CompleteProfile from './components/CompleteProfile';
+import { CommissionsPanel } from './components/CommissionsPanel';
 import { Sale, DailyClose, Brand, UserProfile, Warranty, Store, UserRole } from './types';
 import { BRAND_CONFIGS } from './constants';
 import posthog from 'posthog-js';
@@ -65,7 +66,7 @@ const App: React.FC = () => {
   });
 
   // App State
-  const [currentView, setCurrentView] = useState<'form' | 'list' | 'dashboard' | 'closings' | 'warranties' | 'attendance' | 'attendance-report' | 'admin' | 'supervision' | 'requests' | 'backup-migration' | 'database-usage'>(() => {
+  const [currentView, setCurrentView] = useState<'form' | 'list' | 'dashboard' | 'closings' | 'warranties' | 'attendance' | 'attendance-report' | 'admin' | 'supervision' | 'requests' | 'backup-migration' | 'database-usage' | 'commissions'>(() => {
     try {
       return (localStorage.getItem('app_current_view') as any) || 'list';
     } catch {
@@ -2475,6 +2476,7 @@ create policy "Users delete store warranties" on public.warranties for delete to
                 <>
                   <NavButton view="admin" icon={Shield} label="Administración" />
                   <NavButton view="requests" icon={Bell} label="Solicitudes" badge={pendingRequestsCount > 0 ? pendingRequestsCount : undefined} />
+                  <NavButton view="commissions" icon={DollarSign} label="Comisiones" />
                 </>
               )}
               <NavButton view="supervision" icon={TrendingUp} label="Rendimiento" />
@@ -2534,6 +2536,7 @@ create policy "Users delete store warranties" on public.warranties for delete to
               <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-3">
                 {currentView === 'list' && 'Historial de Ventas'}
                 {currentView === 'form' && 'Nuevo Registro'}
+                {currentView === 'commissions' && 'Comisiones y Rendimiento'}
                 {currentView === 'dashboard' && 'Panel de Rendimiento'}
                 {currentView === 'closings' && 'Cierre Diario'}
                 {currentView === 'warranties' && 'Gestión de Garantías'}
@@ -2547,6 +2550,7 @@ create policy "Users delete store warranties" on public.warranties for delete to
               <p className="text-slate-500 mt-1 font-medium text-xs md:text-sm truncate">
                 {currentView === 'list' && 'Gestiona y consulta el historial de transacciones en la nube.'}
                 {currentView === 'form' && 'Completa los detalles de la venta del dispositivo.'}
+                {currentView === 'commissions' && 'Cálculo y tabulador oficial de comisiones Telcel Coppel Tienda A con IVA incluido.'}
                 {currentView === 'dashboard' && 'Visualiza métricas clave y cumplimiento de metas.'}
                 {currentView === 'closings' && 'Realiza cortes y revisa ingresos acumulados.'}
                 {currentView === 'warranties' && 'Administra equipos enviados a taller y su estado.'}
@@ -2868,6 +2872,15 @@ create policy "Users delete store warranties" on public.warranties for delete to
                 stores={stores}
                 userProfile={userProfile}
                 onRefreshStores={fetchData}
+              />
+            )}
+            {currentView === 'commissions' && (effectiveRole === 'admin' || effectiveRole === 'developer') && (
+              <CommissionsPanel 
+                sales={sales}
+                stores={stores}
+                userProfile={userProfile}
+                selectedStoreId={selectedStoreId}
+                onSelectStore={(storeId) => setSelectedStoreId(storeId)}
               />
             )}
             {currentView === 'supervision' && (effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'developer') && (

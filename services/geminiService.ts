@@ -97,24 +97,56 @@ export const analyzeTicketImage = async (
     const base64Data = optimizedBase64.split(',')[1] || optimizedBase64;
     
     const now = new Date();
-    const currentDateContext = `Hoy es ${now.toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })}.`;
+    const currentDateContext = `Fecha de referencia actual: ${now.toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })}.`;
     const categoryContext = category === 'chip_0' 
-      ? 'ESTA ES UNA VENTA DE CHIP 0 (EQUIPO LIBRE). Extrae el precio real del EQUIPO/TELÉFONO principal.' 
-      : 'ESTA ES UNA VENTA DE EQUIPO KIT. Incluye solo equipos móviles de marcas reconocidas.';
+      ? 'MODALIDAD: VENTA DE CHIP 0 (EQUIPO LIBRE). Extrae el precio real del teléfono móvil principal aplicando descuentos si los tiene.' 
+      : 'MODALIDAD: VENTA DE EQUIPO KIT. Extrae únicamente los teléfonos celulares.';
 
-    const prompt = `Analiza este ticket de compra de la tienda ${chainName} (${storeName}). ${currentDateContext} ${categoryContext}
+    const prompt = `Analiza este ticket de compra impreso de la tienda ${chainName} (${storeName}). ${currentDateContext} ${categoryContext}
     
-    REGLAS ESTRICTAS DE FILTRADO Y ENFOQUE:
-    1. ENFOQUE EXCLUSIVO EN EQUIPOS MÓVILES (TELÉFONOS): Solo extrae teléfonos celulares/smartphones de marcas reconocidas (SAMSUNG, APPLE, OPPO, ZTE, MOTOROLA, REALME, VIVO, XIAOMI, HONOR, HUAWEI, etc.).
-    2. IGNORAR ACCESORIOS: Ignora seguros, micas, fundas, cargadores, servicios, etc.
+    REGLAS ESTRICTAS DE EXTRACCIÓN Y ENFOQUE:
+    
+    1. ENFOQUE EXCLUSIVO EN EL TICKET DE PAPEL:
+       - Lee ÚNICAMENTE el texto impreso sobre el papel del ticket de Coppel.
+       - IGNORA POR COMPLETO cualquier objeto del fondo, mesa, mostrador, teléfonos físicos alrededor, logotipos ajenos o publicidad externa. NO agregues marcas que no estén impresas textualmente en el cuerpo de artículos del ticket.
 
-    Extrae los siguientes datos en formato JSON estricto:
-    1. invoiceNumber: Folio o factura (sin espacios).
-    2. date: Fecha de transacción (en formato YYYY-MM-DD si es legible).
-    3. customerName: Nombre del cliente en MAYÚSCULAS.
-    4. items: Lista de equipos vendidos (brand y price).
-    
-    RESPONDE ÚNICAMENTE CON EL JSON VÁLIDO SIN TEXTO ADICIONAL.`;
+    2. FOLIO / FACTURA (ÚLTIMOS 6 DÍGITOS):
+       - Localiza "Factura No." o el código largo bajo el código de barras (ejemplo: "Factura No. 1053 853916" o "105301102637853916").
+       - Extrae EXCLUSIVAMENTE los ÚLTIMOS 6 DÍGITOS numéricos (en el ejemplo: "853916").
+
+    3. NOMBRE DEL CLIENTE:
+       - Extrae el nombre completo del cliente que aparece en "Nombre: ..." (ejemplo: "ABRAHAN REFUGIO JIMENEZ").
+       - Devuélvelo en MAYÚSCULAS sin la palabra "Nombre:".
+
+    4. FECHA DE LA VENTA:
+       - Extrae la fecha impresa en "Fecha: ..." (ejemplo: "1-OCT-26" -> "2026-10-01").
+
+    5. CÁLCULO EXACTO DEL PRECIO DEL CELULAR CON DESCUENTO:
+       - Identifica únicamente los teléfonos celulares/smartphones en los renglones de descripción (ejemplos: "TELCEL OPPO A6T", "MOTO G24", "SAMSUNG A15", "REDMI NOTE 13", "HONOR X6B", "ZTE BLADE", etc.).
+       - Observa el precio inicial impreso en la columna Precio a la derecha (ejemplo: $6,999.00).
+       - Revisa si inmediatamente debajo de la descripción del celular aparece un renglón de "DESCTO PROMOCION", "DSCTO PROMOCION" o descuento con monto negativo (ejemplo: "-1,500.00").
+       - SI TIENE DESCUENTO, CALCULA EL PRECIO FINAL RESTANDO EL DESCUENTO:
+         Ejemplo: Precio $6,999.00 menos Descuento -$1,500.00 = PRECIO FINAL $5,499.00.
+       - Si no tiene renglón de descuento, el precio es el valor normal de la columna Precio.
+
+    6. IGNORAR CHIPS, ACCESORIOS Y SERVICIOS:
+       - IGNORA completamente renglones de "CHIP MULTI TELCEL", "CHIP 4G / 5G", "DESCUENTO CHIP", "CLUB DE PROTECCION", "GARANTIA", "SEGUROS", "MICAS", "FUNDAS", "RECARGAS". NO los agregues a la lista de items.
+
+    RESPONDE ÚNICAMENTE CON UN OBJETO JSON VÁLIDO CON ESTA ESTRUCTURA:
+    {
+      "invoiceNumber": "853916",
+      "date": "2026-10-01",
+      "customerName": "ABRAHAN REFUGIO JIMENEZ",
+      "items": [
+        {
+          "model": "OPPO A6T",
+          "brand": "OPPO",
+          "originalPrice": 6999,
+          "discount": 1500,
+          "price": 5499
+        }
+      ]
+    }`;
 
     const candidateModels = ["gemini-3.8-flash", "gemini-2.5-flash"];
     let text: string | null = null;
@@ -197,28 +229,85 @@ export const analyzeTicketImage = async (
       const data = JSON.parse(jsonStr);
       const cleanDate = parseSpanishDate(data.date);
       let cleanName = (data.customerName || '').trim().replace(/^(nombre|cliente|nom|cli)\s*[:.]?\s*/i, '');
-      let cleanInvoice = (data.invoiceNumber || '').replace(/\s/g, '');
+      
+      // Extraer los últimos 6 dígitos numéricos del folio
+      let rawInvoice = (data.invoiceNumber || '').toString().trim();
+      const onlyDigits = rawInvoice.replace(/\D/g, '');
+      const cleanInvoice = onlyDigits.length >= 6 
+        ? onlyDigits.slice(-6) 
+        : rawInvoice.replace(/\s/g, '').slice(-6);
 
-      return {
-        invoiceNumber: cleanInvoice.slice(-6),
-        price: 0,
-        date: cleanDate,
-        customerName: cleanName.toUpperCase() || 'CLIENTE',
-        items: data.items?.map((item: any) => {
-          const brandText = item.brand?.toUpperCase() || '';
+      // Mapear marcas reconocidas con normalización estricta y alias de modelos
+      const processedItems = (data.items || [])
+        .filter((item: any) => {
+          const nameCheck = `${item.model || ''} ${item.brand || ''}`.toUpperCase();
+          // Descartar chips o servicios que se hayan colado
+          if (nameCheck.includes('CHIP') || nameCheck.includes('SEGURO') || nameCheck.includes('PROTECCION')) {
+            return false;
+          }
+          return true;
+        })
+        .map((item: any) => {
+          const brandText = `${item.brand || ''} ${item.model || ''}`.toUpperCase();
           let b = Brand.OTRO;
-          for (const brandKey of Object.values(Brand)) {
-            if (brandText.includes(brandKey)) {
-              b = brandKey;
-              break;
+
+          // Reglas de coincidencia directa y por alias/submarcas comunes en Coppel
+          if (brandText.includes('OPPO')) {
+            b = Brand.OPPO;
+          } else if (brandText.includes('MOTOROLA') || brandText.includes('MOTO')) {
+            b = Brand.MOTOROLA;
+          } else if (brandText.includes('SAMSUNG') || brandText.includes('GALAXY')) {
+            b = Brand.SAMSUNG;
+          } else if (brandText.includes('XIAOMI') || brandText.includes('REDMI') || brandText.includes('POCO')) {
+            b = Brand.XIAOMI;
+          } else if (brandText.includes('APPLE') || brandText.includes('IPHONE')) {
+            b = Brand.APPLE;
+          } else if (brandText.includes('HONOR')) {
+            b = Brand.HONOR;
+          } else if (brandText.includes('REALME')) {
+            b = Brand.REALME;
+          } else if (brandText.includes('VIVO')) {
+            b = Brand.VIVO;
+          } else if (brandText.includes('ZTE') || brandText.includes('BLADE') || brandText.includes('AXON')) {
+            b = Brand.ZTE;
+          } else if (brandText.includes('HUAWEI') || brandText.includes('NOVA')) {
+            b = Brand.HUAWEI;
+          } else if (brandText.includes('NUBIA')) {
+            b = Brand.NUBIA;
+          } else if (brandText.includes('SENWA')) {
+            b = Brand.SENWA;
+          } else {
+            for (const brandKey of Object.values(Brand)) {
+              if (brandText.includes(brandKey)) {
+                b = brandKey;
+                break;
+              }
             }
           }
-          return { brand: b, price: Number(item.price) || 0 };
-        }) || []
+          
+          // Calcular precio final exacto: si viene price ya calculado o con originalPrice - discount
+          let finalPrice = Number(item.price) || 0;
+          if (!finalPrice && item.originalPrice) {
+            const orig = Number(item.originalPrice) || 0;
+            const disc = Math.abs(Number(item.discount) || 0);
+            finalPrice = orig - disc;
+          }
+
+          return { 
+            brand: b, 
+            price: finalPrice > 0 ? finalPrice : (Number(item.originalPrice) || 0) 
+          };
+        });
+
+      return {
+        invoiceNumber: cleanInvoice,
+        price: processedItems[0]?.price || 0,
+        date: cleanDate,
+        customerName: cleanName.toUpperCase() || 'CLIENTE',
+        items: processedItems
       };
     }
 
-    // OCR Space desactivado. El escaneo funciona exclusivamente mediante Gemini.
     return null;
   } catch (err) {
     console.warn("Error en escaneo de ticket con Gemini:", err);

@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell, Legend } from 'recharts';
-import { Building, Target, TrendingUp, Users, Smartphone, DollarSign, Calendar, Filter, ChevronRight, Award, AlertCircle, Loader2, Save, ShoppingBag, Edit2, Trophy, Cpu } from 'lucide-react';
+import { Building, Target, TrendingUp, Users, Smartphone, DollarSign, Calendar, Filter, ChevronRight, Award, AlertCircle, Loader2, Save, ShoppingBag, Edit2, Trophy, Cpu, Coins, Sparkles } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
 import { db } from '../services/firebase';
 import { collection, doc, getDocs, setDoc } from 'firebase/firestore';
 import { cleanFirestoreData } from './BackupMigration';
 import { Store, UserProfile, Brand } from '../types';
-import { BRAND_CONFIGS } from '../constants';
+import { BRAND_CONFIGS, calculateCommissionForPrice } from '../constants';
 
 interface PerformanceData {
   sellerName: string;
@@ -199,51 +199,141 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ sales: propSales, s
   };
 
   // Processing Data
-  const currentMonthSales = sales.filter(s => s.date.startsWith(targetMonth));
-  const filteredSales = selectedStoreId === 'all' ? currentMonthSales : currentMonthSales.filter(s => s.store_id === selectedStoreId);
+  const currentMonthSales = (sales || []).filter(s => s.date && s.date.startsWith(targetMonth));
+  const filteredSales = selectedStoreId === 'all' 
+    ? currentMonthSales 
+    : currentMonthSales.filter(s => {
+        const sStore = s.storeId || s.store_id;
+        return sStore === selectedStoreId;
+      });
   
   const kitOnlySales = filteredSales.filter(s => s.category === 'kit' || !s.category);
   const totalRevenue = kitOnlySales.reduce((acc, curr) => acc + (Number(curr.price) || 0), 0);
   const totalNetRevenue = totalRevenue / 1.16;
+  const totalCommissionMonth = kitOnlySales.reduce((acc, curr) => acc + calculateCommissionForPrice(Number(curr.price) || 0, 'A'), 0);
   
   const totalKits = kitOnlySales.length;
   const totalChip0 = filteredSales.filter(s => s.category === 'chip_0').length;
-  const totalPorta = filteredSales.filter(s => s.category === 'portability').length;
+  const totalPorta = filteredSales.filter(s => s.category === 'portability' || s.category === 'portabilidad').length;
   const totalExpress = filteredSales.filter(s => s.category === 'chip_express').length;
   const totalDevices = totalKits;
 
   const now = new Date();
-  const todayStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const todaySales = filteredSales.filter(s => s.date === todayStr);
   const todayKitSales = todaySales.filter(s => s.category === 'kit' || !s.category);
   const todayRevenue = todayKitSales.reduce((acc, curr) => acc + (Number(curr.price) || 0), 0);
+  const todayCommission = todayKitSales.reduce((acc, curr) => acc + calculateCommissionForPrice(Number(curr.price) || 0, 'A'), 0);
   
   const todayKits = todayKitSales.length;
   const todayChip0 = todaySales.filter(s => s.category === 'chip_0').length;
-  const todayPorta = todaySales.filter(s => s.category === 'portability').length;
+  const todayPorta = todaySales.filter(s => s.category === 'portability' || s.category === 'portabilidad').length;
   const todayExpress = todaySales.filter(s => s.category === 'chip_express').length;
   const todayCount = todayKits;
   const todayNetRevenue = todayRevenue / 1.16;
 
-  // Seller Performance (Including Admin Angel Irak Alvarado Dávila)
+  // Seller Performance (Top Hoy y Top Mes)
   const calculatePerformance = (salesArray: any[]) => {
-    return profiles
-      .filter(p => (selectedStoreId === 'all' || p.store_id === selectedStoreId) && (p.role === 'seller' || p.role === 'admin'))
-      .map(p => {
-        const sellerSales = salesArray.filter(s => s.created_by === p.id);
-        const sellerKitSales = sellerSales.filter(s => s.category === 'kit' || !s.category);
-        return {
-          id: p.id,
-          sellerName: p.full_name || p.email?.split('@')[0] || 'Vendedor',
-          count: sellerKitSales.length,
-          chip0Count: sellerSales.filter(s => s.category === 'chip_0').length,
-          portaCount: sellerSales.filter(s => s.category === 'portability').length,
-          expressCount: sellerSales.filter(s => s.category === 'chip_express').length,
-          revenue: sellerKitSales.reduce((acc, curr) => acc + (Number(curr.price) || 0), 0)
+    const sellerMap = new Map<string, {
+      id: string;
+      sellerName: string;
+      email?: string;
+      storeId?: string;
+      count: number;
+      chip0Count: number;
+      portaCount: number;
+      expressCount: number;
+      revenue: number;
+      commission: number;
+    }>();
+
+    // 1. Pre-cargar perfiles conocidos
+    profiles.forEach(p => {
+      const pStore = p.storeId || p.store_id;
+      const matchesStore = selectedStoreId === 'all' || pStore === selectedStoreId || (p.assignedStores && p.assignedStores.includes(selectedStoreId));
+      if (matchesStore) {
+        const id = p.id || p.email || 'desconocido';
+        const rawName = p.fullName || p.full_name || p.name || (p.email ? p.email.split('@')[0] : 'Vendedor');
+        const sellerName = rawName.toUpperCase();
+        
+        const entry = {
+          id,
+          sellerName,
+          email: p.email,
+          storeId: pStore,
+          count: 0,
+          chip0Count: 0,
+          portaCount: 0,
+          expressCount: 0,
+          revenue: 0,
+          commission: 0
         };
-      })
+
+        sellerMap.set(id, entry);
+        if (p.email) {
+          sellerMap.set(p.email.toLowerCase(), entry);
+        }
+      }
+    });
+
+    // 2. Acumular ventas reales pasadas en salesArray
+    salesArray.forEach(s => {
+      const creatorId = s.createdBy || s.created_by || s.createdByEmail || s.created_by_email || 'general';
+      const creatorEmail = (s.createdByEmail || s.created_by_email || (creatorId.includes('@') ? creatorId : '')).toLowerCase();
+      
+      let seller = sellerMap.get(creatorId) || (creatorEmail ? sellerMap.get(creatorEmail) : null);
+      
+      if (!seller) {
+        const rawName = s.createdByName || s.created_by_name || (creatorEmail ? creatorEmail.split('@')[0] : `Vendedor (${creatorId.slice(0, 6)})`);
+        seller = {
+          id: creatorId,
+          sellerName: rawName.toUpperCase(),
+          email: creatorEmail || creatorId,
+          storeId: s.storeId || s.store_id,
+          count: 0,
+          chip0Count: 0,
+          portaCount: 0,
+          expressCount: 0,
+          revenue: 0,
+          commission: 0
+        };
+        sellerMap.set(creatorId, seller);
+        if (creatorEmail) sellerMap.set(creatorEmail, seller);
+      }
+
+      const price = Number(s.price) || 0;
+      const category = s.category || 'kit';
+
+      if (category === 'kit') {
+        seller.count += 1;
+        seller.revenue += price;
+        seller.commission += calculateCommissionForPrice(price, 'A');
+      } else if (category === 'chip_0') {
+        seller.chip0Count += 1;
+        if (price > 0) {
+          seller.revenue += price;
+          seller.commission += calculateCommissionForPrice(price, 'A');
+        }
+      } else if (category === 'portability' || category === 'portabilidad') {
+        seller.portaCount += 1;
+      } else if (category === 'chip_express') {
+        seller.expressCount += 1;
+      }
+    });
+
+    // Desduplicar referencias
+    const uniqueList: any[] = [];
+    const seenObjects = new Set();
+    sellerMap.forEach(v => {
+      if (!seenObjects.has(v)) {
+        seenObjects.add(v);
+        uniqueList.push(v);
+      }
+    });
+
+    return uniqueList
       .filter(sp => (sp.count + sp.chip0Count + sp.portaCount + sp.expressCount) > 0 || (selectedStoreId !== 'all' && salesArray.length > 0))
-      .sort((a, b) => b.revenue - a.revenue);
+      .sort((a, b) => b.revenue - a.revenue || b.count - a.count);
   };
 
   const sellerPerformance = calculatePerformance(filteredSales);
@@ -374,8 +464,8 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ sales: propSales, s
         <div className="lg:col-span-2 space-y-8">
            
            {/* 1. TODAY STATS GRID */}
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* REVENUE TODAY (NOW LEFT) */}
+           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* REVENUE TODAY */}
               <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 relative overflow-hidden group">
                   <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110"></div>
                   <div className="relative z-10">
@@ -385,7 +475,7 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ sales: propSales, s
                         </div>
                         <span className="text-[10px] font-black uppercase text-slate-400">Ventas Hoy (Bruto)</span>
                     </div>
-                    <div className="text-4xl font-black text-slate-800 tracking-tighter mb-1">
+                    <div className="text-3xl lg:text-4xl font-black text-slate-800 tracking-tighter mb-1">
                        ${todayRevenue.toLocaleString()}
                     </div>
                     <div className="flex items-center gap-2">
@@ -397,7 +487,7 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ sales: propSales, s
                   </div>
               </div>
 
-              {/* DEVICES TODAY (NOW RIGHT) */}
+              {/* DEVICES TODAY */}
               <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 relative overflow-hidden group">
                   <div className="absolute top-0 right-0 w-32 h-32 bg-orange-50 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110"></div>
                   <div className="relative z-10">
@@ -408,13 +498,32 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ sales: propSales, s
                         <span className="text-[10px] font-black uppercase text-slate-400">Ventas de Hoy</span>
                     </div>
                     <div className="flex items-end gap-3 mb-2">
-                       <div className="text-4xl font-black text-slate-800 tracking-tighter">
+                       <div className="text-3xl lg:text-4xl font-black text-slate-800 tracking-tighter">
                           {todayCount}
                        </div>
                        <span className="text-sm font-bold text-slate-400 mb-1.5 uppercase">Equipos</span>
                     </div>
                     <p className="text-[10px] text-slate-400 font-bold uppercase">
                        {todayCount > 0 ? "Actividad registrada hoy" : "Sin ventas aún"}
+                    </p>
+                  </div>
+              </div>
+
+              {/* COMMISSIONS TODAY (NEW) */}
+              <div className="bg-gradient-to-br from-amber-500 to-yellow-500 p-8 rounded-[2.5rem] shadow-lg text-slate-950 relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-white/20 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110"></div>
+                  <div className="relative z-10">
+                    <div className="flex items-center justify-between mb-6">
+                        <div className="p-3 bg-slate-950 text-yellow-400 rounded-2xl shadow-sm">
+                          <Coins className="w-6 h-6" />
+                        </div>
+                        <span className="text-[10px] font-black uppercase text-slate-900/80 tracking-wider">Comisión Hoy</span>
+                    </div>
+                    <div className="text-3xl lg:text-4xl font-black text-slate-950 tracking-tighter mb-1">
+                       ${todayCommission.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                    </div>
+                    <p className="text-[10px] text-slate-900/80 font-bold uppercase mt-3">
+                       Coppel Tienda A ({todayCount} equipos)
                     </p>
                   </div>
               </div>
@@ -627,6 +736,33 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ sales: propSales, s
                     <div className="flex justify-between items-center text-[9px] font-bold text-slate-400 uppercase">
                        <span>Porta: {totalPorta}/{portaGoalNum}</span>
                        <span>Express: {totalExpress}/{expressGoalNum}</span>
+                    </div>
+                  </div>
+              </div>
+
+              {/* COMMISSIONS MONTHLY CARD (NEW) */}
+              <div className="bg-gradient-to-br from-amber-500 via-yellow-500 to-amber-600 p-8 rounded-[2.5rem] shadow-xl text-slate-950 relative overflow-hidden group md:col-span-2">
+                  <div className="absolute top-0 right-0 w-48 h-48 bg-white/20 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110"></div>
+                  <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                    <div className="flex items-center gap-4">
+                      <div className="p-4 bg-slate-950 text-yellow-400 rounded-3xl shadow-lg">
+                        <Coins className="w-8 h-8" />
+                      </div>
+                      <div>
+                        <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-950/90 text-yellow-300 rounded-full text-[9px] font-black uppercase tracking-widest mb-1.5 shadow-sm">
+                          <Sparkles className="w-3 h-3" />
+                          Tabulador Oficial Coppel A
+                        </div>
+                        <h3 className="text-xl font-black text-slate-950 tracking-tight">Comisiones Totales del Mes</h3>
+                        <p className="text-xs text-slate-900/80 font-bold">Generadas por {totalKits} equipos celulares vendidos en {targetMonth}</p>
+                      </div>
+                    </div>
+
+                    <div className="text-left md:text-right bg-slate-950/10 backdrop-blur-sm p-4 rounded-2xl border border-slate-950/10">
+                      <span className="text-[10px] font-black uppercase text-slate-900 tracking-wider block mb-0.5">Monto Acumulado</span>
+                      <span className="text-3xl md:text-4xl font-black text-slate-950 leading-none">
+                        ${totalCommissionMonth.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
                     </div>
                   </div>
               </div>
@@ -922,7 +1058,12 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ sales: propSales, s
                        </div>
                        <div className="flex-1 min-w-0">
                           <div className="text-xs font-black text-slate-800 uppercase tracking-tight truncate leading-tight">{seller.sellerName}</div>
-                          <div className="text-[10px] text-slate-400 font-bold uppercase">{seller.count} EQUIPOS</div>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-[10px] text-slate-400 font-bold uppercase">{seller.count} EQUIPOS</span>
+                            <span className="text-[9px] font-black text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-md uppercase">
+                              +${seller.commission.toLocaleString('es-MX')}
+                            </span>
+                          </div>
                        </div>
                        <div className="text-right">
                           <div className="text-xs font-black text-slate-800">${seller.revenue.toLocaleString()}</div>

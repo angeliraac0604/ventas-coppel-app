@@ -1,4 +1,4 @@
-import { Brand, BrandConfig } from './types';
+import { Brand, BrandConfig, CommissionTier, StoreTier } from './types';
 
 export const BRAND_CONFIGS: Record<Brand, BrandConfig> = {
   [Brand.SAMSUNG]: { label: 'Samsung', colorClass: 'bg-[#1428a0]', hex: '#1428a0', logoUrl: 'https://cdn.simpleicons.org/samsung/1428a0' },
@@ -24,3 +24,60 @@ export const DEFAULT_SALE_FORM = {
   date: new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0') + '-' + String(new Date().getDate()).padStart(2, '0'),
   ticketImage: null as string | null
 };
+
+// --- TABULADOR OFICIAL DE COMISIONES TELCEL COPPEL ---
+// Basado en el precio de venta con IVA incluido del equipo celular
+export const COMMISSION_TIERS: CommissionTier[] = [
+  {
+    id: 1,
+    minPrice: 1.00,
+    maxPrice: 2500.00,
+    commissionCoppelA: 50.00,
+    commissionCoppelCanadaB: 85.00,
+    rangeLabel: '$1.00 a $2,500.00'
+  },
+  {
+    id: 2,
+    minPrice: 2500.01,
+    maxPrice: 7000.00,
+    commissionCoppelA: 60.00,
+    commissionCoppelCanadaB: 95.00,
+    rangeLabel: '$2,500.01 a $7,000.00'
+  },
+  {
+    id: 3,
+    minPrice: 7000.01,
+    maxPrice: 16500.00,
+    commissionCoppelA: 70.00,
+    commissionCoppelCanadaB: 105.00,
+    rangeLabel: '$7,000.01 a $16,500.00'
+  },
+  {
+    id: 4,
+    minPrice: 16500.01,
+    maxPrice: Infinity,
+    commissionCoppelA: 80.00,
+    commissionCoppelCanadaB: 115.00,
+    rangeLabel: '$16,500.01 en adelante'
+  }
+];
+
+export function calculateCommissionForPrice(price: number, tierType: StoreTier = 'A'): number {
+  if (!price || price <= 0 || isNaN(price)) return 0;
+  for (const tier of COMMISSION_TIERS) {
+    if (price >= tier.minPrice && price <= tier.maxPrice) {
+      return tierType === 'B' ? tier.commissionCoppelCanadaB : tier.commissionCoppelA;
+    }
+  }
+  return 0;
+}
+
+export function getCommissionTierInfo(price: number): CommissionTier | null {
+  if (!price || price <= 0 || isNaN(price)) return null;
+  for (const tier of COMMISSION_TIERS) {
+    if (price >= tier.minPrice && price <= tier.maxPrice) {
+      return tier;
+    }
+  }
+  return null;
+}
