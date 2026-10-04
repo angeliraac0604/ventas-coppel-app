@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Smartphone, Package, Tag, Calendar, User, Save, X, Loader2, Camera, Image as ImageIcon, Eye, Search, Smartphone as KitIcon, Share2, Phone, Cpu, Wand2, Calculator, Check, AlertCircle, Barcode, ClipboardCheck, Trash2, Edit2 } from 'lucide-react';
+import { Smartphone, Package, Tag, Calendar, User, Save, X, Loader2, Camera, Image as ImageIcon, Eye, Search, Smartphone as KitIcon, Share2, Phone, Cpu, Wand2, Calculator, Check, AlertCircle, AlertTriangle, CheckCircle2, Barcode, ClipboardCheck, Trash2, Edit2, RefreshCw } from 'lucide-react';
 import { Brand, Sale, BrandConfig, UserProfile, Store } from '../types';
 import { BRAND_CONFIGS } from '../constants';
 import { supabase } from '../services/supabaseClient';
@@ -101,6 +101,8 @@ const SalesForm: React.FC<SalesFormProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
+  const [ocrStatus, setOcrStatus] = useState<'idle' | 'analyzing' | 'success' | 'error'>('idle');
+  const [ocrMessage, setOcrMessage] = useState<string | null>(null);
 
   // Draft persistence for new sales
   useEffect(() => {
@@ -127,6 +129,8 @@ const SalesForm: React.FC<SalesFormProps> = ({
 
   const processTicketAI = async (base64: string) => {
     setIsAnalyzing(true);
+    setOcrStatus('analyzing');
+    setOcrMessage('Analizando ticket con Inteligencia Artificial...');
     try {
       const activeStore = stores?.find(s => s.id === (activeStoreId || userProfile?.storeId));
       const result = await analyzeTicketImage(
@@ -136,7 +140,7 @@ const SalesForm: React.FC<SalesFormProps> = ({
         commonData.category
       );
 
-      if (result) {
+      if (result && (result.customerName || result.invoiceNumber || (result.items && result.items.length > 0))) {
         // Para Coppel, solo tomamos los últimos 6 dígitos del número de factura
         let cleanInvoice = result.invoiceNumber || '';
         if (cleanInvoice.length > 6 && (activeStore?.type === 'Coppel' || getCurrentPrefix() === '1053')) {
@@ -157,9 +161,17 @@ const SalesForm: React.FC<SalesFormProps> = ({
             price: it.price.toString()
           })));
         }
+
+        setOcrStatus('success');
+        setOcrMessage('¡Ticket escaneado con éxito! Se autocompletaron los datos.');
+      } else {
+        setOcrStatus('error');
+        setOcrMessage('No se pudo leer el ticket automáticamente (imagen poco clara o no reconocida). Por favor ingresa los datos manualmente.');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("AI Analysis error:", err);
+      setOcrStatus('error');
+      setOcrMessage('Error al escanear el ticket. Ingresa los datos manualmente.');
     } finally {
       setIsAnalyzing(false);
     }
@@ -655,23 +667,58 @@ const SalesForm: React.FC<SalesFormProps> = ({
                         )}
                       </div>
                       
+                      {/* ESTADO VISUAL Y MENSAJE DE ESCANEO OCR */}
+                      {ocrStatus === 'analyzing' && (
+                        <div className="flex items-center gap-2 text-[10px] font-bold text-blue-700 bg-blue-50 px-3 py-2.5 rounded-xl border border-blue-200 animate-pulse">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600 shrink-0" />
+                          <span>{ocrMessage || 'Analizando ticket con IA...'}</span>
+                        </div>
+                      )}
+
+                      {ocrStatus === 'success' && (
+                        <div className="flex items-center justify-between gap-2 text-[10px] font-bold text-emerald-800 bg-emerald-50 px-3 py-2 rounded-xl border border-emerald-200">
+                          <div className="flex items-center gap-1.5">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <span>{ocrMessage}</span>
+                          </div>
+                          <button type="button" onClick={() => setOcrStatus('idle')} className="text-emerald-500 hover:text-emerald-700">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
+
+                      {ocrStatus === 'error' && (
+                        <div className="flex flex-col gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-[10px] font-medium animate-in fade-in">
+                          <div className="flex items-start gap-2">
+                            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                            <div className="flex-1">
+                              <p className="font-bold text-amber-950">No se pudo escanear el ticket</p>
+                              <p className="text-amber-800">{ocrMessage}</p>
+                            </div>
+                          </div>
+                          {ticketImage && !isAnalyzing && (
+                            <button
+                              type="button"
+                              onClick={() => processTicketAI(ticketImage)}
+                              className="self-start flex items-center gap-1.5 px-3 py-1.5 bg-amber-200 hover:bg-amber-300 text-amber-900 rounded-lg text-[9px] font-black uppercase tracking-wider transition-colors"
+                            >
+                              <RefreshCw className="w-3 h-3" />
+                              Reintentar escaneo
+                            </button>
+                          )}
+                        </div>
+                      )}
+
                       {/* BOTÓN DE RE-ESCANEO MANUAL */}
-                      {ticketImage && !isAnalyzing && (commonData.category === 'kit' || commonData.category === 'chip_0') && (
+                      {ticketImage && !isAnalyzing && ocrStatus === 'idle' && (commonData.category === 'kit' || commonData.category === 'chip_0') && (
                         <button
                           type="button"
                           onClick={() => processTicketAI(ticketImage)}
                           className="flex items-center justify-center gap-2 py-2.5 bg-blue-50 text-blue-700 border border-blue-100 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-100 transition-all group/ai"
                         >
                           <Wand2 className="w-3.5 h-3.5 group-hover/ai:rotate-12 transition-transform" />
-                          Re-escanear ticket con IA
+                          Escanear ticket con IA
                         </button>
-                      )}
-                      
-                      {isAnalyzing && (
-                        <div className="flex items-center gap-2 text-[9px] font-black text-blue-600 animate-pulse uppercase tracking-widest bg-blue-50 px-3 py-2 rounded-lg border border-blue-100">
-                          <Wand2 className="w-3 h-3 animate-spin" />
-                          Analizando ticket con IA...
-                        </div>
                       )}
                       
                       <p className="text-[9px] text-slate-400 font-bold leading-tight px-1">

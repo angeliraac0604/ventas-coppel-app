@@ -116,45 +116,68 @@ export const analyzeTicketImage = async (
     
     RESPONDE ÚNICAMENTE CON EL JSON VÁLIDO SIN TEXTO ADICIONAL.`;
 
-    const candidateModels = ["gemini-2.5-flash", "gemini-3.8-flash"];
+    const candidateModels = ["gemini-3.8-flash", "gemini-2.5-flash"];
     let text: string | null = null;
 
-    // 1. Intentar llamar a Gemini API con la clave activa y rápida
-    for (const model of candidateModels) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
+    // 1. Intentar llamar primero al endpoint del servidor backend (/api/gemini-ocr)
+    try {
+      const serverRes = await fetch('/api/gemini-ocr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          base64Data,
+          prompt
+        })
+      });
 
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${getGeminiApiKey()}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [
-                  { text: prompt },
-                  {
-                    inline_data: {
-                      mime_type: 'image/jpeg',
-                      data: base64Data
-                    }
-                  }
-                ]
-              }
-            ]
-          }),
-          signal: controller.signal
-        });
-
-        clearTimeout(timeoutId);
-
-        if (res.ok) {
-          const json = await res.json();
-          text = json?.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (text) break;
+      if (serverRes.ok) {
+        const serverJson = await serverRes.json();
+        if (serverJson?.text) {
+          text = serverJson.text;
         }
-      } catch (e) {
-        // Continuar con siguiente modelo
+      }
+    } catch (serverErr) {
+      console.warn("Backend /api/gemini-ocr failed, fallback to client fetch...", serverErr);
+    }
+
+    // 2. Si el servidor falló, intentar llamar directamente a la API de Gemini
+    if (!text) {
+      for (const model of candidateModels) {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 9000);
+
+          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${getGeminiApiKey()}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [
+                {
+                  parts: [
+                    { text: prompt },
+                    {
+                      inline_data: {
+                        mime_type: 'image/jpeg',
+                        data: base64Data
+                      }
+                    }
+                  ]
+                }
+              ]
+            }),
+            signal: controller.signal
+          });
+
+          clearTimeout(timeoutId);
+
+          if (res.ok) {
+            const json = await res.json();
+            text = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (text) break;
+          }
+        } catch (e) {
+          // Continuar con siguiente modelo
+        }
       }
     }
 
