@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
 import { db } from '../services/firebase';
 import { collection, getDocs } from 'firebase/firestore';
-import { Mail, Lock, Loader2, ArrowRight, ShieldCheck, Wrench } from 'lucide-react';
+import { Mail, Lock, Loader2, ArrowRight, ShieldCheck } from 'lucide-react';
 
 interface AuthFormProps {
   onDeveloperLogin?: () => void;
@@ -356,8 +356,8 @@ const AuthForm: React.FC<AuthFormProps> = ({ onDeveloperLogin, onFirestoreLogin 
               )}
             </button>
 
-            <div className="pt-4 text-center">
-              {mode === 'register' ? (
+            {mode === 'register' && (
+              <div className="pt-4 text-center">
                 <button
                   type="button"
                   onClick={() => setMode('login')}
@@ -365,49 +365,8 @@ const AuthForm: React.FC<AuthFormProps> = ({ onDeveloperLogin, onFirestoreLogin 
                 >
                   ¿Ya tienes cuenta? Inicia Sesión
                 </button>
-              ) : (
-                <div className="space-y-3 pt-2">
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em]">
-                    Acceso Rápido Directo
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (onFirestoreLogin) {
-                          onFirestoreLogin({
-                            id: 'seller-cardenas-1053',
-                            email: 'vendedor1053@coppel.com',
-                            role: 'seller',
-                            fullName: 'Vendedor Cárdenas 1053',
-                            storeId: 'c90b4652-f98f-472b-acab-0d9bc6b4862e',
-                            assignedStores: ['c90b4652-f98f-472b-acab-0d9bc6b4862e'],
-                            canSellKit: true,
-                            canSellChip0: true,
-                            canSellPortability: true,
-                            canSellChipExpress: true
-                          });
-                        }
-                      }}
-                      className="w-full py-2.5 px-3 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 shadow-sm"
-                    >
-                      <ShieldCheck className="w-4 h-4 text-blue-600" />
-                      Vendedor Cárdenas 1053
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (onDeveloperLogin) onDeveloperLogin();
-                      }}
-                      className="w-full py-2.5 px-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 shadow-sm"
-                    >
-                      <Wrench className="w-4 h-4 text-indigo-400" />
-                      Desarrollador / Admin
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
+              </div>
+            )}
           </form>
         </div>
       </div>
