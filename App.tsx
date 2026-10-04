@@ -2681,7 +2681,7 @@ create policy "Users delete store warranties" on public.warranties for delete to
                 {currentView === 'list' && 'Historial de Ventas'}
                 {currentView === 'form' && 'Nuevo Registro'}
                 {currentView === 'commissions' && 'Comisiones y Rendimiento'}
-                {currentView === 'dashboard' && 'Panel de Rendimiento'}
+                {currentView === 'dashboard' && 'Panel de Estadísticas'}
                 {currentView === 'closings' && 'Cierre Diario'}
                 {currentView === 'warranties' && 'Gestión de Garantías'}
                 {currentView === 'attendance' && 'Control de Asistencia'}
