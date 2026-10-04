@@ -20,7 +20,12 @@ import {
     ExternalLink,
     Trash2,
     Settings,
-    Pencil
+    Pencil,
+    History,
+    Clock,
+    CheckCircle,
+    ArrowRight,
+    UserCheck
 } from 'lucide-react';
 import { Warranty, Brand, BrandConfig } from '../types';
 import { uploadImageToDriveScript } from '../services/googleAppsScriptService';
@@ -62,6 +67,7 @@ const Warranties: React.FC<WarrantiesProps> = ({
 
     const [isAdding, setIsAdding] = useState(false);
     const [warrantyToEdit, setWarrantyToEdit] = useState<Warranty | null>(null);
+    const [selectedWarrantyHistory, setSelectedWarrantyHistory] = useState<Warranty | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [filterStatus, setFilterStatus] = useState<'all' | Warranty['status']>('all');
@@ -138,17 +144,24 @@ const Warranties: React.FC<WarrantiesProps> = ({
     };
 
     const defaultTemplates = {
-        received: '¡Hola! Te saludamos de Coppel. 📱 Te confirmamos que hemos recibido tu equipo *{brand} {model}* (IMEI: {imei}) e ingresado formalmente a garantía el día *{date}*. Le daremos seguimiento a su proceso y te avisaremos cualquier novedad. ¡Gracias por tu confianza!',
-        sent_to_provider: '¡Hola! Te informamos desde Coppel que tu equipo *{brand} {model}* (IMEI: {imei}) ya ha sido *enviado a centro de servicio / proveedor* para su revisión en garantía. Continuamos al pendiente y te avisaremos en cuanto regrese a tienda.',
-        in_store: '¡Hola! Tenemos excelentes noticias de Coppel. 🎉 Tu equipo *{brand} {model}* ya se encuentra de regreso en nuestra sucursal y *listo para que pases a recogerlo*. ¡Te esperamos!',
-        delivered: '¡Hola! Te saludamos de Coppel. 🤝 Queremos confirmar la entrega de tu equipo *{brand} {model}* ya reparado/atendido en garantía. Agradecemos tu preferencia y estamos para servirte.',
-        group: '*📋 REPORTE DE GARANTÍA - COPPEL*\n--------------------------------\n📅 Fecha: {date}\n📱 Equipo: {brand} {model}\n🔢 IMEI: {imei}\n👤 Teléfono Cliente: {phone}\n🔧 Falla: {issue}\n🔌 Accesorios: {accessories}\n🔍 Estado: {physical}\n⚠️ Detalles del Teléfono: {details}'
+        received: '¡Hola! Te saludamos de Coppel. 📱 Te confirmamos que hemos recibido tu equipo *{brand} {model}* (Folio/Factura: *{invoice}*, IMEI: {imei}) e ingresado formalmente a garantía el día *{date}*. Le daremos seguimiento a su proceso y te avisaremos cualquier novedad. ¡Gracias por tu confianza!',
+        sent_to_provider: '¡Hola! Te informamos desde Coppel que tu equipo *{brand} {model}* (Folio/Factura: *{invoice}*, IMEI: {imei}) ya ha sido *enviado a centro de servicio / proveedor* para su revisión en garantía. Continuamos al pendiente y te avisaremos en cuanto regrese a tienda.',
+        in_store: '¡Hola! Tenemos excelentes noticias de Coppel. 🎉 Tu equipo *{brand} {model}* (Folio/Factura: *{invoice}*) ya se encuentra de regreso en nuestra sucursal y *listo para que pases a recogerlo*. ¡Te esperamos!',
+        delivered: '¡Hola! Te saludamos de Coppel. 🤝 Queremos confirmar la entrega de tu equipo *{brand} {model}* (Folio/Factura: *{invoice}*) ya reparado/atendido en garantía. Agradecemos tu preferencia y estamos para servirte.',
+        group: '*📋 REPORTE DE GARANTÍA - COPPEL*\n--------------------------------\n🧾 Factura / Folio: *{invoice}*\n📅 Fecha de Recepción: {date}\n⏳ Posible Fecha de Ingreso: {entryDate}\n📱 Equipo: *{brand} {model}*\n🔢 IMEI: {imei}\n👤 Teléfono Cliente: {phone}\n🔧 Falla Reportada: {issue}\n🔌 Accesorios: {accessories}\n🔍 Estado Físico: {physical}\n⚠️ Detalles del Teléfono: {details}'
     };
 
     const [templates, setTemplates] = useState(() => {
         try {
-            const saved = localStorage.getItem('coppel_warranty_templates');
-            return saved ? JSON.parse(saved) : defaultTemplates;
+            const saved = localStorage.getItem('coppel_warranty_templates_v2') || localStorage.getItem('coppel_warranty_templates');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                if (!parsed.group || !parsed.group.includes('{invoice}')) {
+                    return defaultTemplates;
+                }
+                return { ...defaultTemplates, ...parsed };
+            }
+            return defaultTemplates;
         } catch {
             return defaultTemplates;
         }
@@ -161,6 +174,7 @@ const Warranties: React.FC<WarrantiesProps> = ({
         e.preventDefault();
         setTemplates(tempTemplates);
         try {
+            localStorage.setItem('coppel_warranty_templates_v2', JSON.stringify(tempTemplates));
             localStorage.setItem('coppel_warranty_templates', JSON.stringify(tempTemplates));
         } catch {}
         setShowTemplateModal(false);
@@ -169,14 +183,19 @@ const Warranties: React.FC<WarrantiesProps> = ({
 
     const formatMessage = (template: string, warranty: Warranty) => {
         const brandName = (safeBrandConfigs[warranty.brand]?.label || warranty.brand || 'Equipo').toUpperCase();
-        const modelName = warranty.model.toUpperCase();
+        const modelName = (warranty.model || '').toUpperCase();
+        const rawIssue = (warranty.issueDescription || 'N/A').trim();
+        const boldIssue = rawIssue.startsWith('*') && rawIssue.endsWith('*') ? rawIssue : `*${rawIssue}*`;
+
         return template
             .replace(/\{brand\}/g, brandName)
             .replace(/\{model\}/g, modelName)
+            .replace(/\{invoice\}/g, warranty.invoiceNumber || 'S/N')
             .replace(/\{imei\}/g, warranty.imei || 'N/A')
-            .replace(/\{date\}/g, warranty.receptionDate)
+            .replace(/\{date\}/g, warranty.receptionDate || 'N/A')
+            .replace(/\{entryDate\}/g, warranty.possibleEntryDate || 'Pendiente')
             .replace(/\{phone\}/g, warranty.contactNumber || 'N/A')
-            .replace(/\{issue\}/g, warranty.issueDescription || 'N/A')
+            .replace(/\{issue\}/g, boldIssue)
             .replace(/\{accessories\}/g, warranty.accessories || 'Ninguno')
             .replace(/\{physical\}/g, warranty.physicalCondition || 'N/A')
             .replace(/\{details\}/g, warranty.phoneDetails || 'Ninguno');
@@ -907,6 +926,34 @@ const Warranties: React.FC<WarrantiesProps> = ({
                                 </div>
                             </div>
 
+                            {/* Admin-Only Process Attribution & History Button */}
+                            {isAdmin && (
+                                <div className="mb-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs bg-slate-50/90 p-2.5 rounded-xl border border-slate-200/80">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                        <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
+                                            <User className="w-3.5 h-3.5" />
+                                        </div>
+                                        <div className="truncate">
+                                            <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block leading-none">Recibido por</span>
+                                            <span className="text-xs font-bold text-slate-800 truncate block mt-0.5">
+                                                {warranty.receivedByName || warranty.receivedByEmail || 'Personal de Tienda'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSelectedWarrantyHistory(warranty);
+                                        }}
+                                        className="flex items-center gap-1 px-2.5 py-1.5 bg-white hover:bg-blue-50 text-blue-700 rounded-lg border border-slate-200 hover:border-blue-300 font-bold text-[10px] uppercase tracking-wider transition-all shadow-xs shrink-0 ml-2"
+                                        title="Ver historial de procesos (Solo Admin)"
+                                    >
+                                        <History className="w-3.5 h-3.5 text-blue-600" />
+                                        <span>Historial</span>
+                                    </button>
+                                </div>
+                            )}
+
                             {/* Actions & Evidence */}
                             <div className="pt-3 border-t border-slate-100 space-y-3 mt-auto">
                                 {/* View Evidence Link if exists */}
@@ -1049,7 +1096,7 @@ const Warranties: React.FC<WarrantiesProps> = ({
                                     <Settings className="w-5 h-5 text-slate-700" />
                                     Personalizar Mensajes de WhatsApp (Admin)
                                 </h3>
-                                <p className="text-xs text-slate-500">Edita las plantillas. Puedes usar variables como &#123;brand&#125;, &#123;model&#125;, &#123;imei&#125;, &#123;date&#125;, &#123;phone&#125;.</p>
+                                <p className="text-xs text-slate-500">Edita las plantillas. Variables disponibles: &#123;invoice&#125;, &#123;brand&#125;, &#123;model&#125;, &#123;imei&#125;, &#123;date&#125;, &#123;entryDate&#125;, &#123;phone&#125;, &#123;issue&#125;, &#123;accessories&#125;, &#123;physical&#125;, &#123;details&#125;.</p>
                             </div>
                             <button onClick={() => setShowTemplateModal(false)} className="p-2 hover:bg-slate-200 rounded-full text-slate-400 transition-colors">
                                 <X className="w-5 h-5" />
@@ -1106,7 +1153,7 @@ const Warranties: React.FC<WarrantiesProps> = ({
                                     required
                                 />
                                 <p className="text-[11px] text-slate-400">
-                                    Variables: &#123;brand&#125;, &#123;model&#125;, &#123;imei&#125;, &#123;date&#125;, &#123;phone&#125;, &#123;issue&#125;, &#123;accessories&#125;, &#123;physical&#125;
+                                    Variables disponibles: &#123;invoice&#125;, &#123;date&#125;, &#123;entryDate&#125;, &#123;brand&#125;, &#123;model&#125;, &#123;imei&#125;, &#123;phone&#125;, &#123;issue&#125;, &#123;accessories&#125;, &#123;physical&#125;, &#123;details&#125;
                                 </p>
                             </div>
                             <div className="flex justify-between items-center pt-2">
@@ -1134,6 +1181,132 @@ const Warranties: React.FC<WarrantiesProps> = ({
                                 </div>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Process Audit History Modal (Admin Only) */}
+            {selectedWarrantyHistory && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+                    <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-100 flex flex-col max-h-[85vh]">
+                        {/* Header */}
+                        <div className="p-5 border-b border-slate-100 bg-slate-900 text-white flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-2xl bg-blue-600/30 border border-blue-500/40 text-blue-400 flex items-center justify-center">
+                                    <History className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h3 className="font-extrabold text-sm md:text-base leading-tight flex items-center gap-2">
+                                        <span>Historial de Procesos</span>
+                                        <span className="text-[10px] px-2 py-0.5 bg-blue-500/20 text-blue-300 rounded-full font-mono">
+                                            #{selectedWarrantyHistory.invoiceNumber || 'S/N'}
+                                        </span>
+                                    </h3>
+                                    <p className="text-slate-400 text-xs mt-0.5">
+                                        {safeBrandConfigs[selectedWarrantyHistory.brand]?.label || selectedWarrantyHistory.brand} {selectedWarrantyHistory.model}
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setSelectedWarrantyHistory(null)}
+                                className="p-2 hover:bg-slate-800 rounded-xl text-slate-400 hover:text-white transition-colors"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Body Timeline */}
+                        <div className="p-6 overflow-y-auto space-y-6 flex-1 bg-slate-50/50">
+                            {/* Initial Receiver Highlight Card */}
+                            <div className="bg-blue-50/80 border border-blue-100 p-4 rounded-2xl flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+                                    <UserCheck className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <span className="text-[10px] font-black uppercase tracking-wider text-blue-600 block">Personal que recibió el equipo</span>
+                                    <p className="font-extrabold text-sm text-slate-900">
+                                        {selectedWarrantyHistory.receivedByName || selectedWarrantyHistory.receivedByEmail || 'Personal de Tienda'}
+                                    </p>
+                                    <p className="text-[11px] text-slate-500 font-medium">
+                                        Fecha de recepción: {selectedWarrantyHistory.receptionDate}
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Timeline of Status Steps */}
+                            <div className="space-y-4 relative before:absolute before:left-5 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
+                                {(() => {
+                                    const historyLogs = (selectedWarrantyHistory.statusHistory && selectedWarrantyHistory.statusHistory.length > 0)
+                                        ? selectedWarrantyHistory.statusHistory
+                                        : [
+                                            {
+                                                status: 'received' as const,
+                                                timestamp: new Date().toISOString(),
+                                                userName: selectedWarrantyHistory.receivedByName || 'Personal de Tienda',
+                                                note: 'Recepción del equipo en sucursal'
+                                            }
+                                        ];
+
+                                    const getStepMeta = (st: Warranty['status']) => {
+                                        switch (st) {
+                                            case 'received':
+                                                return { label: 'Equipo Recibido en Tienda', color: 'bg-blue-500 text-white', icon: ShieldAlert };
+                                            case 'sent_to_provider':
+                                                return { label: 'Enviado a Taller / Proveedor', color: 'bg-blue-600 text-white', icon: Truck };
+                                            case 'in_store':
+                                                return { label: 'De Regreso en Sucursal (Listo)', color: 'bg-purple-600 text-white', icon: PackageCheck };
+                                            case 'delivered':
+                                                return { label: 'Equipo Entregado al Cliente', color: 'bg-emerald-600 text-white', icon: CheckCircle2 };
+                                            default:
+                                                return { label: 'Actualización de Estado', color: 'bg-slate-600 text-white', icon: Clock };
+                                        }
+                                    };
+
+                                    return historyLogs.map((log, idx) => {
+                                        const meta = getStepMeta(log.status);
+                                        const StepIcon = meta.icon;
+                                        const dateObj = new Date(log.timestamp);
+                                        const formattedTime = !isNaN(dateObj.getTime())
+                                            ? dateObj.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                                            : log.timestamp;
+
+                                        return (
+                                            <div key={idx} className="relative pl-12">
+                                                <div className={`absolute left-3 -translate-x-1/2 top-1.5 w-6 h-6 rounded-full flex items-center justify-center ring-4 ring-white shadow-xs ${meta.color}`}>
+                                                    <StepIcon className="w-3 h-3" />
+                                                </div>
+                                                <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs">
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <span className="font-extrabold text-xs text-slate-800">{meta.label}</span>
+                                                        <span className="text-[10px] font-bold text-slate-400 whitespace-nowrap">{formattedTime}</span>
+                                                    </div>
+                                                    <div className="mt-1.5 flex items-center gap-1.5 text-xs text-slate-600">
+                                                        <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                                        <span className="text-slate-500 text-[11px]">Realizado por:</span>
+                                                        <span className="font-bold text-slate-700">{log.userName || log.userEmail || 'Administrador'}</span>
+                                                    </div>
+                                                    {log.note && log.note !== meta.label && (
+                                                        <p className="mt-1 text-[11px] text-slate-500 bg-slate-50 p-1.5 rounded-lg">
+                                                            {log.note}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    });
+                                })()}
+                            </div>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end">
+                            <button
+                                onClick={() => setSelectedWarrantyHistory(null)}
+                                className="px-5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold text-xs transition-colors shadow-sm"
+                            >
+                                Cerrar Historial
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

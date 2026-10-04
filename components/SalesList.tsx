@@ -19,6 +19,30 @@ interface SalesListProps {
   isDeepSearching?: boolean;
 }
 
+const formatSaleTime = (createdAt?: string, saleId?: string) => {
+  let dateObj: Date | null = null;
+  if (createdAt) {
+    const parsed = new Date(createdAt);
+    if (!isNaN(parsed.getTime())) {
+      dateObj = parsed;
+    }
+  }
+  if (!dateObj && saleId && saleId.startsWith('sale-')) {
+    const parts = saleId.split('-');
+    const ts = Number(parts[1]);
+    if (!isNaN(ts) && ts > 1600000000000) {
+      dateObj = new Date(ts);
+    }
+  }
+  if (!dateObj) return null;
+
+  return dateObj.toLocaleTimeString('es-MX', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  });
+};
+
 const SalesList: React.FC<SalesListProps> = ({ 
   sales, onDelete, onEdit, onAdd, role, storeName, userProfile, onDeepSearch, onFetchRange, isDeepSearching 
 }) => {
@@ -579,39 +603,46 @@ const SalesList: React.FC<SalesListProps> = ({
                         )}
                       </h3>
                     </div>
-                    <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 font-medium">
-                      <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {sale.date}</span>
+                    <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 font-medium">
+                      <span className="flex items-center gap-1 bg-slate-50 px-2 py-0.5 rounded border border-slate-100 text-slate-700 font-semibold">
+                        <Calendar className="w-3 h-3 text-blue-500" /> {sale.date}
+                      </span>
+                      {formatSaleTime(sale.createdAt, sale.id) && (
+                        <span className="flex items-center gap-1 bg-indigo-50/70 border border-indigo-100/80 px-2 py-0.5 rounded text-indigo-700 font-semibold">
+                          <Clock className="w-3 h-3 text-indigo-500" /> {formatSaleTime(sale.createdAt, sale.id)}
+                        </span>
+                      )}
                       {sale.category !== 'chip_express' && sale.category !== 'portabilidad' && (
-                        <span className="flex items-center gap-1 bg-slate-50 px-2 py-0.5 rounded text-slate-600">
-                          <Tag className="w-3 h-3" /> ${sale.price.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                        <span className="flex items-center gap-1 bg-emerald-50/70 border border-emerald-100 px-2 py-0.5 rounded text-emerald-800 font-bold">
+                          <Tag className="w-3 h-3 text-emerald-600" /> ${sale.price.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
                         </span>
                       )}
                       
                       {/* Detailed data for chips */}
                       {sale.phoneNumber && (
-                        <span className="flex items-center gap-1 text-slate-400">
-                          <Phone className="w-3 h-3" /> {sale.phoneNumber}
+                        <span className="flex items-center gap-1 text-slate-500 font-mono text-[11px] bg-slate-50 px-1.5 py-0.5 rounded">
+                          <Phone className="w-3 h-3 text-slate-400" /> {sale.phoneNumber}
                         </span>
                       )}
                       {sale.iccid && (
-                        <span className="flex items-center gap-1 text-slate-400">
-                          <Cpu className="w-3 h-3" /> ICCID: {sale.iccid}
+                        <span className="flex items-center gap-1 text-slate-500 font-mono text-[11px] bg-slate-50 px-1.5 py-0.5 rounded">
+                          <Cpu className="w-3 h-3 text-slate-400" /> ICCID: {sale.iccid}
                         </span>
                       )}
                     </div>
-                    {/* Admin only info */}
-                    {role === 'admin' && (
+                    {/* Author & Registration info */}
+                    {(role === 'admin' || role === 'developer' || role === 'supervisor') && (
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 pt-2 border-t border-slate-50 text-[10px] text-slate-400 font-bold uppercase tracking-wider">
                         <span className="flex items-center gap-1">
                           <User className="w-3 h-3 text-blue-400" />
-                          Registrado por: <span className="text-slate-600">{sale.createdByName || sale.createdByEmail || 'N/A'}</span>
+                          Registrado por: <span className="text-slate-700 font-extrabold">{sale.createdByName || sale.createdByEmail || 'Vendedor'}</span>
                         </span>
-                        <span className="flex items-center gap-1">
-                          <Clock className="w-3 h-3 text-indigo-400" />
-                          Hora: <span className="text-slate-600">
-                            {sale.createdAt ? new Date(sale.createdAt).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) : 'N/A'}
+                        {formatSaleTime(sale.createdAt, sale.id) && (
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-indigo-400" />
+                            Hora: <span className="text-slate-700 font-extrabold">{formatSaleTime(sale.createdAt, sale.id)}</span>
                           </span>
-                        </span>
+                        )}
                       </div>
                     )}
                   </div>

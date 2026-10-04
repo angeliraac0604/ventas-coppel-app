@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Clock, Coffee, LogOut, LogIn, Calendar, CheckCircle2, History, Camera, MapPin, Upload, X, Loader2, ArrowRight } from 'lucide-react';
-import { supabase } from '../services/supabaseClient';
+import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
+import { db } from '../services/firebase';
+import { collection, doc, getDoc, getDocs, setDoc } from 'firebase/firestore';
 import { AttendanceRecord, AttendanceType, UserProfile } from '../types';
 import { smartImageUpload } from '../services/storageService';
 
@@ -34,6 +36,34 @@ const AttendanceManager: React.FC<AttendanceManagerProps> = ({ user, storeName }
   const fetchAttendance = async () => {
     setIsLoading(true);
     try {
+      if (!isSupabaseConfigured) {
+        const attSnap = await getDocs(collection(db, 'attendance'));
+        if (!attSnap.empty) {
+          const allDocs = attSnap.docs.map(d => {
+            const r = d.data();
+            return {
+              id: d.id,
+              userId: r.userId || r.user_id || '',
+              storeId: r.storeId || r.store_id || '',
+              type: (r.type as AttendanceType) || 'entry',
+              timestamp: r.timestamp || '',
+              date: r.date || ''
+            };
+          });
+          const userFiltered = allDocs
+            .filter(r => r.userId === user.id)
+            .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+          
+          setHistory(userFiltered);
+          setTodayRecords(userFiltered.filter(r => r.date === todayStr).map(r => r.type));
+          try { localStorage.setItem(`coppel_cached_att_${user.id}`, JSON.stringify(userFiltered)); } catch (e) {}
+        } else {
+          setHistory([]);
+          setTodayRecords([]);
+        }
+        return;
+      }
+
       const { data, error } = await supabase
         .from('attendance')
         .select('*')
@@ -42,7 +72,7 @@ const AttendanceManager: React.FC<AttendanceManagerProps> = ({ user, storeName }
 
       if (error) throw error;
       
-      const formatted = data.map((r: any) => ({
+      const formatted = (data || []).map((r: any) => ({
         id: r.id,
         userId: r.user_id,
         storeId: r.store_id,
@@ -53,8 +83,17 @@ const AttendanceManager: React.FC<AttendanceManagerProps> = ({ user, storeName }
 
       setHistory(formatted);
       setTodayRecords(formatted.filter(r => r.date === todayStr).map(r => r.type));
+      try { localStorage.setItem(`coppel_cached_att_${user.id}`, JSON.stringify(formatted)); } catch (e) {}
     } catch (err) {
-      console.error('Error fetching attendance:', err);
+      console.warn('Error fetching attendance, using cache:', err);
+      try {
+        const cached = localStorage.getItem(`coppel_cached_att_${user.id}`);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          setHistory(parsed);
+          setTodayRecords(parsed.filter((r: any) => r.date === todayStr).map((r: any) => r.type));
+        }
+      } catch (e) {}
     } finally {
       setIsLoading(false);
     }
@@ -64,9 +103,19 @@ const AttendanceManager: React.FC<AttendanceManagerProps> = ({ user, storeName }
     fetchAttendance();
     
     const fetchStore = async () => {
-      if (user.storeId) {
+      if (!user.storeId) return;
+      try {
+        if (!isSupabaseConfigured) {
+          const storeSnap = await getDoc(doc(db, 'stores', user.storeId));
+          if (storeSnap.exists()) {
+            setStoreConfig(storeSnap.data());
+          }
+          return;
+        }
         const { data } = await supabase.from('stores').select('*').eq('id', user.storeId).single();
         if (data) setStoreConfig(data);
+      } catch (e) {
+        console.warn("Error fetching store config:", e);
       }
     };
     fetchStore();
@@ -109,18 +158,39 @@ const AttendanceManager: React.FC<AttendanceManagerProps> = ({ user, storeName }
         );
       }
 
-      const { error } = await supabase.from('attendance').insert({
-        user_id: user.id,
-        store_id: user.storeId,
-        type,
-        date: todayStr,
-        timestamp: new Date().toISOString(),
-        image_url: finalImageUrl,
-        screenshot_url: finalScreenshotUrl,
-        location_coords: locationStr
-      });
+      const nowIso = new Date().toISOString();
+      const recordId = `att-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 
-      if (error) throw error;
+      if (!isSupabaseConfigured) {
+        await setDoc(doc(db, 'attendance', recordId), {
+          userId: user.id,
+          user_id: user.id,
+          storeId: user.storeId || '',
+          store_id: user.storeId || '',
+          type,
+          date: todayStr,
+          timestamp: nowIso,
+          imageUrl: finalImageUrl,
+          image_url: finalImageUrl,
+          screenshotUrl: finalScreenshotUrl,
+          screenshot_url: finalScreenshotUrl,
+          locationCoords: locationStr || '',
+          location_coords: locationStr || ''
+        }, { merge: true });
+      } else {
+        const { error } = await supabase.from('attendance').insert({
+          user_id: user.id,
+          store_id: user.storeId,
+          type,
+          date: todayStr,
+          timestamp: nowIso,
+          image_url: finalImageUrl,
+          screenshot_url: finalScreenshotUrl,
+          location_coords: locationStr
+        });
+
+        if (error) throw error;
+      }
 
       // --- SMART ALERT LOGIC ---
       const now = new Date();
@@ -138,13 +208,27 @@ const AttendanceManager: React.FC<AttendanceManagerProps> = ({ user, storeName }
         const entryM = now.getMinutes();
         
         if (entryH > targetH || (entryH === targetH && entryM > targetM)) {
-          await supabase.from('attendance_alerts').insert({
-            user_id: user.id,
-            store_id: user.storeId,
-            date: todayStr,
-            type: 'late_entry',
-            details: `Llegada tarde registrada a las ${timeStr} (Horario esperado: ${targetEntryTime})`
-          });
+          if (!isSupabaseConfigured) {
+            const alertId = `alert-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+            await setDoc(doc(db, 'attendance_alerts', alertId), {
+              userId: user.id,
+              user_id: user.id,
+              storeId: user.storeId || '',
+              store_id: user.storeId || '',
+              date: todayStr,
+              type: 'late_entry',
+              details: `Llegada tarde registrada a las ${timeStr} (Horario esperado: ${targetEntryTime})`,
+              timestamp: nowIso
+            }, { merge: true });
+          } else {
+            await supabase.from('attendance_alerts').insert({
+              user_id: user.id,
+              store_id: user.storeId,
+              date: todayStr,
+              type: 'late_entry',
+              details: `Llegada tarde registrada a las ${timeStr} (Horario esperado: ${targetEntryTime})`
+            });
+          }
         }
       }
 
@@ -155,13 +239,27 @@ const AttendanceManager: React.FC<AttendanceManagerProps> = ({ user, storeName }
           const durationMins = Math.round((now.getTime() - startTime.getTime()) / 60000);
           
           if (durationMins > targetLunchMins) {
-            await supabase.from('attendance_alerts').insert({
-              user_id: user.id,
-              store_id: user.storeId,
-              date: todayStr,
-              type: 'extended_lunch',
-              details: `Tiempo de comida excedido: ${durationMins} min (Máximo: ${targetLunchMins} min)`
-            });
+            if (!isSupabaseConfigured) {
+              const alertId = `alert-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+              await setDoc(doc(db, 'attendance_alerts', alertId), {
+                userId: user.id,
+                user_id: user.id,
+                storeId: user.storeId || '',
+                store_id: user.storeId || '',
+                date: todayStr,
+                type: 'extended_lunch',
+                details: `Tiempo de comida excedido: ${durationMins} min (Máximo: ${targetLunchMins} min)`,
+                timestamp: nowIso
+              }, { merge: true });
+            } else {
+              await supabase.from('attendance_alerts').insert({
+                user_id: user.id,
+                store_id: user.storeId,
+                date: todayStr,
+                type: 'extended_lunch',
+                details: `Tiempo de comida excedido: ${durationMins} min (Máximo: ${targetLunchMins} min)`
+              });
+            }
           }
         }
       }

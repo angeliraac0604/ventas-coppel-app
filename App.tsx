@@ -1150,6 +1150,38 @@ create policy "Users delete store warranties" on public.warranties for delete to
               try { localStorage.setItem('coppel_cached_stores', JSON.stringify(loadedStores)); } catch (e) {}
             }
           }
+
+          if (warranties.length === 0) {
+            const fsWarrantiesSnap = await getDocs(collection(db, 'warranties'));
+            if (!fsWarrantiesSnap.empty) {
+              const loadedWarranties: Warranty[] = fsWarrantiesSnap.docs.map(d => {
+                const data = d.data();
+                return {
+                  id: d.id,
+                  receptionDate: data.receptionDate || data.reception_date || '',
+                  invoiceNumber: data.invoiceNumber || data.invoice_number || '',
+                  brand: (data.brand || 'OTRO') as Brand,
+                  model: data.model || '',
+                  imei: data.imei || '',
+                  issueDescription: data.issueDescription || data.issue_description || '',
+                  accessories: data.accessories || '',
+                  physicalCondition: data.physicalCondition || data.physical_condition || '',
+                  contactNumber: data.contactNumber || data.contact_number || '',
+                  ticketImage: data.ticketImage || data.ticket_image || '',
+                  phoneDetails: data.phoneDetails || data.phone_details || '',
+                  possibleEntryDate: data.possibleEntryDate || data.possible_entry_date || '',
+                  status: data.status || 'received',
+                  storeId: data.storeId || data.store_id || '',
+                  receivedBy: data.receivedBy || data.received_by || '',
+                  receivedByName: data.receivedByName || data.received_by_name || '',
+                  receivedByEmail: data.receivedByEmail || data.received_by_email || '',
+                  statusHistory: data.statusHistory || data.status_history || []
+                } as Warranty;
+              });
+              setWarranties(loadedWarranties);
+              try { localStorage.setItem('coppel_cached_warranties', JSON.stringify(loadedWarranties)); } catch (e) {}
+            }
+          }
         } catch (e: any) {
           if (e?.code === 'resource-exhausted' || e?.message?.includes('Quota') || e?.message?.includes('quota')) {
             setIsQuotaExhausted(true);
@@ -1446,6 +1478,17 @@ create policy "Users delete store warranties" on public.warranties for delete to
         const liveSales: Sale[] = snapshot.docs.map(d => {
           const data = d.data();
           const creatorInfo = userMap[data.createdBy || data.created_by] || {};
+
+          // Extraer fecha y hora de creación confiable
+          let calculatedCreatedAt = data.createdAt || data.created_at || '';
+          if (!calculatedCreatedAt && d.id.startsWith('sale-')) {
+            const parts = d.id.split('-');
+            const timestamp = Number(parts[1]);
+            if (!isNaN(timestamp) && timestamp > 1600000000000) {
+              calculatedCreatedAt = new Date(timestamp).toISOString();
+            }
+          }
+
           return {
             id: d.id,
             invoiceNumber: data.invoiceNumber || data.invoice_number || 'S/N',
@@ -1455,7 +1498,7 @@ create policy "Users delete store warranties" on public.warranties for delete to
             date: data.date || '',
             ticketImage: data.ticketImage || data.ticket_image || '',
             createdBy: data.createdBy || data.created_by || '',
-            createdAt: data.createdAt || data.created_at || '',
+            createdAt: calculatedCreatedAt,
             createdByEmail: data.createdByEmail || creatorInfo.email || data.profiles?.email || '',
             createdByName: data.createdByName || creatorInfo.fullName || data.profiles?.full_name || '',
             storeId: data.storeId || data.store_id || '',
@@ -1518,7 +1561,11 @@ create policy "Users delete store warranties" on public.warranties for delete to
               phoneDetails: data.phoneDetails || data.phone_details || '',
               possibleEntryDate: data.possibleEntryDate || data.possible_entry_date || '',
               status: data.status || 'received',
-              storeId: data.storeId || data.store_id || ''
+              storeId: data.storeId || data.store_id || '',
+              receivedBy: data.receivedBy || data.received_by || '',
+              receivedByName: data.receivedByName || data.received_by_name || '',
+              receivedByEmail: data.receivedByEmail || data.received_by_email || '',
+              statusHistory: data.statusHistory || data.status_history || []
             } as Warranty;
           });
           setWarranties(liveWarranties);
@@ -1669,6 +1716,10 @@ create policy "Users delete store warranties" on public.warranties for delete to
       }
 
       const generatedFolio = `VNT-${newSaleData.date.replace(/-/g, '')}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+      const nowIso = new Date().toISOString();
+      const currentUserName = userProfile?.fullName || userProfile?.email || 'Vendedor';
+      const currentUserEmail = userProfile?.email || '';
+      const currentUserId = session?.user?.id || userProfile?.id || 'dev-user';
 
       if (!isSupabaseConfigured) {
         const saleId = `sale-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
@@ -1680,16 +1731,20 @@ create policy "Users delete store warranties" on public.warranties for delete to
           brand: newSaleData.brand,
           date: newSaleData.date,
           ticketImage: newSaleData.ticketImage || '',
-          createdBy: session?.user?.id || 'dev-user',
+          createdBy: currentUserId,
+          createdByName: currentUserName,
+          createdByEmail: currentUserEmail,
+          createdAt: nowIso,
           storeId: finalStoreId,
           category: (newSaleData as any).category || 'kit',
           iccid: (newSaleData as any).iccid || '',
-          phoneNumber: (newSaleData as any).phone_number || '',
-          portabilityScreenshot: (newSaleData as any).portability_screenshot || '',
+          phoneNumber: (newSaleData as any).phoneNumber || (newSaleData as any).phone_number || '',
+          portabilityScreenshot: (newSaleData as any).portabilityScreenshot || (newSaleData as any).portability_screenshot || '',
           transactionFolio: generatedFolio
         };
         setSales(prev => {
-          const updated = [newSale, ...prev];
+          const filtered = prev.filter(s => s.id !== saleId);
+          const updated = [newSale, ...filtered];
           try { localStorage.setItem('coppel_cached_sales', JSON.stringify(updated)); } catch (e) {}
           return updated;
         });
@@ -1717,11 +1772,12 @@ create policy "Users delete store warranties" on public.warranties for delete to
         date: newSaleData.date,
         ticket_image: newSaleData.ticketImage || null,
         created_by: session.user.id,
+        created_at: nowIso,
         store_id: finalStoreId,
         category: (newSaleData as any).category || 'kit',
         iccid: (newSaleData as any).iccid || null,
-        phone_number: (newSaleData as any).phone_number || null,
-        portability_screenshot: (newSaleData as any).portability_screenshot || null,
+        phone_number: (newSaleData as any).phoneNumber || (newSaleData as any).phone_number || null,
+        portability_screenshot: (newSaleData as any).portabilityScreenshot || (newSaleData as any).portability_screenshot || null,
         transaction_folio: generatedFolio
       };
 
@@ -2091,7 +2147,37 @@ create policy "Users delete store warranties" on public.warranties for delete to
         return;
       }
 
+      // Optimizar / subir imagen de evidencia para evitar que exceda el límite de 1MB de Firestore
+      let processedImage = newWarranty.ticketImage || '';
+      if (processedImage && processedImage.startsWith('data:image')) {
+        try {
+          processedImage = await smartImageUpload(processedImage, 'warranty');
+        } catch (imgErr) {
+          console.warn("Error al subir a la nube, comprimiendo imagen para BD:", imgErr);
+          try {
+            processedImage = await compressImage(processedImage, 600, 0.6);
+          } catch (compErr) {
+            console.warn("Fallo de compresión:", compErr);
+          }
+        }
+      }
+
       const warrantyId = `warranty-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      const currentUserName = userProfile?.fullName || userProfile?.email || (isDeveloperSession ? 'Desarrollador' : 'Administrador');
+      const currentUserId = userProfile?.id || session?.user?.id || 'admin';
+      const currentUserEmail = userProfile?.email || '';
+
+      const initialHistory: any[] = [
+        {
+          status: 'received',
+          timestamp: new Date().toISOString(),
+          userId: currentUserId,
+          userName: currentUserName,
+          userEmail: currentUserEmail,
+          note: 'Recepción del equipo en sucursal'
+        }
+      ];
+
       const addedWarranty: Warranty = {
         id: warrantyId,
         receptionDate: newWarranty.receptionDate,
@@ -2103,16 +2189,29 @@ create policy "Users delete store warranties" on public.warranties for delete to
         accessories: newWarranty.accessories,
         physicalCondition: newWarranty.physicalCondition,
         contactNumber: newWarranty.contactNumber,
-        ticketImage: newWarranty.ticketImage,
+        ticketImage: processedImage,
         phoneDetails: newWarranty.phoneDetails,
         possibleEntryDate: newWarranty.possibleEntryDate,
         status: newWarranty.status,
-        storeId: finalStoreId
+        storeId: finalStoreId,
+        receivedBy: currentUserId,
+        receivedByName: currentUserName,
+        receivedByEmail: currentUserEmail,
+        statusHistory: initialHistory
       };
 
       if (!isSupabaseConfigured) {
+        // 1. Guardar en Firestore
         await setDoc(doc(db, 'warranties', warrantyId), cleanFirestoreData(addedWarranty), { merge: true });
-        setWarranties(prev => [addedWarranty, ...prev]);
+
+        // 2. Actualizar estado local asegurando que NO haya duplicados
+        setWarranties(prev => {
+          const filtered = prev.filter(w => w.id !== warrantyId);
+          const updated = [addedWarranty, ...filtered];
+          try { localStorage.setItem('coppel_cached_warranties', JSON.stringify(updated)); } catch (e) {}
+          return updated;
+        });
+
         alert("Garantía registrada correctamente.");
         return addedWarranty;
       }
@@ -2127,11 +2226,13 @@ create policy "Users delete store warranties" on public.warranties for delete to
         accessories: newWarranty.accessories,
         physical_condition: newWarranty.physicalCondition,
         contact_number: newWarranty.contactNumber,
-        ticket_image: newWarranty.ticketImage,
+        ticket_image: processedImage || null,
         phone_details: newWarranty.phoneDetails,
         possible_entry_date: newWarranty.possibleEntryDate,
         status: newWarranty.status,
-        store_id: finalStoreId
+        store_id: finalStoreId,
+        received_by: currentUserId,
+        received_by_name: currentUserName
       };
 
       const { data, error } = await supabase
@@ -2158,9 +2259,18 @@ create policy "Users delete store warranties" on public.warranties for delete to
           phoneDetails: row.phone_details,
           possibleEntryDate: row.possible_entry_date,
           status: row.status,
-          storeId: row.store_id
+          storeId: row.store_id,
+          receivedBy: currentUserId,
+          receivedByName: currentUserName,
+          receivedByEmail: currentUserEmail,
+          statusHistory: initialHistory
         };
-        setWarranties(prev => [insertedWarranty, ...prev]);
+        setWarranties(prev => {
+          const filtered = prev.filter(w => w.id !== insertedWarranty.id);
+          const updated = [insertedWarranty, ...filtered];
+          try { localStorage.setItem('coppel_cached_warranties', JSON.stringify(updated)); } catch (e) {}
+          return updated;
+        });
         alert("Garantía registrada correctamente.");
         return insertedWarranty;
       }
@@ -2175,13 +2285,49 @@ create policy "Users delete store warranties" on public.warranties for delete to
   };
 
   const handleUpdateWarrantyStatus = async (id: string, newStatus: Warranty['status']) => {
-    if (!session) return;
-    // Optimistic update
-    setWarranties(prev => prev.map(w => w.id === id ? { ...w, status: newStatus } : w));
+    if (!session && !isDeveloperSession) return;
+    
+    const currentUserName = userProfile?.fullName || userProfile?.email || (isDeveloperSession ? 'Desarrollador' : 'Administrador');
+    const currentUserId = userProfile?.id || session?.user?.id || 'admin';
+    const currentUserEmail = userProfile?.email || '';
+
+    const statusLabels: Record<Warranty['status'], string> = {
+      received: 'Equipo recibido en sucursal',
+      sent_to_provider: 'Enviado a taller / proveedor',
+      in_store: 'De regreso en sucursal (Listo)',
+      delivered: 'Entregado al cliente'
+    };
+
+    const newLog = {
+      status: newStatus,
+      timestamp: new Date().toISOString(),
+      userId: currentUserId,
+      userName: currentUserName,
+      userEmail: currentUserEmail,
+      note: statusLabels[newStatus] || newStatus
+    };
+
+    // Optimistic update with history
+    let updatedWarrantyObj: Warranty | null = null;
+    setWarranties(prev => prev.map(w => {
+      if (w.id === id) {
+        const existingHistory = Array.isArray(w.statusHistory) ? w.statusHistory : [];
+        const updatedHistory = [...existingHistory, newLog];
+        updatedWarrantyObj = { ...w, status: newStatus, statusHistory: updatedHistory };
+        return updatedWarrantyObj;
+      }
+      return w;
+    }));
 
     try {
       if (!isSupabaseConfigured) {
-        await updateDoc(doc(db, 'warranties', id), { status: newStatus });
+        const targetWarranty = warranties.find(w => w.id === id);
+        const existingHistory = Array.isArray(targetWarranty?.statusHistory) ? targetWarranty.statusHistory : [];
+        const updatedHistory = [...existingHistory, newLog];
+        await updateDoc(doc(db, 'warranties', id), { 
+          status: newStatus,
+          statusHistory: updatedHistory
+        });
         return;
       }
 
@@ -2443,21 +2589,21 @@ create policy "Users delete store warranties" on public.warranties for delete to
 
         {/* Navigation Items */}
         <div className="flex-1 px-4 space-y-2 overflow-y-auto custom-scrollbar">
+          <div className="text-[10px] font-bold text-slate-500 px-4 py-2 uppercase tracking-wider">Menú Principal</div>
+          {effectiveRole !== 'viewer' && effectiveRole !== 'supervisor' && (
+            <>
+              <NavButton view="list" icon={LayoutList} label="Registro de Ventas" />
+              <NavButton view="attendance" icon={Clock} label="Asistencia" />
+            </>
+          )}
           {effectiveRole !== 'supervisor' && (
             <>
-              <div className="text-[10px] font-bold text-slate-500 px-4 py-2 uppercase tracking-wider">Menú Principal</div>
-              {effectiveRole !== 'viewer' && (
-                <>
-                  <NavButton view="list" icon={LayoutList} label="Registro de Ventas" />
-                  <NavButton view="attendance" icon={Clock} label="Asistencia" />
-                </>
-              )}
               <NavButton view="dashboard" icon={BarChart3} label="Estadísticas" />
               <NavButton view="closings" icon={CalendarCheck} label="Cierre de Venta" />
-              {canAccessWarranties && (
-                <NavButton view="warranties" icon={ShieldAlert} label="Garantías" />
-              )}
             </>
+          )}
+          {canAccessWarranties && (
+            <NavButton view="warranties" icon={ShieldAlert} label="Garantías" />
           )}
           
           {(effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'developer') && (
@@ -2469,9 +2615,6 @@ create policy "Users delete store warranties" on public.warranties for delete to
                 label="Reporte Asistencias" 
                 badge={alerts.length > 0 ? alerts.length : undefined}
               />
-              {canAccessWarranties && (
-                <NavButton view="warranties" icon={ShieldAlert} label="Garantías" />
-              )}
               {(effectiveRole === 'admin' || effectiveRole === 'developer') && (
                 <>
                   <NavButton view="admin" icon={Shield} label="Administración" />

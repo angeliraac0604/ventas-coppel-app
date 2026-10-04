@@ -151,6 +151,15 @@ export interface MonthlyGoal {
   chip_express_goal?: number;
 }
 
+export interface WarrantyStatusLog {
+  status: 'received' | 'sent_to_provider' | 'in_store' | 'delivered';
+  timestamp: string; // ISO String
+  userId?: string;
+  userName?: string;
+  userEmail?: string;
+  note?: string;
+}
+
 export interface Warranty {
   id: string;
   receptionDate: string;
@@ -167,4 +176,8 @@ export interface Warranty {
   possibleEntryDate?: string; // Nuevo: Posible fecha de ingreso
   status: 'received' | 'sent_to_provider' | 'in_store' | 'delivered';
   storeId?: string;
+  receivedBy?: string; // ID del usuario que recibió el equipo
+  receivedByName?: string; // Nombre completo del usuario que recibió el equipo
+  receivedByEmail?: string;
+  statusHistory?: WarrantyStatusLog[]; // Historial detallado de cada proceso
 }
