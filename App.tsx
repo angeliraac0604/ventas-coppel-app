@@ -2463,14 +2463,28 @@ create policy "Users delete store warranties" on public.warranties for delete to
   }
 
   // --- RENDER: PROFILE LOADING GUARD ---
-  // Si tenemos sesión pero el perfil aún no carga, mostramos pantalla de carga 
-  // para evitar que vean el Dashboard "vacio" por un segundo.
+  // Si tenemos sesión pero el perfil aún no carga, mostramos pantalla de carga con opción de recuperación
   if (!userProfile && !connectionError && !isSetupNeeded) {
     return (
-      <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
-          <p className="text-slate-500 font-bold animate-pulse uppercase tracking-widest text-xs">Validando Credenciales...</p>
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4 text-center">
+        <div className="flex flex-col items-center gap-4 max-w-sm">
+          <Loader2 className="w-12 h-12 text-blue-500 animate-spin" />
+          <p className="text-slate-300 font-bold animate-pulse uppercase tracking-widest text-xs">Validando Credenciales...</p>
+          <p className="text-slate-400 text-xs mt-1">Conectando con la base de datos segura...</p>
+          <div className="flex items-center gap-3 mt-4">
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-colors shadow-md"
+            >
+              Recargar
+            </button>
+            <button
+              onClick={handleLogout}
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl text-xs font-bold transition-colors"
+            >
+              Cerrar Sesión
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -2911,147 +2925,171 @@ create policy "Users delete store warranties" on public.warranties for delete to
 
             {/* DATABASE USAGE & COST TRACKER VIEW */}
             {currentView === 'database-usage' && (
-              <DatabaseUsagePanel 
-                salesCount={sales.length}
-                storesCount={stores.length}
-                closingsCount={closings.length}
-                warrantiesCount={warranties.length}
-              />
+              <ErrorBoundary fallbackTitle="Error al cargar uso de base de datos">
+                <DatabaseUsagePanel 
+                  salesCount={sales.length}
+                  storesCount={stores.length}
+                  closingsCount={closings.length}
+                  warrantiesCount={warranties.length}
+                />
+              </ErrorBoundary>
             )}
 
             {currentView === 'list' && effectiveRole !== 'supervisor' && effectiveRole !== 'viewer' && (
-              <SalesList
-                sales={filteredSales}
-                onDelete={handleDeleteSale}
-                onEdit={(sale) => {
-                  if (effectiveRole === 'admin' || effectiveRole === 'seller' || effectiveRole === 'developer') {
-                    setSaleToEdit(sale);
-                    setCurrentView('form');
-                  }
-                }}
-                onDeepSearch={handleDeepSearch}
-                onFetchRange={handleFetchRange}
-                isDeepSearching={isDeepSearching}
-                onAdd={() => {
-                  if (effectiveRole === 'admin' || effectiveRole === 'seller' || effectiveRole === 'developer') {
-                    if (selectedStoreId === 'all' && (effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'viewer' || effectiveRole === 'developer')) {
-                      alert("⚠️ Por favor, selecciona una sucursal específica antes de agregar una venta.");
-                      return;
+              <ErrorBoundary fallbackTitle="Error al cargar el historial de ventas">
+                <SalesList
+                  sales={filteredSales}
+                  onDelete={handleDeleteSale}
+                  onEdit={(sale) => {
+                    if (effectiveRole === 'admin' || effectiveRole === 'seller' || effectiveRole === 'developer') {
+                      setSaleToEdit(sale);
+                      setCurrentView('form');
                     }
-                    setSaleToEdit(null);
-                    setCurrentView('form');
-                  }
-                }}
-                role={effectiveRole}
-                userProfile={userProfile}
-                storeName={(effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'viewer' || effectiveRole === 'developer') 
-                  ? (selectedStoreId === 'all' ? 'Todas las Tiendas' : stores.find(s => s.id === selectedStoreId)?.name) 
-                  : stores.find(s => s.id === userProfile?.storeId)?.name}
-              />
+                  }}
+                  onDeepSearch={handleDeepSearch}
+                  onFetchRange={handleFetchRange}
+                  isDeepSearching={isDeepSearching}
+                  onAdd={() => {
+                    if (effectiveRole === 'admin' || effectiveRole === 'seller' || effectiveRole === 'developer') {
+                      if (selectedStoreId === 'all' && (effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'viewer' || effectiveRole === 'developer')) {
+                        alert("⚠️ Por favor, selecciona una sucursal específica antes de agregar una venta.");
+                        return;
+                      }
+                      setSaleToEdit(null);
+                      setCurrentView('form');
+                    }
+                  }}
+                  role={effectiveRole}
+                  userProfile={userProfile}
+                  storeName={(effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'viewer' || effectiveRole === 'developer') 
+                    ? (selectedStoreId === 'all' ? 'Todas las Tiendas' : stores.find(s => s.id === selectedStoreId)?.name) 
+                    : stores.find(s => s.id === userProfile?.storeId)?.name}
+                />
+              </ErrorBoundary>
             )}
             {currentView === 'form' && effectiveRole !== 'viewer' && (
-              <SalesForm 
-                onAddSale={handleAddSale} 
-                onUpdateSale={handleUpdateSale}
-                initialData={saleToEdit}
-                role={effectiveRole}
-                userProfile={userProfile}
-                stores={stores}
-                activeStoreId={(effectiveRole === 'admin' || effectiveRole === 'developer') && selectedStoreId !== 'all' ? selectedStoreId : userProfile?.storeId}
-                onCancel={() => {
-                  setSaleToEdit(null);
-                  setCurrentView('list');
-                }}
-              />
+              <ErrorBoundary fallbackTitle="Error al cargar el formulario de ventas">
+                <SalesForm 
+                  onAddSale={handleAddSale} 
+                  onUpdateSale={handleUpdateSale}
+                  initialData={saleToEdit}
+                  role={effectiveRole}
+                  userProfile={userProfile}
+                  stores={stores}
+                  activeStoreId={(effectiveRole === 'admin' || effectiveRole === 'developer') && selectedStoreId !== 'all' ? selectedStoreId : userProfile?.storeId}
+                  onCancel={() => {
+                    setSaleToEdit(null);
+                    setCurrentView('list');
+                  }}
+                />
+              </ErrorBoundary>
             )}
             {currentView === 'dashboard' && effectiveRole !== 'supervisor' && (
-              <Dashboard 
-                sales={filteredSales}
-                closings={filteredClosings} 
-                role={effectiveRole}
-                storeId={(effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'viewer' || effectiveRole === 'developer') ? (selectedStoreId === 'all' ? undefined : selectedStoreId) : userProfile?.storeId}
-                userProfile={userProfile}
-                storeName={(effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'viewer' || effectiveRole === 'developer') 
-                  ? (selectedStoreId === 'all' ? 'Todas las Tiendas' : stores.find(s => s.id === selectedStoreId)?.name) 
-                  : stores.find(s => s.id === userProfile?.storeId)?.name}
-              />
+              <ErrorBoundary fallbackTitle="Error al cargar las estadísticas">
+                <Dashboard 
+                  sales={filteredSales}
+                  closings={filteredClosings} 
+                  role={effectiveRole}
+                  storeId={(effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'viewer' || effectiveRole === 'developer') ? (selectedStoreId === 'all' ? undefined : selectedStoreId) : userProfile?.storeId}
+                  userProfile={userProfile}
+                  storeName={(effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'viewer' || effectiveRole === 'developer') 
+                    ? (selectedStoreId === 'all' ? 'Todas las Tiendas' : stores.find(s => s.id === selectedStoreId)?.name) 
+                    : stores.find(s => s.id === userProfile?.storeId)?.name}
+                />
+              </ErrorBoundary>
             )}
             {currentView === 'closings' && effectiveRole !== 'supervisor' && (
-              <DailyClosings
-                sales={filteredSales}
-                closings={filteredClosings}
-                onCloseDay={handleCloseDay}
-                onDeleteClosing={handleDeleteClosing}
-                role={effectiveRole}
-                storeName={(effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'viewer' || effectiveRole === 'developer') 
-                  ? (selectedStoreId === 'all' ? 'Todas las Tiendas' : stores.find(s => s.id === selectedStoreId)?.name) 
-                  : stores.find(s => s.id === userProfile?.storeId)?.name}
-                activeStoreId={(effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'viewer' || effectiveRole === 'developer') ? selectedStoreId : userProfile?.storeId}
-                stores={stores}
-                userProfile={userProfile}
-              />
+              <ErrorBoundary fallbackTitle="Error al cargar el cierre diario">
+                <DailyClosings
+                  sales={filteredSales}
+                  closings={filteredClosings}
+                  onCloseDay={handleCloseDay}
+                  onDeleteClosing={handleDeleteClosing}
+                  role={effectiveRole}
+                  storeName={(effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'viewer' || effectiveRole === 'developer') 
+                    ? (selectedStoreId === 'all' ? 'Todas las Tiendas' : stores.find(s => s.id === selectedStoreId)?.name) 
+                    : stores.find(s => s.id === userProfile?.storeId)?.name}
+                  activeStoreId={(effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'viewer' || effectiveRole === 'developer') ? selectedStoreId : userProfile?.storeId}
+                  stores={stores}
+                  userProfile={userProfile}
+                />
+              </ErrorBoundary>
             )}
             {currentView === 'warranties' && canAccessWarranties && (
-              <Warranties
-                warranties={filteredWarranties}
-                onAddWarranty={handleAddWarranty}
-                onUpdateWarranty={handleUpdateWarranty}
-                onUpdateStatus={handleUpdateWarrantyStatus}
-                onDeleteWarranty={handleDeleteWarranty}
-                brandConfigs={BRAND_CONFIGS}
-                isAdmin={isWarrantyAdmin}
-                userProfile={userProfile}
-                stores={stores}
-              />
+              <ErrorBoundary fallbackTitle="Error al cargar garantías">
+                <Warranties
+                  warranties={filteredWarranties}
+                  onAddWarranty={handleAddWarranty}
+                  onUpdateWarranty={handleUpdateWarranty}
+                  onUpdateStatus={handleUpdateWarrantyStatus}
+                  onDeleteWarranty={handleDeleteWarranty}
+                  brandConfigs={BRAND_CONFIGS}
+                  isAdmin={isWarrantyAdmin}
+                  userProfile={userProfile}
+                  stores={stores}
+                />
+              </ErrorBoundary>
             )}
             {currentView === 'attendance' && userProfile && effectiveRole !== 'viewer' && (
-              <AttendanceManager 
-                user={userProfile} 
-                storeName={stores.find(s => s.id === userProfile?.storeId)?.name}
-              />
+              <ErrorBoundary fallbackTitle="Error al cargar el control de asistencia">
+                <AttendanceManager 
+                  user={userProfile} 
+                  storeName={stores.find(s => s.id === userProfile?.storeId)?.name}
+                />
+              </ErrorBoundary>
             )}
             {currentView === 'attendance-report' && (effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'developer') && (
-              <AttendanceReport 
-                selectedStoreId={selectedStoreId}
-                stores={stores}
-                userProfile={userProfile}
-                onRefreshStores={fetchData}
-              />
+              <ErrorBoundary fallbackTitle="Error al cargar el reporte de asistencias">
+                <AttendanceReport 
+                  selectedStoreId={selectedStoreId}
+                  stores={stores}
+                  userProfile={userProfile}
+                  onRefreshStores={fetchData}
+                />
+              </ErrorBoundary>
             )}
             {currentView === 'commissions' && (effectiveRole === 'admin' || effectiveRole === 'developer') && (
-              <CommissionsPanel 
-                sales={sales}
-                stores={stores}
-                userProfile={userProfile}
-                selectedStoreId={selectedStoreId}
-                onSelectStore={(storeId) => setSelectedStoreId(storeId)}
-              />
+              <ErrorBoundary fallbackTitle="Error al cargar comisiones">
+                <CommissionsPanel 
+                  sales={sales}
+                  stores={stores}
+                  userProfile={userProfile}
+                  selectedStoreId={selectedStoreId}
+                  onSelectStore={(storeId) => setSelectedStoreId(storeId)}
+                />
+              </ErrorBoundary>
             )}
             {currentView === 'supervision' && (effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'developer') && (
-              <SupervisionPanel 
-                sales={sales}
-                stores={stores}
-                selectedStoreId={selectedStoreId}
-                userProfile={userProfile}
-              />
+              <ErrorBoundary fallbackTitle="Error al cargar panel de rendimiento">
+                <SupervisionPanel 
+                  sales={sales}
+                  stores={stores}
+                  selectedStoreId={selectedStoreId}
+                  userProfile={userProfile}
+                />
+              </ErrorBoundary>
             )}
             {currentView === 'admin' && (effectiveRole === 'admin' || effectiveRole === 'supervisor' || effectiveRole === 'developer') && (
-              <AdminPanel 
-                userProfile={userProfile}
-                onRefresh={() => {
-                  fetchData();
-                  fetchPendingRequestsCount();
-                }} 
-                onViewRequests={() => setCurrentView('requests')}
-                onOpenDatabaseUsage={() => setCurrentView('database-usage')}
-              />
+              <ErrorBoundary fallbackTitle="Error al cargar administración">
+                <AdminPanel 
+                  userProfile={userProfile}
+                  onRefresh={() => {
+                    fetchData();
+                    fetchPendingRequestsCount();
+                  }} 
+                  onViewRequests={() => setCurrentView('requests')}
+                  onOpenDatabaseUsage={() => setCurrentView('database-usage')}
+                />
+              </ErrorBoundary>
             )}
             {currentView === 'requests' && (effectiveRole === 'admin' || effectiveRole === 'developer') && (
-              <RequestsPanel 
-                onBack={() => setCurrentView('admin')}
-                onRefresh={() => fetchPendingRequestsCount()}
-                stores={stores}
-              />
+              <ErrorBoundary fallbackTitle="Error al cargar solicitudes">
+                <RequestsPanel 
+                  onBack={() => setCurrentView('admin')}
+                  onRefresh={() => fetchPendingRequestsCount()}
+                  stores={stores}
+                />
+              </ErrorBoundary>
             )}
           </div>
       </main>

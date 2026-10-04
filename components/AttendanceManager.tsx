@@ -340,80 +340,113 @@ const AttendanceManager: React.FC<AttendanceManagerProps> = ({ user, storeName }
   };
 
   const capturePhoto = () => {
-    if (!videoRef.current || !canvasRef.current) return;
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    const context = canvas.getContext('2d');
-    if (!context) return;
+    try {
+      if (!videoRef.current || !canvasRef.current) return;
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      const context = canvas.getContext('2d');
+      if (!context) return;
 
-    // Set canvas dimensions
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+      const width = video.videoWidth > 0 ? video.videoWidth : 640;
+      const height = video.videoHeight > 0 ? video.videoHeight : 480;
 
-    // Draw video frame
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      // Set canvas dimensions safely
+      canvas.width = width;
+      canvas.height = height;
 
-    // Add Watermark Text with Shadow (No background overlay)
-    context.fillStyle = 'white';
-    context.font = 'bold 18px sans-serif';
-    
-    // Shadow for legibility
-    context.shadowColor = 'black';
-    context.shadowBlur = 4;
-    context.shadowOffsetX = 2;
-    context.shadowOffsetY = 2;
-    
-    const time = new Date().toLocaleString('es-MX', { 
-      day: '2-digit', month: '2-digit', year: 'numeric',
-      hour: '2-digit', minute: '2-digit', second: '2-digit',
-      hour12: true 
-    });
-
-    // Helper for wrapping text
-    const wrapText = (ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number) => {
-      const words = text.split(' ');
-      let line = '';
-      let currentY = y;
-
-      for (let n = 0; n < words.length; n++) {
-        const testLine = line + words[n] + ' ';
-        const metrics = ctx.measureText(testLine);
-        const testWidth = metrics.width;
-        if (testWidth > maxWidth && n > 0) {
-          ctx.fillText(line, x, currentY);
-          line = words[n] + ' ';
-          currentY += lineHeight;
-        } else {
-          line = testLine;
-        }
+      // Draw video frame
+      try {
+        context.drawImage(video, 0, 0, width, height);
+      } catch (drawErr) {
+        console.warn("Could not draw video frame directly:", drawErr);
       }
-      ctx.fillText(line, x, currentY);
-      return currentY;
+
+      // Add Watermark Text with Shadow
+      context.fillStyle = 'white';
+      context.font = 'bold 18px sans-serif';
+      context.shadowColor = 'black';
+      context.shadowBlur = 4;
+      context.shadowOffsetX = 2;
+      context.shadowOffsetY = 2;
+      
+      const time = new Date().toLocaleString('es-MX', { 
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hour12: true 
+      });
+
+      // Helper for wrapping text
+      const wrapText = (ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number) => {
+        const words = text.split(' ');
+        let line = '';
+        let currentY = y;
+
+        for (let n = 0; n < words.length; n++) {
+          const testLine = line + words[n] + ' ';
+          const metrics = ctx.measureText(testLine);
+          const testWidth = metrics.width;
+          if (testWidth > maxWidth && n > 0) {
+            ctx.fillText(line, x, currentY);
+            line = words[n] + ' ';
+            currentY += lineHeight;
+          } else {
+            line = testLine;
+          }
+        }
+        ctx.fillText(line, x, currentY);
+        return currentY;
+      };
+
+      // Draw Info (Usuario, Fecha y Hora, then Ubicación)
+      let yPos = Math.max(height - 130, 40);
+      context.fillText(`USUARIO: ${user.fullName || user.email}`, 20, yPos);
+      
+      yPos += 30;
+      context.fillText(`FECHA Y HORA: ${time}`, 20, yPos);
+      
+      yPos += 30;
+      context.font = 'bold 16px sans-serif';
+      wrapText(context, `UBICACIÓN: ${location || 'No disponible'}`, 20, yPos, Math.max(width - 40, 200), 22);
+
+      // Reset shadow
+      context.shadowColor = 'transparent';
+      context.shadowBlur = 0;
+      context.shadowOffsetX = 0;
+      context.shadowOffsetY = 0;
+
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      setCapturedImage(dataUrl);
+
+      // Stop stream safely
+      if (video.srcObject) {
+        try {
+          const stream = video.srcObject as MediaStream;
+          stream?.getTracks().forEach(track => track.stop());
+          video.srcObject = null;
+        } catch (e) {}
+      }
+    } catch (err: any) {
+      console.error("Camera capture error caught:", err);
+      alert("Hubo un inconveniente con la captura directa de la cámara. Puedes tomar o subir una foto desde tus archivos.");
+    }
+  };
+
+  const handleSelfieFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64 = reader.result as string;
+      setCapturedImage(base64);
+      if (videoRef.current?.srcObject) {
+        try {
+          const stream = videoRef.current.srcObject as MediaStream;
+          stream?.getTracks().forEach(t => t.stop());
+          videoRef.current.srcObject = null;
+        } catch (e) {}
+      }
     };
-
-    // Draw Info (Usuario, Fecha y Hora, then Ubicación)
-    let yPos = canvas.height - 130; // Start higher up
-    context.fillText(`USUARIO: ${user.fullName || user.email}`, 20, yPos);
-    
-    yPos += 30;
-    context.fillText(`FECHA Y HORA: ${time}`, 20, yPos);
-    
-    yPos += 30;
-    context.font = 'bold 16px sans-serif'; // Slightly smaller for long address
-    wrapText(context, `UBICACIÓN: ${location}`, 20, yPos, canvas.width - 40, 22);
-
-    // Reset shadow for subsequent draws if any
-    context.shadowColor = 'transparent';
-    context.shadowBlur = 0;
-    context.shadowOffsetX = 0;
-    context.shadowOffsetY = 0;
-
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-    setCapturedImage(dataUrl);
-
-    // Stop stream
-    const stream = video.srcObject as MediaStream;
-    stream?.getTracks().forEach(track => track.stop());
+    reader.readAsDataURL(file);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -590,12 +623,12 @@ const AttendanceManager: React.FC<AttendanceManagerProps> = ({ user, storeName }
                   {!capturedImage ? (
                     <div className="relative w-full bg-slate-900 rounded-3xl overflow-hidden shadow-inner ring-4 ring-slate-100 flex items-center justify-center min-h-[320px]">
                       <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-contain mirror bg-black" />
-                      <div className="absolute inset-x-0 bottom-6 flex justify-center">
+                      <div className="absolute inset-x-0 bottom-6 flex flex-col items-center gap-2">
                         <button 
                           onClick={capturePhoto}
                           disabled={location === 'Obteniendo ubicación...'}
                           className={`
-                            border-2 text-white px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all flex items-center gap-2
+                            border-2 text-white px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all flex items-center gap-2 shadow-lg
                             ${location === 'Obteniendo ubicación...' 
                               ? 'bg-slate-800/50 border-slate-700 cursor-wait' 
                               : 'bg-white/20 backdrop-blur-md border-white hover:bg-white hover:text-slate-900'
@@ -605,6 +638,10 @@ const AttendanceManager: React.FC<AttendanceManagerProps> = ({ user, storeName }
                           <Camera className="w-4 h-4" /> 
                           {location === 'Obteniendo ubicación...' ? 'Esperando GPS...' : 'Tomar Foto'}
                         </button>
+                        <label className="text-[10px] font-bold text-slate-300 hover:text-white underline cursor-pointer bg-black/40 px-3 py-1 rounded-full backdrop-blur-sm">
+                          O subir foto desde galería
+                          <input type="file" accept="image/*" onChange={handleSelfieFileUpload} className="hidden" />
+                        </label>
                       </div>
                     </div>
                   ) : (

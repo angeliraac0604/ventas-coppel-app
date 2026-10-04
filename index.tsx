@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import posthog from 'posthog-js';
 import { PostHogProvider } from '@posthog/react';
 
@@ -16,7 +17,10 @@ if (posthogToken) {
   }
 }
 
-console.log('--- INDEX.TSX STARTING ---');
+// Global safety listener to prevent uncaught promise rejection crashes
+window.addEventListener('unhandledrejection', (event) => {
+  console.warn("Unhandled Promise Rejection prevented from crashing app:", event.reason);
+});
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -24,25 +28,30 @@ if (!rootElement) {
   throw new Error("Could not find root element to mount to");
 }
 
-rootElement.innerHTML = '<div style="padding: 20px; font-family: sans-serif;">Iniciando sistema...</div>';
-
 try {
-  console.log('Creating React Root...');
   const root = ReactDOM.createRoot(rootElement);
-  console.log('Rendering App...');
   root.render(
     <React.StrictMode>
-      {posthogToken ? (
-        <PostHogProvider client={posthog}>
+      <ErrorBoundary fallbackTitle="Error en la aplicación">
+        {posthogToken ? (
+          <PostHogProvider client={posthog}>
+            <App />
+          </PostHogProvider>
+        ) : (
           <App />
-        </PostHogProvider>
-      ) : (
-        <App />
-      )}
+        )}
+      </ErrorBoundary>
     </React.StrictMode>
   );
-  console.log('Render Called Successfully');
 } catch (err) {
   console.error('REACT MOUNT ERROR:', err);
-  rootElement.innerHTML = `<div style="color:red; padding: 20px;">Error crítico al iniciar: ${err}</div>`;
+  rootElement.innerHTML = `
+    <div style="min-height: 100vh; background-color: #0f172a; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: sans-serif; padding: 20px; text-align: center;">
+      <h2 style="font-size: 20px; font-weight: bold; margin-bottom: 12px;">Se presentó un problema al cargar</h2>
+      <p style="color: #94a3b8; font-size: 14px; max-width: 400px; margin-bottom: 24px;">Presiona el botón para reiniciar la sesión y cargar nuevamente.</p>
+      <button onclick="localStorage.clear(); window.location.reload();" style="background-color: #2563eb; color: white; border: none; padding: 12px 24px; border-radius: 12px; font-weight: bold; cursor: pointer;">
+        Reiniciar Aplicación
+      </button>
+    </div>
+  `;
 }
