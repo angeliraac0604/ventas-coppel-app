@@ -704,24 +704,25 @@ create policy "Users delete store warranties" on public.warranties for delete to
 
   // --- AUTH CHECK ---
   useEffect(() => {
-    // 1. Revisar si hay sesión de Firestore guardada
+    // 1. Purgar accesos rápidos obsoletos y revocar sesiones bypass anteriores
     try {
       const fsSessionRaw = localStorage.getItem('firestore_user_session');
       if (fsSessionRaw) {
         const fsUser = JSON.parse(fsSessionRaw);
-        if (fsUser && fsUser.id) {
+        // Revocar inmediatamente si fue una sesión iniciada por los botones rápidos de prueba
+        if (fsUser && (fsUser.id === 'seller-cardenas-1053' || fsUser.id === 'dev-isaac-2001')) {
+          localStorage.removeItem('firestore_user_session');
+          localStorage.removeItem('dev_session');
+          localStorage.removeItem('dev_simulated_role');
+        } else if (fsUser && fsUser.id) {
           handleFirestoreLogin(fsUser);
           return;
         }
       }
+      // Limpiar banderas residuales de acceso rápido de desarrollo
+      localStorage.removeItem('dev_session');
+      localStorage.removeItem('dev_simulated_role');
     } catch (e) {}
-
-    // Si ya hay sesión de desarrollador activa
-    if (localStorage.getItem('dev_session') === 'true') {
-      handleDeveloperLogin();
-      setAuthLoading(false);
-      return;
-    }
 
     if (!isSupabaseConfigured) {
       setAuthLoading(false);
