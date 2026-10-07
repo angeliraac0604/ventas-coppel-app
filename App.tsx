@@ -1724,14 +1724,30 @@ create policy "Users delete store warranties" on public.warranties for delete to
 
       if (!isSupabaseConfigured) {
         const saleId = `sale-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+        
+        // Optimizar imágenes antes de escribir a Firestore para que el payload sea <50KB y la sincronización sea instantánea
+        let compressedTicket = newSaleData.ticketImage || '';
+        if (compressedTicket && compressedTicket.startsWith('data:image')) {
+          try {
+            compressedTicket = await compressImage(compressedTicket, 800, 0.7);
+          } catch (e) {}
+        }
+
+        let compressedPorta = (newSaleData as any).portabilityScreenshot || (newSaleData as any).portability_screenshot || '';
+        if (compressedPorta && compressedPorta.startsWith('data:image')) {
+          try {
+            compressedPorta = await compressImage(compressedPorta, 800, 0.7);
+          } catch (e) {}
+        }
+
         const newSale: Sale = {
           id: saleId,
           invoiceNumber: newSaleData.invoiceNumber,
           customerName: newSaleData.customerName,
-          price: newSaleData.price,
+          price: Number(newSaleData.price || 0),
           brand: newSaleData.brand,
           date: newSaleData.date,
-          ticketImage: newSaleData.ticketImage || '',
+          ticketImage: compressedTicket,
           createdBy: currentUserId,
           createdByName: currentUserName,
           createdByEmail: currentUserEmail,
@@ -1740,20 +1756,25 @@ create policy "Users delete store warranties" on public.warranties for delete to
           category: (newSaleData as any).category || 'kit',
           iccid: (newSaleData as any).iccid || '',
           phoneNumber: (newSaleData as any).phoneNumber || (newSaleData as any).phone_number || '',
-          portabilityScreenshot: (newSaleData as any).portabilityScreenshot || (newSaleData as any).portability_screenshot || '',
+          portabilityScreenshot: compressedPorta,
           transactionFolio: generatedFolio
         };
+
+        // 1. Actualización local inmediata
         setSales(prev => {
           const filtered = prev.filter(s => s.id !== saleId);
           const updated = [newSale, ...filtered];
           try { localStorage.setItem('coppel_cached_sales', JSON.stringify(updated)); } catch (e) {}
           return updated;
         });
+
+        // 2. Escritura instantánea en la nube (Firestore) para reflejarse en todos los dispositivos en milisegundos
         try {
           await setDoc(doc(db, 'sales', saleId), cleanFirestoreData(newSale), { merge: true });
         } catch (fsWriteErr) {
           console.warn("Firestore write sync:", fsWriteErr);
         }
+
         try {
           const catTab = newSale.category === 'kit' ? 'KIT' : 
                          newSale.category === 'chip_0' ? 'CHIP_0' : 
@@ -2150,9 +2171,18 @@ create policy "Users delete store warranties" on public.warranties for delete to
 
       // Optimizar / subir imagen de evidencia para evitar que exceda el límite de 1MB de Firestore
       let processedImage = newWarranty.ticketImage || '';
+      const currentUserName = userProfile?.fullName || userProfile?.email || (isDeveloperSession ? 'Desarrollador' : 'Administrador');
+      const targetStoreName = stores.find(s => s.id === finalStoreId)?.name || 'Sucursal';
       if (processedImage && processedImage.startsWith('data:image')) {
         try {
-          processedImage = await smartImageUpload(processedImage, 'warranty');
+          processedImage = await smartImageUpload(
+            processedImage,
+            `garantia-${newWarranty.invoiceNumber || 'ticket'}-${Date.now()}`,
+            newWarranty.receptionDate,
+            targetStoreName,
+            'warranties',
+            currentUserName
+          );
         } catch (imgErr) {
           console.warn("Error al subir a la nube, comprimiendo imagen para BD:", imgErr);
           try {
@@ -2164,7 +2194,6 @@ create policy "Users delete store warranties" on public.warranties for delete to
       }
 
       const warrantyId = `warranty-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-      const currentUserName = userProfile?.fullName || userProfile?.email || (isDeveloperSession ? 'Desarrollador' : 'Administrador');
       const currentUserId = userProfile?.id || session?.user?.id || 'admin';
       const currentUserEmail = userProfile?.email || '';
 
