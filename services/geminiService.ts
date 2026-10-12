@@ -148,7 +148,7 @@ export const analyzeTicketImage = async (
       ]
     }`;
 
-    const candidateModels = ["gemini-3.8-flash", "gemini-2.5-flash"];
+    const candidateModels = ["gemini-2.5-flash"];
     let text: string | null = null;
 
     // 1. Intentar llamar primero al endpoint del servidor backend (/api/gemini-ocr)
@@ -177,7 +177,7 @@ export const analyzeTicketImage = async (
       for (const model of candidateModels) {
         try {
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 9000);
+          const timeoutId = setTimeout(() => controller.abort(), 30000);
 
           const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${getGeminiApiKey()}`, {
             method: 'POST',
