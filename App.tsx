@@ -722,6 +722,12 @@ create policy "Users delete store warranties" on public.warranties for delete to
       // Limpiar banderas residuales de acceso rápido de desarrollo
       localStorage.removeItem('dev_session');
       localStorage.removeItem('dev_simulated_role');
+
+      // Purgar borradores antiguos con imágenes pesadas que puedan bloquear la cuota de localStorage
+      const draft = localStorage.getItem('sales_form_draft');
+      if (draft && draft.length > 30000) {
+        localStorage.removeItem('sales_form_draft');
+      }
     } catch (e) {}
 
     if (!isSupabaseConfigured) {
@@ -1521,7 +1527,17 @@ create policy "Users delete store warranties" on public.warranties for delete to
         });
 
         setSales(sortedSales);
-        try { localStorage.setItem('coppel_cached_sales', JSON.stringify(sortedSales)); } catch (e) {}
+        try {
+          const lightweight = sortedSales.slice(0, 100).map(s => {
+            if (s.ticketImage?.startsWith('data:') || s.portabilityScreenshot?.startsWith('data:')) {
+              return { ...s, ticketImage: '', portabilityScreenshot: '' };
+            }
+            return s;
+          });
+          localStorage.setItem('coppel_cached_sales', JSON.stringify(lightweight));
+        } catch (e) {
+          console.warn("No se pudo guardar caché local de ventas (cuota llena):", e);
+        }
         setIsLoading(false);
       }, (err: any) => {
         console.warn("Realtime sales error (operando con datos locales y caché):", err);
@@ -1764,7 +1780,15 @@ create policy "Users delete store warranties" on public.warranties for delete to
         setSales(prev => {
           const filtered = prev.filter(s => s.id !== saleId);
           const updated = [newSale, ...filtered];
-          try { localStorage.setItem('coppel_cached_sales', JSON.stringify(updated)); } catch (e) {}
+          try {
+            const lightweight = updated.slice(0, 100).map(s => {
+              if (s.ticketImage?.startsWith('data:') || s.portabilityScreenshot?.startsWith('data:')) {
+                return { ...s, ticketImage: '', portabilityScreenshot: '' };
+              }
+              return s;
+            });
+            localStorage.setItem('coppel_cached_sales', JSON.stringify(lightweight));
+          } catch (e) {}
           return updated;
         });
 

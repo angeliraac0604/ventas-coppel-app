@@ -104,28 +104,41 @@ const SalesForm: React.FC<SalesFormProps> = ({
   const [ocrStatus, setOcrStatus] = useState<'idle' | 'analyzing' | 'success' | 'error'>('idle');
   const [ocrMessage, setOcrMessage] = useState<string | null>(null);
 
-  // Draft persistence for new sales
+  // Draft persistence for new sales (Text data only to prevent QuotaExceededError on mobile devices)
   useEffect(() => {
     if (!initialData) {
-      const draft = localStorage.getItem('sales_form_draft');
-      if (draft) {
-        try {
+      try {
+        const draft = localStorage.getItem('sales_form_draft');
+        if (draft) {
           const parsed = JSON.parse(draft);
-          setCommonData(prev => ({ ...prev, ...parsed.commonData }));
-          if (parsed.items) setItems(parsed.items);
-          if (parsed.ticketImage) setTicketImage(parsed.ticketImage);
-        } catch (e) {}
+          if (parsed.commonData) setCommonData(prev => ({ ...prev, ...parsed.commonData }));
+          if (parsed.items && Array.isArray(parsed.items) && parsed.items.length > 0) setItems(parsed.items);
+        }
+      } catch (e) {
+        try { localStorage.removeItem('sales_form_draft'); } catch (_) {}
       }
     }
   }, [initialData]);
 
   useEffect(() => {
     if (!initialData) {
-      localStorage.setItem('sales_form_draft', JSON.stringify({ commonData, items, ticketImage }));
+      try {
+        // Only persist lightweight text fields (commonData and items).
+        // NEVER persist raw Base64 images into localStorage to protect the 5MB browser quota.
+        localStorage.setItem('sales_form_draft', JSON.stringify({ commonData, items }));
+      } catch (e) {
+        console.warn("Could not save sales draft to localStorage (quota or disabled):", e);
+        // If quota exceeded, clean up stale draft without throwing error
+        try { localStorage.removeItem('sales_form_draft'); } catch (_) {}
+      }
     }
-  }, [commonData, items, ticketImage, initialData]);
+  }, [commonData, items, initialData]);
 
-  const clearDraft = () => localStorage.removeItem('sales_form_draft');
+  const clearDraft = () => {
+    try {
+      localStorage.removeItem('sales_form_draft');
+    } catch (e) {}
+  };
 
   const processTicketAI = async (base64: string) => {
     setIsAnalyzing(true);
