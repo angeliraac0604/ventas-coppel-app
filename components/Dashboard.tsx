@@ -49,12 +49,28 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
     }
   };
 
-  // --- GOALS STATE (SYNCED WITH DB) ---
-  const [monthlyGoal, setMonthlyGoal] = useState<number>(0);
-  const [devicesGoal, setDevicesGoal] = useState<number>(0);
-  const [chip0Goal, setChip0Goal] = useState<number>(0);
-  const [portaGoal, setPortaGoal] = useState<number>(0);
-  const [expressGoal, setExpressGoal] = useState<number>(0);
+  const now = new Date();
+  const [selectedMonth, setSelectedMonth] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
+
+  // Helper para recuperar meta de la caché local instantáneamente (0ms)
+  const getCachedGoal = (field: string, defaultVal = 0) => {
+    try {
+      const activeKey = `coppel_cached_goals_${selectedMonth}_${storeId || 'all'}`;
+      const raw = localStorage.getItem(activeKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed[field] !== undefined && parsed[field] !== null) return Number(parsed[field]);
+      }
+    } catch (_) {}
+    return defaultVal;
+  };
+
+  // --- GOALS STATE (INSTANT 0MS LOAD + REALTIME) ---
+  const [monthlyGoal, setMonthlyGoal] = useState<number>(() => getCachedGoal('revenue', 0));
+  const [devicesGoal, setDevicesGoal] = useState<number>(() => getCachedGoal('devices', 0));
+  const [chip0Goal, setChip0Goal] = useState<number>(() => getCachedGoal('chip0', 0));
+  const [portaGoal, setPortaGoal] = useState<number>(() => getCachedGoal('porta', 0));
+  const [expressGoal, setExpressGoal] = useState<number>(() => getCachedGoal('express', 0));
 
   const [isEditingGoal, setIsEditingGoal] = useState(false);
   const [tempGoal, setTempGoal] = useState(monthlyGoal.toString());
@@ -71,126 +87,121 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
   const [isEditingExpress, setIsEditingExpress] = useState(false);
   const [tempExpressGoal, setTempExpressGoal] = useState(expressGoal.toString());
 
-  const now = new Date();
-  const [selectedMonth, setSelectedMonth] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
-  const [monthlySales, setMonthlySales] = useState<Sale[]>([]);
   const [isDataLoading, setIsDataLoading] = useState(false);
 
+  // Helper para comparar sucursales incluyendo alias conocidos
+  const matchesStoreAlias = (goalStoreId?: string, currentStoreId?: string) => {
+    if (!goalStoreId || !currentStoreId) return false;
+    if (goalStoreId === currentStoreId) return true;
+    const s1 = String(goalStoreId).toLowerCase();
+    const s2 = String(currentStoreId).toLowerCase();
+    const isCardenas1 = s1.includes('1053') || s1.includes('cardenas') || s1 === 'c90b4652-f98f-472b-acab-0d9bc6b4862e' || s1 === 'coppel-cardenas-1053';
+    const isCardenas2 = s2.includes('1053') || s2.includes('cardenas') || s2 === 'c90b4652-f98f-472b-acab-0d9bc6b4862e' || s2 === 'coppel-cardenas-1053';
+    return isCardenas1 && isCardenas2;
+  };
+
+  // 🔥 1. SINCRONIZACIÓN EN TIEMPO REAL Y FIRESTORE CACHE PARA METAS
   useEffect(() => {
-    const fetchDashboardData = async () => {
-      setIsDataLoading(true);
-      try {
-        const isGlobal = !storeId || storeId === 'all';
-        
-        // 1. Fetch Goals from Firestore and Supabase
-        let loadedGoals: any[] = [];
-        try {
-          const fsGoalsSnap = await getDocs(collection(db, 'monthly_goals'));
-          if (!fsGoalsSnap.empty) {
-            fsGoalsSnap.docs.forEach(d => {
-              const data = d.data();
-              if (data.month === selectedMonth) {
-                loadedGoals.push({ id: d.id, ...data });
-              }
-            });
-          }
-        } catch (fsErr) {
-          console.warn("Firestore goals fetch note:", fsErr);
-        }
+    const isGlobal = !storeId || storeId === 'all';
 
-        if (loadedGoals.length === 0 && isSupabaseConfigured) {
-          try {
-            let goalQuery = supabase.from('monthly_goals').select('*').eq('month', selectedMonth);
-            const { data: goalData } = await goalQuery;
-            if (goalData && goalData.length > 0) {
-              loadedGoals = goalData;
-            }
-          } catch (goalErr) {
-            console.warn("Goals query note:", goalErr);
-          }
-        }
-
-        let matchingGoals = loadedGoals;
-        if (!isGlobal) {
-          matchingGoals = loadedGoals.filter(g => (g.storeId || g.store_id) === storeId);
-        } else if (userProfile?.role === 'supervisor' || userProfile?.role === 'viewer') {
-          if (userProfile.assignedStores && userProfile.assignedStores.length > 0) {
-            matchingGoals = loadedGoals.filter(g => userProfile.assignedStores.includes(g.storeId || g.store_id));
-          }
-        }
-
-        if (matchingGoals.length > 0) {
-          if (isGlobal) {
-            setMonthlyGoal(matchingGoals.reduce((sum, g) => sum + Number(g.revenueGoal ?? g.revenue_goal ?? 0), 0));
-            setDevicesGoal(matchingGoals.reduce((sum, g) => sum + Number(g.devicesGoal ?? g.devices_goal ?? 0), 0));
-            setChip0Goal(matchingGoals.reduce((sum, g) => sum + Number(g.chip0Goal ?? g.chip_0_goal ?? 0), 0));
-            setPortaGoal(matchingGoals.reduce((sum, g) => sum + Number(g.portabilityGoal ?? g.portability_goal ?? 0), 0));
-            setExpressGoal(matchingGoals.reduce((sum, g) => sum + Number(g.chipExpressGoal ?? g.chip_express_goal ?? 0), 0));
-          } else {
-            const g = matchingGoals[0];
-            setMonthlyGoal(Number(g.revenueGoal ?? g.revenue_goal ?? 0));
-            setDevicesGoal(Number(g.devicesGoal ?? g.devices_goal ?? 0));
-            setChip0Goal(Number(g.chip0Goal ?? g.chip_0_goal ?? 0));
-            setPortaGoal(Number(g.portabilityGoal ?? g.portability_goal ?? 0));
-            setExpressGoal(Number(g.chipExpressGoal ?? g.chip_express_goal ?? 0));
-          }
-        } else {
-          setMonthlyGoal(0);
-          setDevicesGoal(0);
-          setChip0Goal(0);
-          setPortaGoal(0);
-          setExpressGoal(0);
-        }
-
-        // 2. Fetch Sales for specifically this month
-        let monthly: Sale[] = [];
-        if (isSupabaseConfigured) {
-          try {
-            let salesQuery = supabase.from('sales').select('*')
-              .gte('date', `${selectedMonth}-01`)
-              .lte('date', `${selectedMonth}-31`)
-              .order('date', { ascending: false });
-            
-            if (!isGlobal) salesQuery = salesQuery.eq('store_id', storeId);
-            
-            const { data: salesData } = await salesQuery.range(0, 1999);
-            
-            if (salesData && salesData.length > 0) {
-              monthly = salesData.map((s: any) => ({
-                id: s.id,
-                invoiceNumber: s.invoice_number,
-                customerName: s.customer_name,
-                price: Number(s.price || 0),
-                brand: s.brand as Brand,
-                date: s.date,
-                storeId: s.store_id,
-                category: s.category
-              }));
-            }
-          } catch (sbErr) {
-            console.warn("Supabase dashboard sales note:", sbErr);
-          }
-        }
-
-        // Fallback to sales passed from props (Firestore data from backup)
-        if (monthly.length === 0 && sales && sales.length > 0) {
-          monthly = sales.filter(s => {
-            const matchesMonth = s.date && s.date.startsWith(selectedMonth);
-            const matchesStore = isGlobal || s.storeId === storeId;
-            return matchesMonth && matchesStore;
-          });
-        }
-
-        setMonthlySales(monthly);
-
-      } catch (err) {
-        console.error("Dashboard fetch error", err);
-      } finally {
-        setIsDataLoading(false);
+    // Cargar caché local primero para respuesta inmediata
+    try {
+      const activeKey = `coppel_cached_goals_${selectedMonth}_${storeId || 'all'}`;
+      const raw = localStorage.getItem(activeKey);
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (p.revenue !== undefined) setMonthlyGoal(Number(p.revenue));
+        if (p.devices !== undefined) setDevicesGoal(Number(p.devices));
+        if (p.chip0 !== undefined) setChip0Goal(Number(p.chip0));
+        if (p.porta !== undefined) setPortaGoal(Number(p.porta));
+        if (p.express !== undefined) setExpressGoal(Number(p.express));
       }
-    };
-    fetchDashboardData();
-  }, [selectedMonth, storeId, sales]);
+    } catch (_) {}
+
+    // Escuchar la colección de metas en Firestore en tiempo real (0ms latencia con caché)
+    const unsub = onSnapshot(collection(db, 'monthly_goals'), (snapshot) => {
+      if (snapshot.empty) return;
+
+      const loadedGoals: any[] = [];
+      snapshot.docs.forEach(d => {
+        const data = d.data();
+        if (data.month === selectedMonth) {
+          loadedGoals.push({ id: d.id, ...data });
+        }
+      });
+
+      let matchingGoals: any[] = [];
+      if (!isGlobal) {
+        // Vista de sucursal específica: buscar meta de esa sucursal
+        matchingGoals = loadedGoals.filter(g => matchesStoreAlias(g.storeId || g.store_id, storeId));
+        // Si no tiene meta propia configurada, usar la meta global como respaldo para no dejarlo en 0
+        if (matchingGoals.length === 0) {
+          matchingGoals = loadedGoals.filter(g => (g.storeId || g.store_id) === 'all');
+        }
+      } else {
+        // Vista global: sumar metas de sucursales individuales
+        const individualStores = loadedGoals.filter(g => {
+          const s = g.storeId || g.store_id;
+          return s && s !== 'all';
+        });
+        if (individualStores.length > 0) {
+          matchingGoals = individualStores;
+        } else {
+          matchingGoals = loadedGoals.filter(g => (g.storeId || g.store_id) === 'all');
+        }
+      }
+
+      if (matchingGoals.length > 0) {
+        let rev = 0, dev = 0, c0 = 0, port = 0, exp = 0;
+        if (isGlobal && matchingGoals.length > 1) {
+          rev = matchingGoals.reduce((sum, g) => sum + Number(g.revenueGoal ?? g.revenue_goal ?? 0), 0);
+          dev = matchingGoals.reduce((sum, g) => sum + Number(g.devicesGoal ?? g.devices_goal ?? 0), 0);
+          c0 = matchingGoals.reduce((sum, g) => sum + Number(g.chip0Goal ?? g.chip_0_goal ?? 0), 0);
+          port = matchingGoals.reduce((sum, g) => sum + Number(g.portabilityGoal ?? g.portability_goal ?? 0), 0);
+          exp = matchingGoals.reduce((sum, g) => sum + Number(g.chipExpressGoal ?? g.chip_express_goal ?? 0), 0);
+        } else {
+          const g = matchingGoals[0];
+          rev = Number(g.revenueGoal ?? g.revenue_goal ?? 0);
+          dev = Number(g.devicesGoal ?? g.devices_goal ?? 0);
+          c0 = Number(g.chip0Goal ?? g.chip_0_goal ?? 0);
+          port = Number(g.portabilityGoal ?? g.portability_goal ?? 0);
+          exp = Number(g.chipExpressGoal ?? g.chip_express_goal ?? 0);
+        }
+
+        setMonthlyGoal(rev);
+        setDevicesGoal(dev);
+        setChip0Goal(c0);
+        setPortaGoal(port);
+        setExpressGoal(exp);
+
+        // Guardar en caché local para que la próxima apertura sea inmediata
+        try {
+          localStorage.setItem(`coppel_cached_goals_${selectedMonth}_${storeId || 'all'}`, JSON.stringify({
+            revenue: rev,
+            devices: dev,
+            chip0: c0,
+            porta: port,
+            express: exp
+          }));
+        } catch (_) {}
+      }
+    }, (err) => {
+      console.warn("Realtime goals subscription note:", err);
+    });
+
+    return () => unsub();
+  }, [selectedMonth, storeId]);
+
+  // 2. Ventas del mes derivadas directamente de las ventas activas
+  const monthlySales = React.useMemo(() => {
+    if (!sales || sales.length === 0) return [];
+    const isGlobal = !storeId || storeId === 'all';
+    return sales.filter(s => {
+      const matchesMonth = s.date && s.date.startsWith(selectedMonth);
+      const matchesStore = isGlobal || matchesStoreAlias(s.storeId, storeId);
+      return matchesMonth && matchesStore;
+    });
+  }, [sales, selectedMonth, storeId]);
 
 
   const {
@@ -409,9 +420,8 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
     porta?: number;
     express?: number;
   }) => {
-    const targetStore = (!storeId || storeId === 'all') 
-      ? (userProfile?.storeId || 'all') 
-      : storeId;
+    const isGlobal = !storeId || storeId === 'all';
+    const targetStore = isGlobal ? (userProfile?.storeId || 'all') : storeId;
 
     const docId = `${selectedMonth}_${targetStore}`;
     const rGoal = newGoalObj.revenue !== undefined ? newGoalObj.revenue : monthlyGoal;
@@ -419,6 +429,17 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
     const c0Goal = newGoalObj.chip0 !== undefined ? newGoalObj.chip0 : chip0Goal;
     const pGoal = newGoalObj.porta !== undefined ? newGoalObj.porta : portaGoal;
     const eGoal = newGoalObj.express !== undefined ? newGoalObj.express : expressGoal;
+
+    // Actualización instantánea en caché local
+    try {
+      localStorage.setItem(`coppel_cached_goals_${selectedMonth}_${storeId || 'all'}`, JSON.stringify({
+        revenue: rGoal,
+        devices: dGoal,
+        chip0: c0Goal,
+        porta: pGoal,
+        express: eGoal
+      }));
+    } catch (_) {}
 
     const payload = {
       id: docId,
