@@ -25,7 +25,8 @@ import {
     Clock,
     CheckCircle,
     ArrowRight,
-    UserCheck
+    UserCheck,
+    Building
 } from 'lucide-react';
 import { Warranty, Brand, BrandConfig } from '../types';
 import { uploadImageToDriveScript } from '../services/googleAppsScriptService';
@@ -117,7 +118,8 @@ const Warranties: React.FC<WarrantiesProps> = ({
             physicalCondition: warranty.physicalCondition,
             contactNumber: warranty.contactNumber,
             phoneDetails: warranty.phoneDetails || '',
-            ticketImage: warranty.ticketImage || ''
+            ticketImage: warranty.ticketImage || '',
+            storeId: warranty.storeId || userProfile?.storeId || ''
         });
         setTicketPreview(warranty.ticketImage || null);
         setIsAdding(true);
@@ -225,7 +227,7 @@ const Warranties: React.FC<WarrantiesProps> = ({
     };
 
     // Form State
-    const [formData, setFormData] = useState<Omit<Warranty, 'id' | 'status'>>({
+    const [formData, setFormData] = useState<Omit<Warranty, 'id' | 'status'> & { storeId?: string }>({
         receptionDate: new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0') + '-' + String(new Date().getDate()).padStart(2, '0'),
         invoiceNumber: '',
         possibleEntryDate: '',
@@ -236,7 +238,8 @@ const Warranties: React.FC<WarrantiesProps> = ({
         accessories: '',
         physicalCondition: '',
         contactNumber: '',
-        phoneDetails: ''
+        phoneDetails: '',
+        storeId: userProfile?.storeId || ''
     });
 
     // --- HANDLERS ---
@@ -562,6 +565,29 @@ const Warranties: React.FC<WarrantiesProps> = ({
                         <form onSubmit={handleSubmit} className="p-6 space-y-4">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
+                                {/* Store / Sucursal Field */}
+                                <div className="space-y-1 md:col-span-2">
+                                    <label className="text-xs font-bold text-slate-700 uppercase flex items-center gap-1">
+                                        <Building className="w-3.5 h-3.5 text-blue-600" />
+                                        <span>Sucursal de la Garantía</span>
+                                    </label>
+                                    {isAdmin && stores.length > 0 ? (
+                                        <select
+                                            value={formData.storeId || userProfile?.storeId || ''}
+                                            onChange={(e) => setFormData({ ...formData, storeId: e.target.value })}
+                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white font-bold uppercase"
+                                        >
+                                            <option value="">Seleccionar Sucursal...</option>
+                                            {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                        </select>
+                                    ) : (
+                                        <div className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold text-slate-700 uppercase flex items-center gap-2">
+                                            <Building className="w-4 h-4 text-blue-600" />
+                                            <span>{stores.find(s => s.id === (formData.storeId || userProfile?.storeId))?.name || 'Sucursal Asignada'}</span>
+                                        </div>
+                                    )}
+                                </div>
+
                                 {/* Invoice Number - First Field requested */}
                                 <div className="space-y-1">
                                     <label className="text-xs font-bold text-slate-700 uppercase flex items-center gap-1">
@@ -852,6 +878,10 @@ const Warranties: React.FC<WarrantiesProps> = ({
                                             Ingreso: {warranty.possibleEntryDate}
                                         </span>
                                     )}
+                                    <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md mt-1.5 w-fit">
+                                        <Building className="w-2.5 h-2.5 text-slate-400" />
+                                        {stores.find(s => s.id === warranty.storeId)?.name || 'Sucursal Asignada'}
+                                    </span>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     {getStatusBadge(warranty.status)}

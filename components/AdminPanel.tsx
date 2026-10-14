@@ -30,7 +30,8 @@ import {
   ShieldCheck,
   ArrowUpDown,
   RefreshCw,
-  Database
+  Database,
+  ShieldAlert
 } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
 import { db } from '../services/firebase';
@@ -138,6 +139,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
   const [inviteCanSellChip0, setInviteCanSellChip0] = useState(false);
   const [inviteCanSellPortability, setInviteCanSellPortability] = useState(false);
   const [inviteCanSellChipExpress, setInviteCanSellChipExpress] = useState(false);
+  const [inviteCanAccessWarranties, setInviteCanAccessWarranties] = useState(false);
 
   // Direct Create Form
   const [directEmail, setDirectEmail] = useState('');
@@ -161,6 +163,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
   const [targetCanSellChip0, setTargetCanSellChip0] = useState(false);
   const [targetCanSellPortability, setTargetCanSellPortability] = useState(false);
   const [targetCanSellChipExpress, setTargetCanSellChipExpress] = useState(false);
+  const [targetCanAccessWarranties, setTargetCanAccessWarranties] = useState(false);
   const [directCanJustifyAbsences, setDirectCanJustifyAbsences] = useState(false);
   const [directCanManageRestDays, setDirectCanManageRestDays] = useState(false);
   const [directCanForceAttendance, setDirectCanForceAttendance] = useState(false);
@@ -169,6 +172,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
   const [directCanSellChip0, setDirectCanSellChip0] = useState(false);
   const [directCanSellPortability, setDirectCanSellPortability] = useState(false);
   const [directCanSellChipExpress, setDirectCanSellChipExpress] = useState(false);
+  const [directCanAccessWarranties, setDirectCanAccessWarranties] = useState(false);
   const [directAssignedStores, setDirectAssignedStores] = useState<string[]>([]);
   
   // Store Edit State
@@ -281,7 +285,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
         canSellKit: p.canSellKit ?? p.can_sell_kit ?? true,
         canSellChip0: !!(p.canSellChip0 ?? p.can_sell_chip_0),
         canSellPortability: !!(p.canSellPortability ?? p.can_sell_portability),
-        canSellChipExpress: !!(p.canSellChipExpress ?? p.can_sell_chip_express)
+        canSellChipExpress: !!(p.canSellChipExpress ?? p.can_sell_chip_express),
+        canAccessWarranties: !!(p.canAccessWarranties ?? p.can_access_warranties)
       });
 
       // Desde Firestore 'users'
@@ -546,7 +551,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
           can_sell_kit: inviteCanSellKit,
           can_sell_chip_0: inviteCanSellChip0,
           can_sell_portability: inviteCanSellPortability,
-          can_sell_chip_express: inviteCanSellChipExpress
+          can_sell_chip_express: inviteCanSellChipExpress,
+          can_access_warranties: inviteCanAccessWarranties
         }
       ]);
       if (error) throw error;
@@ -561,6 +567,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
       setInviteCanManageRestDays(false);
       setInviteCanForceAttendance(false);
       setInviteCanSetSchedules(false);
+      setInviteCanAccessWarranties(false);
       setActiveModal('none');
       fetchAllData();
     } catch (err: any) {
@@ -590,6 +597,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
             can_sell_chip_0: directCanSellChip0,
             can_sell_portability: directCanSellPortability,
             can_sell_chip_express: directCanSellChipExpress,
+            can_access_warranties: directCanAccessWarranties,
             assigned_stores: (directRole === 'supervisor' || directRole === 'viewer') ? directAssignedStores : null
           }
         }
@@ -612,6 +620,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
           can_sell_chip_0: directCanSellChip0,
           can_sell_portability: directCanSellPortability,
           can_sell_chip_express: directCanSellChipExpress,
+          can_access_warranties: directCanAccessWarranties,
           assigned_stores: (directRole === 'supervisor' || directRole === 'viewer') ? directAssignedStores : null
         })
         .eq('id', authData.user.id);
@@ -623,6 +632,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
       setDirectPassword('');
       setDirectFirstName('');
       setDirectLastName('');
+      setDirectCanAccessWarranties(false);
       setActiveModal('none');
       fetchAllData();
       if (onRefresh) onRefresh();
@@ -653,11 +663,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
         can_sell_kit: targetCanSellKit,
         can_sell_chip_0: targetCanSellChip0,
         can_sell_portability: targetCanSellPortability,
-        can_sell_chip_express: targetCanSellChipExpress
+        can_sell_chip_express: targetCanSellChipExpress,
+        can_access_warranties: targetCanAccessWarranties,
+        canAccessWarranties: targetCanAccessWarranties
       };
 
       if (!isSupabaseConfigured) {
         await updateDoc(doc(db, 'users', editingUserId), cleanFirestoreData(profilePayload));
+        await updateDoc(doc(db, 'profiles', editingUserId), cleanFirestoreData(profilePayload)).catch(() => {});
         setEditingUserId(null);
         setActiveModal('none');
         fetchAllData();
@@ -992,6 +1005,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
                            <span className="text-[7px] font-black uppercase">Descansos</span>
                          </div>
                       )}
+                      {profile.canAccessWarranties && (
+                         <div className="flex items-center gap-1 text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">
+                           <ShieldAlert className="w-2.5 h-2.5" />
+                           <span className="text-[7px] font-black uppercase">Garantías</span>
+                         </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1013,6 +1032,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
                       setTargetCanSellChip0(profile.canSellChip0 || false);
                       setTargetCanSellPortability(profile.canSellPortability || false);
                       setTargetCanSellChipExpress(profile.canSellChipExpress || false);
+                      setTargetCanAccessWarranties(profile.canAccessWarranties || (profile as any).can_access_warranties || false);
                       setActiveModal('profile-edit');
                     }} className="p-3 hover:bg-indigo-50 text-slate-300 hover:text-indigo-600 rounded-xl transition-all"><Edit2 className="w-5 h-5" /></button>
                     <button onClick={() => handleDeleteUser(profile.id)} className="p-3 hover:bg-red-50 text-slate-300 hover:text-red-500 rounded-xl transition-all"><Trash2 className="w-5 h-5" /></button>
@@ -1296,6 +1316,23 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
                         </div>
                       )}
 
+                      {/* Permisos Especiales - Acceso a Garantías */}
+                      <div className="space-y-4 border-t border-slate-100 pt-6">
+                        <div className="flex items-center justify-between px-1">
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Permisos Especiales</p>
+                        </div>
+                        <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${directCanAccessWarranties ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                          <div className="flex flex-col">
+                            <div className="flex items-center gap-1.5">
+                              <ShieldAlert className={`w-4 h-4 ${directCanAccessWarranties ? 'text-blue-600' : 'text-slate-400'}`} />
+                              <span className={`text-[10px] font-black uppercase ${directCanAccessWarranties ? 'text-blue-700' : 'text-slate-500'}`}>Acceso al Panel de Garantías</span>
+                            </div>
+                            <span className="text-[8px] font-bold text-slate-400 uppercase mt-0.5">Permite registrar y consultar equipos en garantía de su sucursal</span>
+                          </div>
+                          <input type="checkbox" checked={directCanAccessWarranties} onChange={(e) => setDirectCanAccessWarranties(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-blue-600 focus:ring-blue-500" />
+                        </label>
+                      </div>
+
                       <button type="submit" disabled={isDirectLoading} className="w-full bg-indigo-600 text-white font-black py-7 rounded-[1.5rem] shadow-2xl shadow-indigo-200 uppercase tracking-[0.2em] text-xs hover:scale-[1.02] active:scale-95 transition-all">Activar Cuenta</button>
                     </form>
                   )}
@@ -1482,6 +1519,23 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
                            </div>
                         </div>
                       )}
+                      {/* Permisos Especiales - Acceso a Garantías */}
+                      <div className="space-y-4 border-t border-slate-100 pt-6">
+                        <div className="flex items-center justify-between px-1">
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Permisos Especiales</p>
+                        </div>
+                        <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${inviteCanAccessWarranties ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                          <div className="flex flex-col">
+                            <div className="flex items-center gap-1.5">
+                              <ShieldAlert className={`w-4 h-4 ${inviteCanAccessWarranties ? 'text-blue-600' : 'text-slate-400'}`} />
+                              <span className={`text-[10px] font-black uppercase ${inviteCanAccessWarranties ? 'text-blue-700' : 'text-slate-500'}`}>Acceso al Panel de Garantías</span>
+                            </div>
+                            <span className="text-[8px] font-bold text-slate-400 uppercase mt-0.5">Permite registrar y consultar equipos en garantía de su sucursal</span>
+                          </div>
+                          <input type="checkbox" checked={inviteCanAccessWarranties} onChange={(e) => setInviteCanAccessWarranties(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-blue-600 focus:ring-blue-500" />
+                        </label>
+                      </div>
+
                       <button type="submit" disabled={isLoading} className="w-full bg-blue-600 text-white font-black py-7 rounded-[1.5rem] shadow-2xl shadow-blue-200 uppercase tracking-[0.2em] text-xs hover:scale-[1.02] active:scale-95 transition-all">Enviar Invitación</button>
                    </form>
                  )}
@@ -1772,6 +1826,23 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
                   </div>
                 </div>
               )}
+
+              {/* Permisos Especiales - Acceso a Garantías */}
+              <div className="space-y-4 border-t border-slate-100 pt-6">
+                <div className="flex items-center justify-between px-1">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Permisos Especiales (Módulos)</p>
+                </div>
+                <label className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer ${targetCanAccessWarranties ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                  <div className="flex flex-col">
+                    <div className="flex items-center gap-1.5">
+                      <ShieldAlert className={`w-4 h-4 ${targetCanAccessWarranties ? 'text-blue-600' : 'text-slate-400'}`} />
+                      <span className={`text-[10px] font-black uppercase ${targetCanAccessWarranties ? 'text-blue-700' : 'text-slate-500'}`}>Acceso al Panel de Garantías</span>
+                    </div>
+                    <span className="text-[8px] font-bold text-slate-400 uppercase mt-0.5">Permite acceder al módulo de garantías y registrar o dar seguimiento a equipos de su tienda</span>
+                  </div>
+                  <input type="checkbox" checked={targetCanAccessWarranties} onChange={(e) => setTargetCanAccessWarranties(e.target.checked)} className="w-5 h-5 rounded-lg border-slate-300 text-blue-600 focus:ring-blue-500" />
+                </label>
+              </div>
             </div>
 
             <div className="p-8 bg-slate-50 border-t border-slate-100 flex gap-3">

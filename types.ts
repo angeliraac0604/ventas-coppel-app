@@ -123,6 +123,7 @@ export interface UserProfile {
   canSellChip0?: boolean;
   canSellPortability?: boolean;
   canSellChipExpress?: boolean;
+  canAccessWarranties?: boolean;
   isDeveloper?: boolean;
   simulatedRole?: UserRole;
 }

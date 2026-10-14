@@ -154,14 +154,14 @@ const App: React.FC = () => {
     effectiveRole === 'admin' || 
     effectiveRole === 'developer' || 
     effectiveRole === 'supervisor' ||
-    isCardenas1053
+    userProfile?.canAccessWarranties === true ||
+    (userProfile?.canAccessWarranties === undefined && isCardenas1053)
   );
 
   const isWarrantyAdmin = Boolean(
     effectiveRole === 'admin' || 
     effectiveRole === 'developer' || 
-    effectiveRole === 'supervisor' ||
-    isCardenas1053
+    effectiveRole === 'supervisor'
   );
 
   useEffect(() => {
@@ -657,6 +657,7 @@ create policy "Users delete store warranties" on public.warranties for delete to
       canSellChip0: true,
       canSellPortability: true,
       canSellChipExpress: true,
+      canAccessWarranties: true,
       isDeveloper: true,
       simulatedRole: 'developer'
     };
@@ -697,7 +698,8 @@ create policy "Users delete store warranties" on public.warranties for delete to
       canSellKit: fsUser.canSellKit ?? true,
       canSellChip0: !!fsUser.canSellChip0,
       canSellPortability: !!fsUser.canSellPortability,
-      canSellChipExpress: !!fsUser.canSellChipExpress
+      canSellChipExpress: !!fsUser.canSellChipExpress,
+      canAccessWarranties: !!(fsUser.canAccessWarranties ?? fsUser.can_access_warranties)
     });
     setAuthLoading(false);
   };
@@ -789,7 +791,8 @@ create policy "Users delete store warranties" on public.warranties for delete to
             canSellKit: true,
             canSellChip0: true,
             canSellPortability: true,
-            canSellChipExpress: true
+            canSellChipExpress: true,
+            canAccessWarranties: true
           });
         }
       }, 500);
@@ -837,7 +840,8 @@ create policy "Users delete store warranties" on public.warranties for delete to
           can_sell_kit: invite?.can_sell_kit ?? metadata.can_sell_kit ?? true,
           can_sell_chip_0: invite?.can_sell_chip_0 || metadata.can_sell_chip_0 || false,
           can_sell_portability: invite?.can_sell_portability || metadata.can_sell_portability || false,
-          can_sell_chip_express: invite?.can_sell_chip_express || metadata.can_sell_chip_express || false
+          can_sell_chip_express: invite?.can_sell_chip_express || metadata.can_sell_chip_express || false,
+          can_access_warranties: invite?.can_access_warranties || metadata.can_access_warranties || false
         };
 
         const { data: inserted, error: insertError } = await supabase
@@ -868,7 +872,8 @@ create policy "Users delete store warranties" on public.warranties for delete to
               can_sell_kit: invite.can_sell_kit,
               can_sell_chip_0: invite.can_sell_chip_0,
               can_sell_portability: invite.can_sell_portability,
-              can_sell_chip_express: invite.can_sell_chip_express
+              can_sell_chip_express: invite.can_sell_chip_express,
+              can_access_warranties: invite.can_access_warranties
             })
             .eq('id', userId)
             .select()
@@ -901,7 +906,8 @@ create policy "Users delete store warranties" on public.warranties for delete to
           canSellKit: finalProfile.can_sell_kit ?? true,
           canSellChip0: finalProfile.can_sell_chip_0 || false,
           canSellPortability: finalProfile.can_sell_portability || false,
-          canSellChipExpress: finalProfile.can_sell_chip_express || false
+          canSellChipExpress: finalProfile.can_sell_chip_express || false,
+          canAccessWarranties: !!(finalProfile.can_access_warranties ?? finalProfile.canAccessWarranties)
         });
 
         // Auto-set selectedStoreId if restricted to one store
@@ -1340,7 +1346,11 @@ create policy "Users delete store warranties" on public.warranties for delete to
       if (itemStoreId === targetStoreId) return true;
       const isTargetCardenas = targetStoreId === CARDENAS_STORE_ID || targetStoreId === 'coppel-cardenas-1053' || targetStoreId.toLowerCase().includes('cardenas') || targetStoreId.includes('1053');
       const isItemCardenas = itemStoreId === CARDENAS_STORE_ID || itemStoreId === 'coppel-cardenas-1053' || itemStoreId.toLowerCase().includes('cardenas') || itemStoreId.includes('1053');
-      return isTargetCardenas && isItemCardenas;
+      if (isTargetCardenas && isItemCardenas) return true;
+      const targetStore = stores.find(s => s.id === targetStoreId);
+      const itemStore = stores.find(s => s.id === itemStoreId);
+      if (targetStore && itemStore && targetStore.name === itemStore.name) return true;
+      return false;
     };
 
     // Admins and Developers see everything (or filter by selectedStoreId)
@@ -1354,7 +1364,7 @@ create policy "Users delete store warranties" on public.warranties for delete to
       if (!selectedStoreId || selectedStoreId === 'all') {
         return data;
       }
-      return data.filter(item => !item.storeId || matchesStoreAlias(selectedStoreId, item.storeId));
+      return data.filter(item => matchesStoreAlias(selectedStoreId, item.storeId));
     }
 
     // Supervisors and Viewers: handle "Global" vs "Area" access
@@ -1366,30 +1376,28 @@ create policy "Users delete store warranties" on public.warranties for delete to
       
       const allowedStores = storesFromProfile.length > 0 ? storesFromProfile : null;
 
-      const baseData = allowedStores 
-        ? data.filter(item => !item.storeId || allowedStores.some(sId => matchesStoreAlias(sId, item.storeId)))
-        : data;
+      if (selectedStoreId && selectedStoreId !== 'all') {
+        return data.filter(item => matchesStoreAlias(selectedStoreId, item.storeId));
+      }
 
-      return (!selectedStoreId || selectedStoreId === 'all') 
-        ? baseData 
-        : baseData.filter(item => matchesStoreAlias(selectedStoreId, item.storeId));
+      if (allowedStores && allowedStores.length > 0) {
+        return data.filter(item => allowedStores.some(sId => matchesStoreAlias(sId, item.storeId)));
+      }
+
+      return data;
     }
 
-    // Default (Sellers): show their store or assigned stores, or all if unassigned
+    // Sellers & Users with specific store permissions:
+    // Inteligente: Mostrar únicamente los registros de la tienda seleccionada o asignada al usuario
+    const targetStore = (selectedStoreId && selectedStoreId !== 'all') ? selectedStoreId : userProfile.storeId;
     const userStores = [
-      ...(userProfile?.storeId ? [userProfile.storeId] : []),
+      ...(targetStore ? [targetStore] : []),
       ...(userProfile?.assignedStores || [])
     ];
 
     if (userStores.length === 0) return data;
 
-    const sellerMatches = data.filter(item => {
-      if (!item.storeId) return true; // Don't discard unassigned records
-      return userStores.some(sId => matchesStoreAlias(sId, item.storeId));
-    });
-
-    // If strict filter yielded nothing but records exist, show them so user isn't locked out
-    return sellerMatches.length > 0 ? sellerMatches : data;
+    return data.filter(item => userStores.some(sId => matchesStoreAlias(sId, item.storeId)));
   };
 
   const filteredSales = getFilteredData(sales);
@@ -2183,9 +2191,10 @@ create policy "Users delete store warranties" on public.warranties for delete to
     if (!session) return;
     setIsLoading(true);
     try {
-      const finalStoreId = (userProfile?.role === 'admin' && selectedStoreId !== 'all') 
-        ? selectedStoreId 
-        : (userProfile?.storeId || (selectedStoreId !== 'all' ? selectedStoreId : CARDENAS_STORE_ID));
+      const finalStoreId = (newWarranty as any).storeId || 
+        ((effectiveRole === 'admin' || effectiveRole === 'developer') && selectedStoreId !== 'all' 
+          ? selectedStoreId 
+          : (userProfile?.storeId || (selectedStoreId !== 'all' ? selectedStoreId : CARDENAS_STORE_ID)));
       
       if (!finalStoreId) {
         alert("Por favor, selecciona una tienda específica antes de registrar una garantía.");
