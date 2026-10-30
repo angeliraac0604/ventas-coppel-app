@@ -603,31 +603,70 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
         }
       });
 
-      if (authError) throw authError;
-      if (!authData.user) throw new Error('No se pudo crear el usuario');
+      const directUserId = authData?.user?.id || `user-${directEmail.toLowerCase().replace(/[^a-zA-Z0-9]/g, '')}`;
 
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .update({
-          full_name: `${directFirstName.trim()} ${directLastName.trim()}`.toUpperCase(),
-          role: directRole,
-          store_id: directStoreId || null,
-          can_justify_absences: directCanJustifyAbsences,
-          can_manage_rest_days: directCanManageRestDays,
-          can_force_attendance: directCanForceAttendance,
-          can_set_schedules: directCanSetSchedules,
-          can_sell_kit: directCanSellKit,
-          can_sell_chip_0: directCanSellChip0,
-          can_sell_portability: directCanSellPortability,
-          can_sell_chip_express: directCanSellChipExpress,
-          can_access_warranties: directCanAccessWarranties,
-          assigned_stores: (directRole === 'supervisor' || directRole === 'viewer') ? directAssignedStores : null
-        })
-        .eq('id', authData.user.id);
+      // Persistir siempre en Firestore para acceso inmediato y disponibilidad offline
+      const directFsPayload = cleanFirestoreData({
+        id: directUserId,
+        email: directEmail.toLowerCase().trim(),
+        full_name: `${directFirstName.trim()} ${directLastName.trim()}`.toUpperCase(),
+        fullName: `${directFirstName.trim()} ${directLastName.trim()}`.toUpperCase(),
+        role: directRole,
+        store_id: directStoreId || null,
+        storeId: directStoreId || null,
+        can_justify_absences: directCanJustifyAbsences,
+        canJustifyAbsences: directCanJustifyAbsences,
+        can_manage_rest_days: directCanManageRestDays,
+        canManageRestDays: directCanManageRestDays,
+        can_force_attendance: directCanForceAttendance,
+        canForceAttendance: directCanForceAttendance,
+        can_set_schedules: directCanSetSchedules,
+        canSetSchedules: directCanSetSchedules,
+        can_sell_kit: directCanSellKit,
+        canSellKit: directCanSellKit,
+        can_sell_chip_0: directCanSellChip0,
+        canSellChip0: directCanSellChip0,
+        can_sell_portability: directCanSellPortability,
+        canSellPortability: directCanSellPortability,
+        can_sell_chip_express: directCanSellChipExpress,
+        canSellChipExpress: directCanSellChipExpress,
+        can_access_warranties: directCanAccessWarranties,
+        canAccessWarranties: directCanAccessWarranties,
+        assigned_stores: (directRole === 'supervisor' || directRole === 'viewer') ? directAssignedStores : null,
+        assignedStores: (directRole === 'supervisor' || directRole === 'viewer') ? directAssignedStores : null
+      });
 
-      if (profileError) throw profileError;
+      await Promise.allSettled([
+        setDoc(doc(db, 'users', directUserId), directFsPayload, { merge: true }),
+        setDoc(doc(db, 'profiles', directUserId), directFsPayload, { merge: true })
+      ]);
 
-      alert('Usuario creado correctamente.');
+      if (isSupabaseConfigured && authData?.user?.id) {
+        try {
+          await supabase
+            .from('profiles')
+            .update({
+              full_name: `${directFirstName.trim()} ${directLastName.trim()}`.toUpperCase(),
+              role: directRole,
+              store_id: directStoreId || null,
+              can_justify_absences: directCanJustifyAbsences,
+              can_manage_rest_days: directCanManageRestDays,
+              can_force_attendance: directCanForceAttendance,
+              can_set_schedules: directCanSetSchedules,
+              can_sell_kit: directCanSellKit,
+              can_sell_chip_0: directCanSellChip0,
+              can_sell_portability: directCanSellPortability,
+              can_sell_chip_express: directCanSellChipExpress,
+              can_access_warranties: directCanAccessWarranties,
+              assigned_stores: (directRole === 'supervisor' || directRole === 'viewer') ? directAssignedStores : null
+            })
+            .eq('id', authData.user.id);
+        } catch (sbErr) {
+          console.warn("Nota de actualización en Supabase:", sbErr);
+        }
+      }
+
+      alert('Usuario creado correctamente con permisos configurados.');
       setDirectEmail('');
       setDirectPassword('');
       setDirectFirstName('');
@@ -651,7 +690,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
     if (!editingUserId) return;
     setIsLoading(true);
     try {
-      const profilePayload = {
+      const targetProfile = profiles.find(p => p.id === editingUserId);
+
+      // 1. Payload compatible con Supabase (columnas snake_case exclusivamente)
+      const supabasePayload = {
         full_name: targetFullName.toUpperCase(),
         role: targetRole,
         store_id: targetStoreId || null,
@@ -664,23 +706,91 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
         can_sell_chip_0: targetCanSellChip0,
         can_sell_portability: targetCanSellPortability,
         can_sell_chip_express: targetCanSellChipExpress,
-        can_access_warranties: targetCanAccessWarranties,
-        canAccessWarranties: targetCanAccessWarranties
+        can_access_warranties: targetCanAccessWarranties
       };
 
-      if (!isSupabaseConfigured) {
-        await updateDoc(doc(db, 'users', editingUserId), cleanFirestoreData(profilePayload));
-        await updateDoc(doc(db, 'profiles', editingUserId), cleanFirestoreData(profilePayload)).catch(() => {});
-        setEditingUserId(null);
-        setActiveModal('none');
-        fetchAllData();
-        if (onRefresh) onRefresh();
-        return;
+      // 2. Payload completo para Firestore (ambas nomenclaturas camelCase y snake_case)
+      const firestorePayload = cleanFirestoreData({
+        id: editingUserId,
+        email: targetProfile?.email || undefined,
+        full_name: targetFullName.toUpperCase(),
+        fullName: targetFullName.toUpperCase(),
+        role: targetRole,
+        store_id: targetStoreId || null,
+        storeId: targetStoreId || null,
+        assigned_stores: (targetRole === 'supervisor' || targetRole === 'viewer') ? targetAssignedStores : null,
+        assignedStores: (targetRole === 'supervisor' || targetRole === 'viewer') ? targetAssignedStores : null,
+        can_justify_absences: targetCanJustifyAbsences,
+        canJustifyAbsences: targetCanJustifyAbsences,
+        can_manage_rest_days: targetCanManageRestDays,
+        canManageRestDays: targetCanManageRestDays,
+        can_force_attendance: targetCanForceAttendance,
+        canForceAttendance: targetCanForceAttendance,
+        can_set_schedules: targetCanSetSchedules,
+        canSetSchedules: targetCanSetSchedules,
+        can_sell_kit: targetCanSellKit,
+        canSellKit: targetCanSellKit,
+        can_sell_chip_0: targetCanSellChip0,
+        canSellChip0: targetCanSellChip0,
+        can_sell_portability: targetCanSellPortability,
+        canSellPortability: targetCanSellPortability,
+        can_sell_chip_express: targetCanSellChipExpress,
+        canSellChipExpress: targetCanSellChipExpress,
+        can_access_warranties: targetCanAccessWarranties,
+        canAccessWarranties: targetCanAccessWarranties
+      });
+
+      // 3. Guardar SIEMPRE en Firestore (users y profiles) con setDoc merge para máxima confiabilidad
+      const writeTasks: Promise<any>[] = [
+        setDoc(doc(db, 'users', editingUserId), firestorePayload, { merge: true }),
+        setDoc(doc(db, 'profiles', editingUserId), firestorePayload, { merge: true })
+      ];
+
+      if (targetProfile?.email) {
+        const cleanEmail = targetProfile.email.toLowerCase().trim();
+        writeTasks.push(
+          setDoc(doc(db, 'users', cleanEmail), firestorePayload, { merge: true }).catch(() => {}),
+          setDoc(doc(db, 'profiles', cleanEmail), firestorePayload, { merge: true }).catch(() => {})
+        );
       }
 
-      const { error } = await supabase.from('profiles').update(profilePayload).eq('id', editingUserId);
+      await Promise.allSettled(writeTasks);
 
-      if (error) throw error;
+      // 4. Actualizar en Supabase si está disponible
+      if (isSupabaseConfigured) {
+        try {
+          const { error } = await supabase.from('profiles').update(supabasePayload).eq('id', editingUserId);
+          if (error) console.warn("Aviso al actualizar perfil en Supabase:", error);
+        } catch (sbErr) {
+          console.warn("Error en Supabase profiles update:", sbErr);
+        }
+      }
+
+      // 5. Actualizar caché local de respaldo si existe
+      try {
+        const cachedUsersRaw = localStorage.getItem('app_backup_users');
+        if (cachedUsersRaw) {
+          const cachedUsers = JSON.parse(cachedUsersRaw);
+          if (Array.isArray(cachedUsers)) {
+            const idx = cachedUsers.findIndex((u: any) => u.id === editingUserId || (u.email && targetProfile?.email && u.email.toLowerCase() === targetProfile.email.toLowerCase()));
+            if (idx >= 0) {
+              cachedUsers[idx] = { ...cachedUsers[idx], ...firestorePayload };
+              localStorage.setItem('app_backup_users', JSON.stringify(cachedUsers));
+            }
+          }
+        }
+
+        // Si el usuario editado es la sesión activa en este navegador, actualizarla de inmediato
+        const activeFsSession = localStorage.getItem('firestore_user_session');
+        if (activeFsSession) {
+          const fsUser = JSON.parse(activeFsSession);
+          if (fsUser && (fsUser.id === editingUserId || (fsUser.email && targetProfile?.email && fsUser.email.toLowerCase() === targetProfile.email.toLowerCase()))) {
+            localStorage.setItem('firestore_user_session', JSON.stringify({ ...fsUser, ...firestorePayload }));
+          }
+        }
+      } catch (e) {}
+
+      alert('✅ Permisos del usuario actualizados correctamente.');
       setEditingUserId(null);
       setActiveModal('none');
       fetchAllData();

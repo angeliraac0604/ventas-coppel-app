@@ -24,7 +24,7 @@ import { BackupMigration, cleanFirestoreData } from './components/BackupMigratio
 import { DatabaseUsagePanel } from './components/DatabaseUsagePanel';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { db } from './services/firebase';
-import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
+import { collection, getDocs, getDoc, doc, setDoc, updateDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 import { getInitialSales, getInitialClosings } from './services/initialData';
 
 const App: React.FC = () => {
@@ -155,7 +155,10 @@ const App: React.FC = () => {
     effectiveRole === 'developer' || 
     effectiveRole === 'supervisor' ||
     userProfile?.canAccessWarranties === true ||
-    (userProfile?.canAccessWarranties === undefined && isCardenas1053)
+    (userProfile as any)?.can_access_warranties === true ||
+    String(userProfile?.canAccessWarranties) === 'true' ||
+    String((userProfile as any)?.can_access_warranties) === 'true' ||
+    (userProfile?.canAccessWarranties === undefined && (userProfile as any)?.can_access_warranties === undefined && isCardenas1053)
   );
 
   const isWarrantyAdmin = Boolean(
@@ -684,6 +687,13 @@ create policy "Users delete store warranties" on public.warranties for delete to
         ? fsUser.assigned_stores
         : [effectiveStoreId];
 
+    const hasWarranties = Boolean(
+      fsUser.canAccessWarranties === true ||
+      fsUser.can_access_warranties === true ||
+      String(fsUser.canAccessWarranties) === 'true' ||
+      String(fsUser.can_access_warranties) === 'true'
+    );
+
     setUserProfile({
       id: fsUser.id,
       email: fsUser.email || '',
@@ -691,15 +701,15 @@ create policy "Users delete store warranties" on public.warranties for delete to
       fullName: fsUser.fullName || fsUser.full_name || fsUser.email?.split('@')[0] || 'COLABORADOR',
       storeId: effectiveStoreId,
       assignedStores: effectiveAssignedStores,
-      canJustifyAbsences: !!fsUser.canJustifyAbsences,
-      canManageRestDays: !!fsUser.canManageRestDays,
-      canForceAttendance: !!fsUser.canForceAttendance,
-      canSetSchedules: !!fsUser.canSetSchedules,
-      canSellKit: fsUser.canSellKit ?? true,
-      canSellChip0: !!fsUser.canSellChip0,
-      canSellPortability: !!fsUser.canSellPortability,
-      canSellChipExpress: !!fsUser.canSellChipExpress,
-      canAccessWarranties: !!(fsUser.canAccessWarranties ?? fsUser.can_access_warranties)
+      canJustifyAbsences: !!(fsUser.canJustifyAbsences ?? fsUser.can_justify_absences),
+      canManageRestDays: !!(fsUser.canManageRestDays ?? fsUser.can_manage_rest_days),
+      canForceAttendance: !!(fsUser.canForceAttendance ?? fsUser.can_force_attendance),
+      canSetSchedules: !!(fsUser.canSetSchedules ?? fsUser.can_set_schedules),
+      canSellKit: fsUser.canSellKit ?? fsUser.can_sell_kit ?? true,
+      canSellChip0: !!(fsUser.canSellChip0 ?? fsUser.can_sell_chip_0),
+      canSellPortability: !!(fsUser.canSellPortability ?? fsUser.can_sell_portability),
+      canSellChipExpress: !!(fsUser.canSellChipExpress ?? fsUser.can_sell_chip_express),
+      canAccessWarranties: hasWarranties
     });
     setAuthLoading(false);
   };
@@ -718,6 +728,26 @@ create policy "Users delete store warranties" on public.warranties for delete to
           localStorage.removeItem('dev_simulated_role');
         } else if (fsUser && fsUser.id) {
           handleFirestoreLogin(fsUser);
+
+          // Sincronización en segundo plano: verificar si el administrador actualizó permisos en Firestore
+          const targetId = fsUser.id;
+          const targetEmail = fsUser.email?.toLowerCase().trim();
+          Promise.allSettled([
+            getDoc(doc(db, 'users', targetId)),
+            getDoc(doc(db, 'profiles', targetId)),
+            targetEmail ? getDoc(doc(db, 'users', targetEmail)) : Promise.reject(),
+            targetEmail ? getDoc(doc(db, 'profiles', targetEmail)) : Promise.reject()
+          ]).then(([uSnap, pSnap, eSnap, epSnap]) => {
+            const uData = uSnap.status === 'fulfilled' && uSnap.value.exists() ? uSnap.value.data() : null;
+            const pData = pSnap.status === 'fulfilled' && pSnap.value.exists() ? pSnap.value.data() : null;
+            const eData = eSnap.status === 'fulfilled' && eSnap.value?.exists() ? eSnap.value.data() : null;
+            const epData = epSnap.status === 'fulfilled' && epSnap.value?.exists() ? epSnap.value.data() : null;
+            const fresh = uData || pData || eData || epData;
+            if (fresh) {
+              handleFirestoreLogin({ ...fsUser, ...fresh, id: fsUser.id });
+            }
+          }).catch(() => {});
+
           return;
         }
       }
@@ -1423,7 +1453,53 @@ create policy "Users delete store warranties" on public.warranties for delete to
     if (!isSupabaseConfigured) {
       console.log("🔥 [Firestore Realtime] Sincronización en tiempo real activa para ventas, garantías, cortes y sucursales.");
 
-      // 1. Usuarios en tiempo real para nombres y creadores
+      // 1. Usuarios y perfiles en tiempo real para nombres, creadores y permisos dinámicos
+      const syncLiveUserProfile = (docId: string, docData: any) => {
+        const current = userProfileRef.current;
+        if (!current) return;
+        const currentEmail = current.email?.toLowerCase().trim();
+        const docEmail = docData.email?.toLowerCase().trim();
+        const isMatch = (
+          (current.id && (docId === current.id || docData.id === current.id)) ||
+          (currentEmail && docEmail && currentEmail === docEmail)
+        );
+
+        if (isMatch) {
+          const freshWarranties = docData.canAccessWarranties ?? docData.can_access_warranties;
+          const targetWarranties = freshWarranties !== undefined 
+            ? Boolean(freshWarranties === true || String(freshWarranties) === 'true')
+            : current.canAccessWarranties;
+
+          if (
+            targetWarranties !== current.canAccessWarranties ||
+            (docData.role && docData.role !== current.role) ||
+            (docData.storeId && docData.storeId !== current.storeId)
+          ) {
+            console.log("🔥 [Live Permission Sync] Permisos de usuario actualizados en vivo:", currentEmail, { canAccessWarranties: targetWarranties });
+            setUserProfile(prev => {
+              if (!prev) return prev;
+              const updated: UserProfile = {
+                ...prev,
+                role: (docData.role as UserRole) || prev.role,
+                storeId: docData.storeId || docData.store_id || prev.storeId,
+                assignedStores: docData.assignedStores || docData.assigned_stores || prev.assignedStores,
+                canAccessWarranties: targetWarranties,
+                canJustifyAbsences: !!(docData.canJustifyAbsences ?? docData.can_justify_absences ?? prev.canJustifyAbsences),
+                canManageRestDays: !!(docData.canManageRestDays ?? docData.can_manage_rest_days ?? prev.canManageRestDays),
+                canForceAttendance: !!(docData.canForceAttendance ?? docData.can_force_attendance ?? prev.canForceAttendance),
+                canSetSchedules: !!(docData.canSetSchedules ?? docData.can_set_schedules ?? prev.canSetSchedules),
+                canSellKit: docData.canSellKit ?? docData.can_sell_kit ?? prev.canSellKit,
+                canSellChip0: !!(docData.canSellChip0 ?? docData.can_sell_chip_0 ?? prev.canSellChip0),
+                canSellPortability: !!(docData.canSellPortability ?? docData.can_sell_portability ?? prev.canSellPortability),
+                canSellChipExpress: !!(docData.canSellChipExpress ?? docData.can_sell_chip_express ?? prev.canSellChipExpress)
+              };
+              try { localStorage.setItem('firestore_user_session', JSON.stringify(updated)); } catch (e) {}
+              return updated;
+            });
+          }
+        }
+      };
+
       const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
         const map: Record<string, { email?: string; fullName?: string }> = {};
         snapshot.docs.forEach(uDoc => {
@@ -1432,9 +1508,16 @@ create policy "Users delete store warranties" on public.warranties for delete to
             email: uData.email,
             fullName: uData.fullName || uData.full_name
           };
+          syncLiveUserProfile(uDoc.id, uData);
         });
         userMapRef.current = map;
       }, (err) => console.warn("Realtime users error:", err));
+
+      const unsubProfiles = onSnapshot(collection(db, 'profiles'), (snapshot) => {
+        snapshot.docs.forEach(pDoc => {
+          syncLiveUserProfile(pDoc.id, pDoc.data());
+        });
+      }, (err) => console.warn("Realtime profiles error:", err));
 
       // 2. Sucursales en tiempo real
       const unsubStores = onSnapshot(collection(db, 'stores'), (snapshot) => {
@@ -1652,6 +1735,7 @@ create policy "Users delete store warranties" on public.warranties for delete to
 
       return () => {
         unsubUsers();
+        unsubProfiles();
         unsubStores();
         unsubSales();
         unsubWarranties();

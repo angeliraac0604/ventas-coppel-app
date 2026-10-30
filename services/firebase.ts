@@ -13,18 +13,26 @@ const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
 export const auth = getAuth(app);
 
-// Initialize Firestore with IndexedDB persistent local cache for instant zero-latency loading
+// Initialize Firestore with IndexedDB persistent local cache and experimentalForceLongPolling
+// to prevent the 10-second WebSocket connection timeout in iframes and sandboxed environments
 let dbInstance: any;
+const dbId = firebaseConfig.firestoreDatabaseId || undefined;
+
 try {
   dbInstance = initializeFirestore(app, {
     localCache: persistentLocalCache({
       tabManager: persistentMultipleTabManager()
-    })
-  }, firebaseConfig.firestoreDatabaseId || undefined);
+    }),
+    experimentalForceLongPolling: true,
+  }, dbId);
 } catch {
-  dbInstance = firebaseConfig.firestoreDatabaseId 
-    ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
-    : getFirestore(app);
+  try {
+    dbInstance = initializeFirestore(app, {
+      experimentalForceLongPolling: true,
+    }, dbId);
+  } catch {
+    dbInstance = dbId ? getFirestore(app, dbId) : getFirestore(app);
+  }
 }
 
 export const db = dbInstance;

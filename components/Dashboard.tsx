@@ -1,7 +1,7 @@
 // Deployment Version: 2026-04-11 - Official Identity Configured
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid, ComposedChart, Line } from 'recharts';
-import { Target, Edit2, Check, TrendingUp, Trophy, PartyPopper, DollarSign, Smartphone, Trash2, AlertTriangle, FileDown, Calendar, Calculator, Cpu, Phone, Image as ImageIcon } from 'lucide-react';
+import { Target, Edit2, Check, TrendingUp, Trophy, PartyPopper, DollarSign, Smartphone, Trash2, AlertTriangle, FileDown, Calendar, Calculator, Cpu, Phone, Image as ImageIcon, Share2, Sparkles, RefreshCw } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { Sale, Brand, DailyClose } from '../types';
@@ -525,6 +525,91 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
     }
   };
 
+  const revenueCardRef = useRef<HTMLDivElement>(null);
+  const [isSharingRevenue, setIsSharingRevenue] = useState(false);
+
+  const formatMonthLabel = (monthStr: string) => {
+    const monthNames = [
+      'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+      'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+    ];
+    const [y, m] = (monthStr || '').split('-');
+    const idx = parseInt(m, 10) - 1;
+    return `${monthNames[idx] || m} ${y}`;
+  };
+
+  const handleShareRevenueCard = async () => {
+    if (!revenueCardRef.current || isSharingRevenue) return;
+    setIsSharingRevenue(true);
+
+    try {
+      const isAchieved = monthlyGoal > 0 && isRevenueGoalMet;
+      const canvas = await html2canvas(revenueCardRef.current, {
+        scale: 2,
+        backgroundColor: isAchieved ? '#e11d48' : '#0f172a',
+        useCORS: true,
+        logging: false
+      });
+
+      canvas.toBlob(async (blob) => {
+        if (!blob) {
+          setIsSharingRevenue(false);
+          return;
+        }
+
+        const periodStr = formatMonthLabel(selectedMonth);
+        const currentStoreLabel = storeName || 'Coppel';
+        const cleanStoreName = currentStoreLabel.toLowerCase().replace(/[^a-z0-9]/g, '-');
+        const fileName = `venta-del-mes-${selectedMonth}-${cleanStoreName}.png`;
+        const file = new File([blob], fileName, { type: 'image/png' });
+
+        const surplus = currentMonthNet > monthlyGoal ? currentMonthNet - monthlyGoal : 0;
+        const messageText = 
+          `📊 *REPORTE DE VENTAS DEL MES*\n` +
+          `🏢 *Sucursal:* ${currentStoreLabel}\n` +
+          `📅 *Período:* ${periodStr}\n` +
+          (isAchieved ? `🏆 *¡OBJETIVO CUMPLIDO!* 🎉\n` : '') +
+          `━━━━━━━━━━━━━━━━━━━━\n` +
+          `💰 *Venta Bruta:* $${currentMonthRevenue.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}\n` +
+          `📈 *Venta Neta (Sin IVA):* $${currentMonthNet.toLocaleString('es-MX', { maximumFractionDigits: 0 })}\n` +
+          (monthlyGoal > 0 ? `🎯 *Meta Neto:* $${monthlyGoal.toLocaleString('es-MX')}\n` : '') +
+          (monthlyGoal > 0 ? `🔥 *Progreso:* ${revenueProgress.toFixed(1)}%${isAchieved ? ` (Excedente: +$${surplus.toLocaleString('es-MX', { maximumFractionDigits: 0 })})` : ''}\n` : '') +
+          `📱 *Equipos Kit Vendidos:* ${currentMonthCount} unidades\n` +
+          `━━━━━━━━━━━━━━━━━━━━\n` +
+          `_Generado desde Sistema Coppel Telcel_`;
+
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          try {
+            await navigator.share({
+              files: [file],
+              title: `Venta del Mes - ${currentStoreLabel}`,
+              text: messageText
+            });
+          } catch (shareErr: any) {
+            if (shareErr.name !== 'AbortError') {
+              console.warn("Share notice:", shareErr);
+            }
+          }
+        } else {
+          // Descarga directa de la imagen para compartir en WhatsApp Web o adjuntar
+          const link = document.createElement('a');
+          link.href = canvas.toDataURL('image/png');
+          link.download = file.name;
+          link.click();
+
+          const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(messageText)}`;
+          window.open(waUrl, '_blank');
+        }
+
+        setIsSharingRevenue(false);
+      }, 'image/png');
+    } catch (err) {
+      console.error("Error al capturar la tarjeta de ventas del mes:", err);
+      alert("Hubo un error al generar la captura. Intenta nuevamente.");
+      setIsSharingRevenue(false);
+    }
+  };
+
   const handleDownloadReport = async () => {
     const reportBtn = document.getElementById('report-download-btn');
     if (reportBtn) reportBtn.style.display = 'none';
@@ -755,72 +840,250 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
       <div className={`grid grid-cols-1 gap-6 ${monthlyGoal > 0 && devicesGoal > 0 ? 'lg:grid-cols-2' : ''}`}>
 
         {/* CARD 1: REVENUE (Active if monthlyGoal > 0 or if admin/viewer/supervisor) */}
-        {(role === 'admin' || role === 'supervisor' || role === 'viewer' || userProfile?.canSellKit === true) && (
-          <div id="revenue-goal-card" className="bg-slate-900 rounded-3xl p-6 shadow-xl relative overflow-hidden text-white group flex flex-col justify-between">
-            <div className="absolute top-0 right-0 w-48 h-48 bg-blue-600 rounded-full blur-[80px] opacity-20 group-hover:opacity-30 transition-opacity"></div>
-            <div className="absolute bottom-0 left-0 w-48 h-48 bg-purple-600 rounded-full blur-[80px] opacity-10 group-hover:opacity-20 transition-opacity"></div>
+        {(role === 'admin' || role === 'supervisor' || role === 'viewer' || userProfile?.canSellKit === true) && (() => {
+          const isRevenueAchieved = monthlyGoal > 0 && isRevenueGoalMet;
+          const surplusAmount = currentMonthNet > monthlyGoal ? currentMonthNet - monthlyGoal : 0;
 
-            <div className="relative z-10 flex justify-between items-start mb-6">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-slate-800 rounded-lg border border-slate-700">
-                  <Target className="w-6 h-6 text-blue-400" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-bold text-slate-100">Ventas del Mes</h2>
-                  <p className="text-xs text-slate-400 font-medium">Monto Bruto (Visualización)</p>
-                </div>
-              </div>
-              {role === 'admin' && !isEditingGoal && (
-                <button onClick={() => { setTempGoal(monthlyGoal.toString()); setIsEditingGoal(true); }} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-colors"><Edit2 className="w-4 h-4" /></button>
-              )}
-            </div>
-
-            <div className="relative z-10 flex items-end justify-between gap-4">
-              <div className="space-y-2 flex-1">
-                {isEditingGoal ? (
-                  <div className="flex items-center gap-2">
-                    <input type="number" value={tempGoal} placeholder="0 para desactivar" onChange={(e) => setTempGoal(e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-lg text-white font-bold p-2 outline-none" autoFocus />
-                    <button onClick={handleSaveGoal} className="p-2 bg-blue-600 rounded-lg"><Check className="w-4 h-4" /></button>
+          return (
+            <div
+              ref={revenueCardRef}
+              id="revenue-goal-card"
+              className={`rounded-3xl p-6 shadow-xl relative overflow-hidden text-white group flex flex-col justify-between transition-all duration-500 border ${
+                isRevenueAchieved
+                  ? 'bg-gradient-to-br from-amber-500 via-rose-500 to-pink-600 border-white/25 shadow-2xl shadow-rose-500/30'
+                  : 'bg-slate-900 border-slate-800'
+              }`}
+            >
+              {/* Decorative backgrounds */}
+              {isRevenueAchieved ? (
+                <>
+                  <div className="absolute top-0 right-0 w-64 h-64 bg-amber-300 rounded-full blur-[90px] opacity-25 group-hover:opacity-35 transition-opacity pointer-events-none"></div>
+                  <div className="absolute bottom-0 left-0 w-64 h-64 bg-pink-400 rounded-full blur-[80px] opacity-25 pointer-events-none"></div>
+                  <div className="absolute -right-6 -bottom-6 opacity-15 pointer-events-none select-none">
+                    <Trophy className="w-48 h-48 text-yellow-200 rotate-12" />
                   </div>
-                ) : (
-                  <div className="flex flex-col gap-4">
-                    <span className="text-4xl font-black text-white leading-none" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>
-                       ${currentMonthRevenue.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                     </span>
-                    <div className="flex flex-col gap-0.5 mt-1">
-                      <span className="text-[10px] text-blue-400 font-black uppercase tracking-tighter">
-                        Neto (Meta): ${currentMonthNet.toLocaleString('es-MX', { maximumFractionDigits: 0 })}
+                </>
+              ) : (
+                <>
+                  <div className="absolute top-0 right-0 w-48 h-48 bg-blue-600 rounded-full blur-[80px] opacity-20 group-hover:opacity-30 transition-opacity pointer-events-none"></div>
+                  <div className="absolute bottom-0 left-0 w-48 h-48 bg-purple-600 rounded-full blur-[80px] opacity-10 group-hover:opacity-20 transition-opacity pointer-events-none"></div>
+                </>
+              )}
+
+              {/* Header del recuadro */}
+              <div className="relative z-10 flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-3">
+                <div className="flex items-center gap-3">
+                  <div className={`p-2.5 rounded-xl border transition-all ${
+                    isRevenueAchieved
+                      ? 'bg-white/20 border-white/30 text-yellow-200 shadow-sm backdrop-blur-sm'
+                      : 'bg-slate-800 border-slate-700 text-blue-400'
+                  }`}>
+                    {isRevenueAchieved ? (
+                      <Trophy className="w-6 h-6 text-yellow-200" />
+                    ) : (
+                      <Target className="w-6 h-6 text-blue-400" />
+                    )}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h2 className="text-lg font-black text-white tracking-tight">Ventas del Mes</h2>
+                      {isRevenueAchieved && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/25 backdrop-blur-md text-white text-xs font-black rounded-full border border-white/40 shadow-sm uppercase tracking-wider">
+                          <Sparkles className="w-3.5 h-3.5 text-yellow-200" />
+                          ¡Objetivo Cumplido! 🎉
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 text-xs mt-0.5">
+                      <span className={`font-bold ${isRevenueAchieved ? 'text-white/95' : 'text-slate-400'}`}>
+                        {storeName || 'Sucursal'}
                       </span>
-                      <span className="text-[10px] text-slate-400 font-bold tracking-wide">
-                        {monthlyGoal > 0 ? `Meta Neto: $${monthlyGoal.toLocaleString('es-MX')}` : 'Sin meta asignada'}
+                      <span className={isRevenueAchieved ? 'text-white/60' : 'text-slate-600'}>•</span>
+                      <span className={isRevenueAchieved ? 'text-white/90 font-medium' : 'text-slate-400'}>
+                        {formatMonthLabel(selectedMonth)}
                       </span>
                     </div>
                   </div>
-                )}
+                </div>
 
+                {/* Botones de acción (ignorados en la captura html2canvas) */}
+                <div className="flex items-center gap-2 self-end sm:self-auto" data-html2canvas-ignore="true">
+                  <button
+                    onClick={handleShareRevenueCard}
+                    disabled={isSharingRevenue}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border shadow-sm ${
+                      isRevenueAchieved
+                        ? 'bg-white/20 hover:bg-white/30 text-white border-white/40 hover:scale-105 active:scale-95 backdrop-blur-sm'
+                        : 'bg-slate-800/80 hover:bg-slate-700 text-slate-200 hover:text-white border-slate-700 hover:scale-105 active:scale-95'
+                    }`}
+                    title="Compartir captura de venta del mes por WhatsApp"
+                  >
+                    {isSharingRevenue ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
+                        <span>Generando...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Share2 className="w-3.5 h-3.5 text-white" />
+                        <span>Compartir</span>
+                      </>
+                    )}
+                  </button>
+
+                  {role === 'admin' && !isEditingGoal && (
+                    <button
+                      onClick={() => { setTempGoal(monthlyGoal.toString()); setIsEditingGoal(true); }}
+                      className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors border border-transparent hover:border-slate-700"
+                      title="Editar Meta"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Contenido principal de montos */}
+              <div className="relative z-10 flex items-end justify-between gap-4">
+                <div className="space-y-3 flex-1 min-w-0">
+                  {isEditingGoal ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        value={tempGoal}
+                        placeholder="0 para desactivar"
+                        onChange={(e) => setTempGoal(e.target.value)}
+                        className="w-full bg-slate-800 border border-slate-600 rounded-lg text-white font-bold p-2 outline-none"
+                        autoFocus
+                      />
+                      <button onClick={handleSaveGoal} className="p-2 bg-blue-600 rounded-lg">
+                        <Check className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-2.5">
+                      <div className="flex items-baseline gap-2.5 flex-wrap">
+                        <span
+                          className="text-3xl sm:text-4xl font-black leading-none text-white tracking-tight drop-shadow-sm"
+                          style={{ textShadow: '0 1px 3px rgba(0,0,0,0.3)' }}
+                        >
+                          ${currentMonthRevenue.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        </span>
+                        <span className={`whitespace-nowrap inline-flex items-center text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full ${
+                          isRevenueAchieved
+                            ? 'bg-white/20 border border-white/30 text-white/95 backdrop-blur-sm'
+                            : 'bg-slate-800 text-slate-400 border border-slate-700'
+                        }`}>
+                          Monto Bruto
+                        </span>
+                      </div>
+
+                      <div className="flex flex-col gap-1.5 mt-0.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`whitespace-nowrap inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-xl ${
+                            isRevenueAchieved
+                              ? 'text-white bg-white/15 border border-white/25 backdrop-blur-sm shadow-sm'
+                              : 'text-blue-400 bg-blue-950/50 border border-blue-800/40'
+                          }`}>
+                            <span className={isRevenueAchieved ? 'text-white/80 text-[10px] uppercase font-bold' : 'text-blue-400 text-[10px] uppercase font-bold'}>Neto (Meta):</span>
+                            <span className="font-black text-sm">${currentMonthNet.toLocaleString('es-MX', { maximumFractionDigits: 0 })}</span>
+                          </span>
+
+                          {isRevenueAchieved && (
+                            <span className="whitespace-nowrap inline-flex items-center gap-1 text-xs font-black text-amber-100 bg-amber-400/25 border border-amber-300/40 px-2.5 py-1 rounded-xl backdrop-blur-sm shadow-sm">
+                              <Sparkles className="w-3 h-3 text-yellow-200" />
+                              +${surplusAmount.toLocaleString('es-MX', { maximumFractionDigits: 0 })} Excedente
+                            </span>
+                          )}
+                        </div>
+
+                        <span className={`text-xs font-medium tracking-wide ${isRevenueAchieved ? 'text-white/80' : 'text-slate-400'}`}>
+                          {monthlyGoal > 0 ? `Meta Neto Asignada: $${monthlyGoal.toLocaleString('es-MX')}` : 'Sin meta asignada'}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {monthlyGoal > 0 && (
+                    <div className="space-y-1.5 mt-3">
+                      <div className="flex items-center justify-between text-xs font-bold">
+                        <span className={`flex items-center gap-1.5 ${isRevenueAchieved ? 'text-white drop-shadow-sm font-black' : 'text-slate-400 font-medium'}`}>
+                          {isRevenueAchieved ? (
+                            <>
+                              <Sparkles className="w-3.5 h-3.5 text-yellow-200 shrink-0" />
+                              <span>¡Objetivo Cumplido! Meta superada exitosamente</span>
+                            </>
+                          ) : (
+                            <span>{revenueRemaining > 0 ? `Faltan $${revenueRemaining.toLocaleString('es-MX', { maximumFractionDigits: 0 })} para la meta` : '¡Meta Superada!'}</span>
+                          )}
+                        </span>
+                        <span className={`font-black text-xs shrink-0 ml-2 ${isRevenueAchieved ? 'text-yellow-200 drop-shadow-sm text-sm' : 'text-slate-400'}`}>
+                          {isFinite(revenueProgress) ? `${revenueProgress.toFixed(1)}%` : '0%'}
+                        </span>
+                      </div>
+
+                      <div className={`w-full rounded-full h-2.5 overflow-hidden ${
+                        isRevenueAchieved ? 'bg-black/20 border border-white/25 p-[1px]' : 'bg-slate-800'
+                      }`}>
+                        <div
+                          className={`h-full rounded-full transition-all duration-1000 ${
+                            isRevenueAchieved
+                              ? 'bg-gradient-to-r from-amber-300 via-yellow-200 to-white shadow-sm'
+                              : 'bg-gradient-to-r from-blue-500 to-indigo-500'
+                          }`}
+                          style={{ width: `${Math.min(revenueProgress, 100)}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Indicador circular de porcentaje */}
                 {monthlyGoal > 0 && (
-                  <>
-                    <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden mt-3">
-                      <div className={`h-full rounded-full transition-all duration-1000 ${isRevenueGoalMet ? 'bg-gradient-to-r from-green-400 to-emerald-500' : 'bg-gradient-to-r from-blue-500 to-indigo-500'}`} style={{ width: `${Math.min(revenueProgress, 100)}%` }}></div>
+                  <div className="relative w-20 h-20 shrink-0 self-center sm:self-end">
+                    <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                      <circle
+                        cx="50"
+                        cy="50"
+                        r={radius}
+                        stroke="currentColor"
+                        strokeWidth="8"
+                        fill="transparent"
+                        className={isRevenueAchieved ? 'text-white/20' : 'text-slate-800'}
+                      />
+                      <circle
+                        cx="50"
+                        cy="50"
+                        r={radius}
+                        stroke="currentColor"
+                        strokeWidth="8"
+                        fill="transparent"
+                        strokeDasharray={circumference}
+                        strokeDashoffset={isNaN(strokeDashoffsetRevenue) ? circumference : strokeDashoffsetRevenue}
+                        strokeLinecap="round"
+                        className={`transition-all duration-1000 ${
+                          isRevenueAchieved
+                            ? 'text-yellow-300 filter drop-shadow-[0_0_8px_rgba(253,224,71,0.6)]'
+                            : 'text-blue-500'
+                        }`}
+                      />
+                    </svg>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center font-black">
+                      <span className={isRevenueAchieved ? 'text-white text-base font-black' : 'text-white text-xs'}>
+                        {isFinite(revenueProgress) ? `${revenueProgress.toFixed(0)}%` : '0%'}
+                      </span>
+                      {isRevenueAchieved && (
+                        <span className="text-[8px] text-yellow-200 font-black uppercase tracking-wider leading-none mt-0.5">
+                          ÉXITO
+                        </span>
+                      )}
                     </div>
-                    <p className="text-xs text-slate-400 pt-1">{revenueRemaining > 0 ? `Faltan $${revenueRemaining.toLocaleString('es-MX', { maximumFractionDigits: 0 })}` : '¡Meta Superada!'}</p>
-                  </>
+                  </div>
                 )}
               </div>
-
-              {/* Circular Indicator (Only if Goal > 0) */}
-              {monthlyGoal > 0 && (
-                <div className="relative w-20 h-20 shrink-0">
-                  <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-                    <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" className="text-slate-800" />
-                    <circle cx="50" cy="50" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" strokeDasharray={circumference} strokeDashoffset={isNaN(strokeDashoffsetRevenue) ? circumference : strokeDashoffsetRevenue} strokeLinecap="round" className={`transition-all duration-1000 ${isRevenueGoalMet ? 'text-green-500' : 'text-blue-500'}`} />
-                  </svg>
-                  <div className="absolute inset-0 flex items-center justify-center text-xs font-bold">{isFinite(revenueProgress) ? revenueProgress.toFixed(0) : 0}%</div>
-                </div>
-              )}
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* CARD 2: DEVICES (Active if devicesGoal > 0 or if admin/viewer/supervisor) */}
         {(role === 'admin' || role === 'supervisor' || role === 'viewer' || userProfile?.canSellKit === true) && (

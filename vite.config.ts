@@ -18,7 +18,7 @@ export default defineConfig(({ mode }) => {
       VitePWA({
         registerType: 'autoUpdate',
         workbox: {
-          maximumFileSizeToCacheInBytes: 5000000, // 5MB
+          maximumFileSizeToCacheInBytes: 15000000, // 15MB
         },
         includeAssets: ['pwa-icon.png'],
         manifest: {
