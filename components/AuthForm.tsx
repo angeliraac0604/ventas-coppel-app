@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
 import { db } from '../services/firebase';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { Mail, Lock, Loader2, ArrowRight, ShieldCheck } from 'lucide-react';
 
 interface AuthFormProps {
@@ -30,15 +30,33 @@ const AuthForm: React.FC<AuthFormProps> = ({ onDeveloperLogin, onFirestoreLogin 
       if (emailParam) {
         setEmail(emailParam);
         
-        // Si hay un email en la URL, verificamos si tiene una invitación pendiente
-        // para poner automáticamente el modo 'registro'
-        const { data: invite } = await supabase
-          .from('pending_invitations')
-          .select('*')
-          .eq('email', emailParam.toLowerCase())
-          .maybeSingle();
+        // Verificar si tiene una invitación pendiente en Firestore o Supabase
+        let hasInvite = false;
+        try {
+          const invId = `invite-${emailParam.toLowerCase().replace(/[^a-zA-Z0-9]/g, '_')}`;
+          const fsInvDoc = await getDoc(doc(db, 'pending_invitations', invId)).catch(() => null);
+          if (fsInvDoc && fsInvDoc.exists()) {
+            hasInvite = true;
+          } else {
+            const fsAllInv = await getDocs(collection(db, 'pending_invitations')).catch(() => ({ empty: true, docs: [] } as any));
+            if (!fsAllInv.empty) {
+              hasInvite = fsAllInv.docs.some((d: any) => (d.data().email || '').toLowerCase() === emailParam.toLowerCase());
+            }
+          }
+        } catch (e) {}
+
+        if (!hasInvite && isSupabaseConfigured) {
+          try {
+            const { data: invite } = await supabase
+              .from('pending_invitations')
+              .select('*')
+              .eq('email', emailParam.toLowerCase())
+              .maybeSingle();
+            if (invite) hasInvite = true;
+          } catch (e) {}
+        }
         
-        if (invite || modeParam === 'register') {
+        if (hasInvite || modeParam === 'register') {
           setMode('register');
         }
       }
@@ -175,39 +193,92 @@ const AuthForm: React.FC<AuthFormProps> = ({ onDeveloperLogin, onFirestoreLogin 
 
       const full_name = `${firstName.trim()} ${lastName.trim()}`.toUpperCase();
 
-      // 1. Validar invitación por correo en pending_invitations
-      const { data: inviteData, error: inviteError } = await supabase
-        .from('pending_invitations')
-        .select('*')
-        .eq('email', email.toLowerCase())
-        .maybeSingle();
+      // 1. Validar invitación por correo en pending_invitations (Firestore + Supabase)
+      let inviteData: any = null;
+      const emailLower = email.toLowerCase().trim();
+      const invId = `invite-${emailLower.replace(/[^a-zA-Z0-9]/g, '_')}`;
 
-      if (inviteError || !inviteData) {
+      try {
+        const fsDoc = await getDoc(doc(db, 'pending_invitations', invId)).catch(() => null);
+        if (fsDoc && fsDoc.exists()) {
+          inviteData = fsDoc.data();
+        } else {
+          const fsAll = await getDocs(collection(db, 'pending_invitations')).catch(() => ({ empty: true, docs: [] } as any));
+          if (!fsAll.empty) {
+            const found = fsAll.docs.find((d: any) => (d.data().email || '').toLowerCase() === emailLower);
+            if (found) inviteData = found.data();
+          }
+        }
+      } catch (e) {
+        console.warn("Error leyendo invitación en Firestore:", e);
+      }
+
+      if (!inviteData && isSupabaseConfigured) {
+        try {
+          const { data: sbInvite } = await supabase
+            .from('pending_invitations')
+            .select('*')
+            .eq('email', emailLower)
+            .maybeSingle();
+          if (sbInvite) inviteData = sbInvite;
+        } catch (e) {}
+      }
+
+      if (!inviteData) {
         throw new Error("No tienes una invitación pendiente para este correo. Contacta al administrador.");
       }
 
-      // 2. Crear usuario en Auth
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-        email: email.toLowerCase(),
-        password,
-        options: {
-          data: {
-            full_name: full_name,
-            role: inviteData.role,
-            store_id: inviteData.store_id
-          }
+      // 2. Crear usuario en Firestore (Base de datos primaria)
+      const userId = `user-${emailLower.replace(/[^a-zA-Z0-9]/g, '')}`;
+      const userProfilePayload = {
+        id: userId,
+        email: emailLower,
+        fullName: full_name,
+        full_name: full_name,
+        role: inviteData.role || 'seller',
+        storeId: inviteData.storeId || inviteData.store_id || null,
+        store_id: inviteData.storeId || inviteData.store_id || null,
+        assignedStores: inviteData.assignedStores || inviteData.assigned_stores || [],
+        assigned_stores: inviteData.assignedStores || inviteData.assigned_stores || [],
+        canJustifyAbsences: !!(inviteData.canJustifyAbsences ?? inviteData.can_justify_absences),
+        canManageRestDays: !!(inviteData.canManageRestDays ?? inviteData.can_manage_rest_days),
+        canForceAttendance: !!(inviteData.canForceAttendance ?? inviteData.can_force_attendance),
+        canSetSchedules: !!(inviteData.canSetSchedules ?? inviteData.can_set_schedules),
+        canSellKit: inviteData.canSellKit ?? inviteData.can_sell_kit ?? true,
+        canSellChip0: !!(inviteData.canSellChip0 ?? inviteData.can_sell_chip_0),
+        canSellPortability: !!(inviteData.canSellPortability ?? inviteData.can_sell_portability),
+        canSellChipExpress: !!(inviteData.canSellChipExpress ?? inviteData.can_sell_chip_express),
+        canAccessWarranties: !!(inviteData.canAccessWarranties ?? inviteData.can_access_warranties),
+        createdAt: new Date().toISOString()
+      };
+
+      await setDoc(doc(db, 'users', userId), userProfilePayload, { merge: true });
+      await setDoc(doc(db, 'profiles', userId), userProfilePayload, { merge: true });
+
+      // Eliminar la invitación ya usada en Firestore
+      await deleteDoc(doc(db, 'pending_invitations', invId)).catch(() => {});
+
+      // 3. Sincronizar en Supabase si está disponible
+      if (isSupabaseConfigured) {
+        try {
+          await supabase.auth.signUp({
+            email: emailLower,
+            password,
+            options: {
+              data: {
+                full_name: full_name,
+                role: inviteData.role,
+                store_id: inviteData.store_id || inviteData.storeId
+              }
+            }
+          });
+          await supabase.from('pending_invitations').delete().eq('email', emailLower);
+        } catch (sbSignUpErr) {
+          console.warn("Aviso: Supabase Auth no disponible:", sbSignUpErr);
         }
-      });
+      }
 
-      if (signUpError) throw signUpError;
-
-      // 3. La invitación se eliminará automáticamente en App.tsx después de que el perfil sea sincronizado con sus permisos.
-
-      const message = signUpData.session 
-        ? "¡Cuenta creada y sesión iniciada correctamente!" 
-        : "¡Cuenta creada! Ya puedes iniciar sesión con tu nueva contraseña. (Si el sistema no te deja entrar, revisa tu correo para confirmar tu cuenta).";
-
-      setSuccess(message);
+      setSuccess("¡Cuenta creada exitosamente! Ya puedes iniciar sesión con tu correo y contraseña.");
       setMode('login');
       setFirstName('');
       setLastName('');

@@ -205,11 +205,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
   const fetchAllData = async () => {
     setDataLoading(true);
     try {
-      // 1. Siempre consultar Firestore (tanto 'stores', 'users' como 'profiles')
-      const [fsStoresSnap, fsUsersSnap, fsProfilesSnap] = await Promise.all([
+      // 1. Siempre consultar Firestore (stores, users, profiles y pending_invitations)
+      const [fsStoresSnap, fsUsersSnap, fsProfilesSnap, fsInvitesSnap] = await Promise.all([
         getDocs(collection(db, 'stores')).catch(() => ({ empty: true, docs: [] } as any)),
         getDocs(collection(db, 'users')).catch(() => ({ empty: true, docs: [] } as any)),
-        getDocs(collection(db, 'profiles')).catch(() => ({ empty: true, docs: [] } as any))
+        getDocs(collection(db, 'profiles')).catch(() => ({ empty: true, docs: [] } as any)),
+        getDocs(collection(db, 'pending_invitations')).catch(() => ({ empty: true, docs: [] } as any))
       ]);
 
       // 2. Consultar Supabase si está disponible
@@ -393,14 +394,33 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
 
       setProfiles(finalProfiles);
 
-      // 5. Invitaciones Pendientes
-      if (sbInvitesData.length > 0) {
-        const activeEmails = new Set(finalProfiles.map(p => (p.email || '').toLowerCase()));
-        const filteredInvites = sbInvitesData.filter(inv => !activeEmails.has((inv.email || '').toLowerCase()));
-        setInvites(filteredInvites);
-      } else {
-        setInvites([]);
+      // 5. Invitaciones Pendientes (Firestore + Supabase)
+      const invitesMap = new Map<string, any>();
+      if (!fsInvitesSnap.empty) {
+        fsInvitesSnap.docs.forEach((d: any) => {
+          const inv = d.data();
+          const email = (inv.email || '').toLowerCase().trim();
+          if (email) {
+            const storeObj = storesMap.get(inv.store_id || inv.storeId);
+            invitesMap.set(email, {
+              id: d.id,
+              ...inv,
+              stores: storeObj ? { name: storeObj.name } : undefined
+            });
+          }
+        });
       }
+
+      sbInvitesData.forEach((inv: any) => {
+        const email = (inv.email || '').toLowerCase().trim();
+        if (email && !invitesMap.has(email)) {
+          invitesMap.set(email, inv);
+        }
+      });
+
+      const activeEmails = new Set(finalProfiles.map(p => (p.email || '').toLowerCase()));
+      const filteredInvites = Array.from(invitesMap.values()).filter(inv => !activeEmails.has((inv.email || '').toLowerCase()));
+      setInvites(filteredInvites);
 
     } catch (err) {
       console.error('Error fetching admin data:', err);
@@ -519,7 +539,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
 
       // INTELIGENTE: Verificar si ya existe en perfiles o invitaciones
       const emailExistsInProfiles = profiles.some(p => p.email.toLowerCase() === emailLower);
-      const emailExistsInInvites = invites.some(inv => inv.email.toLowerCase() === emailLower);
+      const emailExistsInInvites = invites.some(inv => (inv.email || '').toLowerCase() === emailLower);
 
       if (emailExistsInProfiles) {
         alert('⚠️ Este usuario ya cuenta con un registro activo en el sistema.');
@@ -533,33 +553,74 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
         return;
       }
 
-      // LIMPIEZA AUTOMÁTICA: Si el usuario no tiene perfil pero existe en Auth (huérfano),
-      // lo eliminamos para que su registro sea exitoso.
-      await supabase.rpc('delete_user_by_email', { target_email: emailLower });
+      // 1. Guardar invitación en Firestore (Almacenamiento persistente primario)
+      const invId = `invite-${emailLower.replace(/[^a-zA-Z0-9]/g, '_')}`;
+      const inviteFsPayload = cleanFirestoreData({
+        id: invId,
+        email: emailLower,
+        role: inviteRole,
+        store_id: inviteStoreId || null,
+        storeId: inviteStoreId || null,
+        assigned_stores: (inviteRole === 'supervisor' || inviteRole === 'viewer') ? inviteAssignedStores : null,
+        assignedStores: (inviteRole === 'supervisor' || inviteRole === 'viewer') ? inviteAssignedStores : null,
+        can_justify_absences: inviteCanJustifyAbsences,
+        canJustifyAbsences: inviteCanJustifyAbsences,
+        can_manage_rest_days: inviteCanManageRestDays,
+        canManageRestDays: inviteCanManageRestDays,
+        can_force_attendance: inviteCanForceAttendance,
+        canForceAttendance: inviteCanForceAttendance,
+        can_set_schedules: inviteCanSetSchedules,
+        canSetSchedules: inviteCanSetSchedules,
+        can_sell_kit: inviteCanSellKit,
+        canSellKit: inviteCanSellKit,
+        can_sell_chip_0: inviteCanSellChip0,
+        canSellChip0: inviteCanSellChip0,
+        can_sell_portability: inviteCanSellPortability,
+        canSellPortability: inviteCanSellPortability,
+        can_sell_chip_express: inviteCanSellChipExpress,
+        canSellChipExpress: inviteCanSellChipExpress,
+        can_access_warranties: inviteCanAccessWarranties,
+        canAccessWarranties: inviteCanAccessWarranties,
+        createdAt: new Date().toISOString()
+      });
 
-      const { error } = await supabase.from('pending_invitations').insert([
-        { 
-          email: emailLower, 
-          role: inviteRole, 
-          store_id: inviteStoreId || null,
-          invited_by: (await supabase.auth.getUser()).data.user?.id,
-          assigned_stores: (inviteRole === 'supervisor' || inviteRole === 'viewer') ? inviteAssignedStores : null,
-          can_justify_absences: inviteCanJustifyAbsences,
-          can_manage_rest_days: inviteCanManageRestDays,
-          can_force_attendance: inviteCanForceAttendance,
-          can_set_schedules: inviteCanSetSchedules,
-          can_sell_kit: inviteCanSellKit,
-          can_sell_chip_0: inviteCanSellChip0,
-          can_sell_portability: inviteCanSellPortability,
-          can_sell_chip_express: inviteCanSellChipExpress,
-          can_access_warranties: inviteCanAccessWarranties
+      await setDoc(doc(db, 'pending_invitations', invId), inviteFsPayload);
+
+      // 2. Sincronizar con Supabase si está disponible (sin bloquear si no está configurado o falla)
+      if (isSupabaseConfigured) {
+        try {
+          await supabase.rpc('delete_user_by_email', { target_email: emailLower });
+          const authUser = (await supabase.auth.getUser().catch(() => null))?.data?.user;
+          await supabase.from('pending_invitations').insert([
+            { 
+              email: emailLower, 
+              role: inviteRole, 
+              store_id: inviteStoreId || null,
+              invited_by: authUser?.id || null,
+              assigned_stores: (inviteRole === 'supervisor' || inviteRole === 'viewer') ? inviteAssignedStores : null,
+              can_justify_absences: inviteCanJustifyAbsences,
+              can_manage_rest_days: inviteCanManageRestDays,
+              can_force_attendance: inviteCanForceAttendance,
+              can_set_schedules: inviteCanSetSchedules,
+              can_sell_kit: inviteCanSellKit,
+              can_sell_chip_0: inviteCanSellChip0,
+              can_sell_portability: inviteCanSellPortability,
+              can_sell_chip_express: inviteCanSellChipExpress,
+              can_access_warranties: inviteCanAccessWarranties
+            }
+          ]);
+        } catch (sbErr) {
+          console.warn("Aviso: Sincronización secundaria con Supabase omitida:", sbErr);
         }
-      ]);
-      if (error) throw error;
+      }
       
-      // Enviar correo de invitación
-      const targetStore = stores.find(s => s.id === inviteStoreId)?.name || 'Global';
-      await sendInviteEmailScript(emailLower, inviteRole, targetStore);
+      // 3. Enviar correo de notificación (seguro)
+      try {
+        const targetStore = stores.find(s => s.id === inviteStoreId)?.name || 'Global';
+        await sendInviteEmailScript(emailLower, inviteRole, targetStore);
+      } catch (mailErr) {
+        console.warn("Aviso al enviar correo:", mailErr);
+      }
 
       setInviteEmail('');
       setInviteAssignedStores([]);
@@ -569,9 +630,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
       setInviteCanSetSchedules(false);
       setInviteCanAccessWarranties(false);
       setActiveModal('none');
+      alert(`✅ ¡Invitación guardada exitosamente para ${emailLower}! Ya puede registrarse en el sistema.`);
       fetchAllData();
     } catch (err: any) {
-      alert('Error al invitar: ' + err.message);
+      alert('Error al invitar: ' + (err.message || 'Error desconocido'));
     } finally {
       setIsLoading(false);
     }
@@ -873,13 +935,28 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
   };
 
   const handleCancelInvite = async (email: string) => {
-    if (!confirm(`¿Estás seguro de cancelar la invitación y eliminar por completo el acceso de ${email}?`)) return;
+    if (!confirm(`¿Estás seguro de cancelar la invitación de ${email}?`)) return;
     try {
-      const { error } = await supabase.rpc('delete_user_by_email', { target_email: email });
-      if (error) throw error;
+      const emailLower = email.toLowerCase().trim();
+      const invId = `invite-${emailLower.replace(/[^a-zA-Z0-9]/g, '_')}`;
+
+      // 1. Eliminar de Firestore
+      await deleteDoc(doc(db, 'pending_invitations', invId)).catch(() => {});
+
+      // 2. Eliminar de Supabase si está disponible
+      if (isSupabaseConfigured) {
+        try {
+          await supabase.rpc('delete_user_by_email', { target_email: emailLower });
+          await supabase.from('pending_invitations').delete().eq('email', emailLower);
+        } catch (sbErr) {
+          console.warn("Aviso: No se pudo eliminar en Supabase:", sbErr);
+        }
+      }
+
+      alert(`Invitación de ${emailLower} cancelada correctamente.`);
       fetchAllData();
     } catch (err: any) {
-      alert('Error: ' + err.message);
+      alert('Error: ' + (err.message || 'Error desconocido'));
     }
   };
 

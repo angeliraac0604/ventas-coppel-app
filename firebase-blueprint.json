@@ -152,12 +152,30 @@
         "storeId": { "type": "string", "description": "Optional specific store ID" }
       },
       "required": ["month", "revenue_goal", "devices_goal"]
+    },
+    "PendingInvitation": {
+      "title": "PendingInvitation",
+      "description": "Pending user invitation with assigned store and permissions",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email", "description": "Invited user email address" },
+        "role": { "type": "string", "enum": ["admin", "supervisor", "seller", "viewer"], "description": "Invited role" },
+        "storeId": { "type": "string", "description": "Store ID" },
+        "assignedStores": { "type": "array", "description": "Assigned stores" },
+        "canAccessWarranties": { "type": "boolean", "description": "Warranty access permission" },
+        "createdAt": { "type": "string", "description": "ISO timestamp" }
+      },
+      "required": ["email", "role"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": "User",
       "description": "User profiles storing roles and permissions"
+    },
+    "/pending_invitations/{invitationId}": {
+      "schema": "PendingInvitation",
+      "description": "Pending user invitations"
     },
     "/sales/{saleId}": {
       "schema": "Sale",

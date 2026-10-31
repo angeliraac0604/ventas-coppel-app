@@ -383,7 +383,7 @@ const Warranties: React.FC<WarrantiesProps> = ({
         window.open(url, '_blank');
     };
 
-    const handleSendCustomerWhatsApp = async (warranty: Warranty, type: 'received' | 'sent_to_provider' | 'in_store' | 'delivered' | 'general') => {
+    const handleSendCustomerWhatsApp = (warranty: Warranty, type: 'received' | 'sent_to_provider' | 'in_store' | 'delivered' | 'general') => {
         let phone = '';
         let msg = '';
 
@@ -404,10 +404,8 @@ const Warranties: React.FC<WarrantiesProps> = ({
             msg = formatMessage(templates.group, warranty);
 
             if (whatsappGroupLink && whatsappGroupLink.includes('chat.whatsapp.com')) {
-                try {
-                    await navigator.clipboard.writeText(msg);
-                    alert("📋 ¡Reporte copiado al portapapeles!\n\nSe abrirá el grupo de WhatsApp. Pega el mensaje (Ctrl+V o Pegar) para enviarlo.");
-                } catch (e) {}
+                navigator.clipboard.writeText(msg).catch(() => {});
+                alert("📋 ¡Reporte copiado al portapapeles!\n\nSe abrirá el grupo de WhatsApp. Pega el mensaje (Ctrl+V o Pegar) para enviarlo.");
                 window.open(whatsappGroupLink, '_blank');
                 return;
             }
