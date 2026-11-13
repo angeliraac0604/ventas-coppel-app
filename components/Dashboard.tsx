@@ -249,7 +249,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
             if (!combinedSales.find(ms => ms.id === s.id)) {
                 // Verify it belongs to currently selected month/store before adding to stats
                 const matchesMonth = s.date.startsWith(selectedMonth);
-                const matchesStore = !storeId || storeId === 'all' || s.storeId === storeId;
+                const matchesStore = !storeId || storeId === 'all' || matchesStoreAlias(s.storeId, storeId);
                 if (matchesMonth && matchesStore) {
                     combinedSales.push(s);
                 }

@@ -18,13 +18,24 @@ import { BRAND_CONFIGS } from './constants';
 import posthog from 'posthog-js';
 import { supabase, isSupabaseConfigured } from './services/supabaseClient';
 import { deleteImageFromDriveScript } from './services/googleAppsScriptService';
-import { smartImageUpload } from './services/storageService';
+import { smartImageUpload, compressImage } from './services/storageService';
 import { RoleSwitcher } from './components/RoleSwitcher';
 import { BackupMigration, cleanFirestoreData } from './components/BackupMigration';
 import { DatabaseUsagePanel } from './components/DatabaseUsagePanel';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { db } from './services/firebase';
-import { collection, getDocs, getDoc, doc, setDoc, updateDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
+import { collection, getDocs, getDoc, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query, where } from 'firebase/firestore';
+import {
+  ARCHIVED_SALES_CACHE_KEY,
+  ARCHIVED_SALES_CACHE_TS_KEY,
+  ONDEMAND_IMAGE_MARKER,
+  fetchAllSalesChunked,
+  fetchSalesByDateRangeChunked,
+  getTodayMxStr,
+  mapFirestoreSale,
+  sortSalesDesc,
+  stripHeavyImagesForCache
+} from './services/firestoreSales';
 import { getInitialSales, getInitialClosings } from './services/initialData';
 
 const App: React.FC = () => {
@@ -277,10 +288,35 @@ const App: React.FC = () => {
   const [saleToEdit, setSaleToEdit] = useState<Sale | null>(null);
   const [isDeepSearching, setIsDeepSearching] = useState(false);
 
-  const handleDeepSearch = async (query: string) => {
-    if (!query || query.length < 3) return;
+  const handleDeepSearch = async (searchQuery: string) => {
+    if (!searchQuery || searchQuery.length < 3) return false;
     setIsDeepSearching(true);
     try {
+      if (!isSupabaseConfigured) {
+        const allSales = await fetchAllSalesChunked(userMapRef.current, { stripImages: true });
+        const q = searchQuery.toLowerCase();
+        const matches = allSales.filter(
+          (s) =>
+            (s.customerName || '').toLowerCase().includes(q) ||
+            (s.transactionFolio || '').toLowerCase().includes(q) ||
+            (s.invoiceNumber || '').toLowerCase().includes(q) ||
+            (s.iccid || '').toLowerCase().includes(q) ||
+            (s.phoneNumber || '').toLowerCase().includes(q)
+        );
+        if (matches.length > 0) {
+          setSales((prev) => {
+            const map = new Map<string, Sale>();
+            prev.forEach((s) => map.set(s.id, s));
+            matches.forEach((s) => {
+              if (!map.has(s.id)) map.set(s.id, s);
+            });
+            return sortSalesDesc(Array.from(map.values()));
+          });
+          return true;
+        }
+        return false;
+      }
+
       const { data, error } = await supabase
         .from('sales')
         .select(`
@@ -290,7 +326,7 @@ const App: React.FC = () => {
             full_name
           )
         `)
-        .or(`customer_name.ilike.%${query}%,transaction_folio.ilike.%${query}%,invoice_number.ilike.%${query}%`)
+        .or(`customer_name.ilike.%${searchQuery}%,transaction_folio.ilike.%${searchQuery}%,invoice_number.ilike.%${searchQuery}%`)
         .order('date', { ascending: false });
 
       if (error) throw error;
@@ -334,9 +370,28 @@ const App: React.FC = () => {
   };
 
   const handleFetchRange = async (start: string, end: string) => {
-    if (!start || !end) return;
+    if (!start || !end) return false;
     setIsDeepSearching(true);
     try {
+      if (!isSupabaseConfigured) {
+        const ranged = await fetchSalesByDateRangeChunked(start, end, userMapRef.current, {
+          stripImages: true,
+          windowDays: 5
+        });
+        if (ranged.length > 0) {
+          setSales((prev) => {
+            const map = new Map<string, Sale>();
+            prev.forEach((s) => map.set(s.id, s));
+            ranged.forEach((s) => {
+              if (!map.has(s.id)) map.set(s.id, s);
+            });
+            return sortSalesDesc(Array.from(map.values()));
+          });
+          return true;
+        }
+        return false;
+      }
+
       const { data, error } = await supabase
         .from('sales')
         .select(`
@@ -1367,19 +1422,22 @@ create policy "Users delete store warranties" on public.warranties for delete to
   };
 
   // --- FILTERED DATA logic ---
-  const getFilteredData = <T extends { storeId?: string }>(data: T[]) => {
+  // --- FILTERED DATA logic ---
+  const getFilteredData = <T extends { storeId?: string; createdBy?: string; createdByEmail?: string }>(data: T[]) => {
     if (!data || data.length === 0) return [];
     if (!userProfile) return data;
 
     const matchesStoreAlias = (targetStoreId: string, itemStoreId?: string) => {
       if (!itemStoreId) return false;
-      if (itemStoreId === targetStoreId) return true;
-      const isTargetCardenas = targetStoreId === CARDENAS_STORE_ID || targetStoreId === 'coppel-cardenas-1053' || targetStoreId.toLowerCase().includes('cardenas') || targetStoreId.includes('1053');
-      const isItemCardenas = itemStoreId === CARDENAS_STORE_ID || itemStoreId === 'coppel-cardenas-1053' || itemStoreId.toLowerCase().includes('cardenas') || itemStoreId.includes('1053');
+      const tId = String(targetStoreId).trim().toLowerCase();
+      const iId = String(itemStoreId).trim().toLowerCase();
+      if (tId === iId) return true;
+      const isTargetCardenas = tId === CARDENAS_STORE_ID.toLowerCase() || tId === 'coppel-cardenas-1053' || tId.includes('cardenas') || tId.includes('1053');
+      const isItemCardenas = iId === CARDENAS_STORE_ID.toLowerCase() || iId === 'coppel-cardenas-1053' || iId.includes('cardenas') || iId.includes('1053');
       if (isTargetCardenas && isItemCardenas) return true;
-      const targetStore = stores.find(s => s.id === targetStoreId);
-      const itemStore = stores.find(s => s.id === itemStoreId);
-      if (targetStore && itemStore && targetStore.name === itemStore.name) return true;
+      const targetStore = stores.find(s => s.id?.toLowerCase() === tId || s.name?.toLowerCase() === tId);
+      const itemStore = stores.find(s => s.id?.toLowerCase() === iId || s.name?.toLowerCase() === iId);
+      if (targetStore && itemStore && targetStore.name?.trim().toLowerCase() === itemStore.name?.trim().toLowerCase()) return true;
       return false;
     };
 
@@ -1418,16 +1476,24 @@ create policy "Users delete store warranties" on public.warranties for delete to
     }
 
     // Sellers & Users with specific store permissions:
-    // Inteligente: Mostrar únicamente los registros de la tienda seleccionada o asignada al usuario
+    // IMPORTANT: Users always see records they themselves created, preventing lost sales from store alias mismatches!
     const targetStore = (selectedStoreId && selectedStoreId !== 'all') ? selectedStoreId : userProfile.storeId;
     const userStores = [
       ...(targetStore ? [targetStore] : []),
       ...(userProfile?.assignedStores || [])
     ];
 
-    if (userStores.length === 0) return data;
+    return data.filter((item: any) => {
+      // 1. If seller created this item, ALWAYS show it!
+      if (item.createdBy && userProfile?.id && item.createdBy === userProfile.id) return true;
+      if (item.createdByEmail && userProfile?.email && item.createdByEmail.trim().toLowerCase() === userProfile.email.trim().toLowerCase()) return true;
+      
+      // 2. If no store restriction defined for user, allow
+      if (userStores.length === 0) return true;
 
-    return data.filter(item => userStores.some(sId => matchesStoreAlias(sId, item.storeId)));
+      // 3. Otherwise match store
+      return userStores.some(sId => matchesStoreAlias(sId, item.storeId));
+    });
   };
 
   const filteredSales = getFilteredData(sales);
@@ -1554,100 +1620,164 @@ create policy "Users delete store warranties" on public.warranties for delete to
         });
       });
 
-      // 3. Ventas en tiempo real para todos los usuarios
-      const unsubSales = onSnapshot(collection(db, 'sales'), (snapshot) => {
-        if (snapshot.empty) {
-          setSales(prev => {
-            if (prev && prev.length > 0) return prev;
-            try {
-              const cached = localStorage.getItem('coppel_cached_sales');
-              if (cached) {
-                const parsed = JSON.parse(cached);
-                if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-              }
-            } catch (e) {}
-            return getInitialSales();
-          });
-          setIsLoading(false);
-          return;
-        }
+      // 3. Ventas en tiempo real acotadas por fecha (evita superar el límite de 128 MiB por consulta)
+      let isSalesEffectCancelled = false;
+      let activeCutoff = getTodayMxStr(-10);
+      let recentSalesList: Sale[] = [];
+      let archivedSalesList: Sale[] = [];
+      let activeSalesUnsub: (() => void) | null = null;
 
-        const userMap = userMapRef.current;
-        const liveSales: Sale[] = snapshot.docs.map(d => {
-          const data = d.data();
-          const creatorInfo = userMap[data.createdBy || data.created_by] || {};
-
-          // Extraer fecha y hora de creación confiable
-          let calculatedCreatedAt = data.createdAt || data.created_at || '';
-          if (!calculatedCreatedAt && d.id.startsWith('sale-')) {
-            const parts = d.id.split('-');
-            const timestamp = Number(parts[1]);
-            if (!isNaN(timestamp) && timestamp > 1600000000000) {
-              calculatedCreatedAt = new Date(timestamp).toISOString();
-            }
+      try {
+        const archivedRaw = localStorage.getItem(ARCHIVED_SALES_CACHE_KEY);
+        if (archivedRaw) {
+          const parsedArchived = JSON.parse(archivedRaw);
+          if (Array.isArray(parsedArchived)) {
+            archivedSalesList = parsedArchived;
           }
-
-          return {
-            id: d.id,
-            invoiceNumber: data.invoiceNumber || data.invoice_number || 'S/N',
-            customerName: data.customerName || data.customer_name || 'Cliente',
-            price: Number(data.price || 0),
-            brand: (data.brand || 'OTRO') as Brand,
-            date: data.date || '',
-            ticketImage: data.ticketImage || data.ticket_image || '',
-            createdBy: data.createdBy || data.created_by || '',
-            createdAt: calculatedCreatedAt,
-            createdByEmail: data.createdByEmail || creatorInfo.email || data.profiles?.email || '',
-            createdByName: data.createdByName || creatorInfo.fullName || data.profiles?.full_name || '',
-            storeId: data.storeId || data.store_id || '',
-            transactionFolio: data.transactionFolio || data.transaction_folio || '',
-            category: (data.category || 'kit').toLowerCase() as any,
-            iccid: data.iccid || '',
-            phoneNumber: data.phoneNumber || data.phone_number || '',
-            portabilityScreenshot: data.portabilityScreenshot || data.portability_screenshot || ''
-          } as Sale;
-        });
-
-        // Orden estricto: fecha desc, luego fecha de creación desc, luego id
-        const sortedSales = liveSales.sort((a, b) => {
-          const dateCmp = (b.date || '').localeCompare(a.date || '');
-          if (dateCmp !== 0) return dateCmp;
-          const createdCmp = (b.createdAt || '').localeCompare(a.createdAt || '');
-          if (createdCmp !== 0) return createdCmp;
-          return b.id.localeCompare(a.id);
-        });
-
-        setSales(sortedSales);
-        try {
-          const lightweight = sortedSales.slice(0, 100).map(s => {
-            if (s.ticketImage?.startsWith('data:') || s.portabilityScreenshot?.startsWith('data:')) {
-              return { ...s, ticketImage: '', portabilityScreenshot: '' };
-            }
-            return s;
-          });
-          localStorage.setItem('coppel_cached_sales', JSON.stringify(lightweight));
-        } catch (e) {
-          console.warn("No se pudo guardar caché local de ventas (cuota llena):", e);
         }
-        setIsLoading(false);
-      }, (err: any) => {
-        console.warn("Realtime sales error (operando con datos locales y caché):", err);
-        if (err?.code === 'resource-exhausted' || err?.message?.includes('Quota') || err?.message?.includes('quota')) {
-          setIsQuotaExhausted(true);
-        }
-        setSales(prev => {
-          if (prev && prev.length > 0) return prev;
+      } catch (e) {}
+
+      const publishMergedSales = () => {
+        if (isSalesEffectCancelled) return;
+        const mergedMap = new Map<string, Sale>();
+        archivedSalesList.forEach((s) => {
+          if ((s.date || '') < activeCutoff) {
+            mergedMap.set(s.id, s);
+          }
+        });
+        recentSalesList.forEach((s) => {
+          mergedMap.set(s.id, s);
+        });
+        const sortedSales = sortSalesDesc(Array.from(mergedMap.values()));
+        if (sortedSales.length > 0) {
+          setSales(sortedSales);
           try {
-            const cached = localStorage.getItem('coppel_cached_sales');
-            if (cached) {
-              const parsed = JSON.parse(cached);
-              if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+            const lightweight = stripHeavyImagesForCache(sortedSales.slice(0, 150));
+            localStorage.setItem('coppel_cached_sales', JSON.stringify(lightweight));
+          } catch (e) {
+            console.warn("No se pudo guardar caché local de ventas:", e);
+          }
+        }
+      };
+
+      const hydrateArchivedSales = async (cutoffStr: string, forceRefresh = false) => {
+        try {
+          const cachedTs = Number(localStorage.getItem(ARCHIVED_SALES_CACHE_TS_KEY) || '0');
+          const cacheAgeMs = Date.now() - cachedTs;
+          const isCacheFresh = cachedTs > 0 && cacheAgeMs < 12 * 60 * 60 * 1000 && archivedSalesList.length > 0;
+          if (!forceRefresh && isCacheFresh) return;
+
+          const archiveEnd = (() => {
+            const [y, m, d] = cutoffStr.split('-').map(Number);
+            const dt = new Date(Date.UTC(y, (m || 1) - 1, d || 1));
+            dt.setUTCDate(dt.getUTCDate() - 1);
+            return dt.toISOString().split('T')[0];
+          })();
+
+          const fetchedArchive = await fetchSalesByDateRangeChunked(
+            '2026-09-01',
+            archiveEnd,
+            userMapRef.current,
+            { stripImages: true, windowDays: 5 }
+          );
+          if (isSalesEffectCancelled) return;
+
+          archivedSalesList = fetchedArchive;
+          try {
+            localStorage.setItem(ARCHIVED_SALES_CACHE_KEY, JSON.stringify(fetchedArchive));
+            localStorage.setItem(ARCHIVED_SALES_CACHE_TS_KEY, String(Date.now()));
+          } catch (e) {
+            console.warn("No se pudo persistir historial archivado en localStorage:", e);
+          }
+          publishMergedSales();
+        } catch (archiveErr: any) {
+          console.warn("Hydrate archive sales note:", archiveErr);
+          const msg = String(archiveErr?.message || '');
+          if (
+            !msg.includes('128.00 MiB') &&
+            (archiveErr?.code === 'resource-exhausted' || msg.toLowerCase().includes('quota'))
+          ) {
+            setIsQuotaExhausted(true);
+          }
+        }
+      };
+
+      const subscribeRecentSales = (cutoffStr: string, allowFallback = true) => {
+        activeCutoff = cutoffStr;
+        const recentQuery = query(collection(db, 'sales'), where('date', '>=', cutoffStr));
+
+        return onSnapshot(
+          recentQuery,
+          (snapshot) => {
+            if (isSalesEffectCancelled) return;
+            const userMap = userMapRef.current;
+            recentSalesList = snapshot.docs.map((d) => mapFirestoreSale(d, userMap));
+            setIsQuotaExhausted(false);
+
+            if (recentSalesList.length === 0 && archivedSalesList.length === 0) {
+              setSales((prev) => {
+                if (prev && prev.length > 0) return prev;
+                try {
+                  const cached = localStorage.getItem('coppel_cached_sales');
+                  if (cached) {
+                    const parsed = JSON.parse(cached);
+                    if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+                  }
+                } catch (e) {}
+                return getInitialSales();
+              });
+            } else {
+              publishMergedSales();
             }
-          } catch (e) {}
-          return getInitialSales();
-        });
-        setIsLoading(false);
-      });
+            setIsLoading(false);
+          },
+          (err: any) => {
+            if (isSalesEffectCancelled) return;
+            console.warn("Realtime recent sales error:", err);
+            const msg = String(err?.message || '');
+
+            // Si incluso la ventana de 10 días supera 128 MiB, reducir automáticamente a últimos 2 días
+            if (allowFallback && (msg.includes('128.00 MiB') || err?.code === 'resource-exhausted')) {
+              const narrowerCutoff = getTodayMxStr(-2);
+              if (narrowerCutoff > cutoffStr) {
+                console.warn("Reduciendo listener en vivo a últimos 2 días para mantenerse bajo 128 MiB...");
+                if (activeSalesUnsub) activeSalesUnsub();
+                activeSalesUnsub = subscribeRecentSales(narrowerCutoff, false);
+                hydrateArchivedSales(narrowerCutoff, true);
+                return;
+              }
+            }
+
+            if (
+              !msg.includes('128.00 MiB') &&
+              (err?.code === 'resource-exhausted' || msg.toLowerCase().includes('quota'))
+            ) {
+              setIsQuotaExhausted(true);
+            }
+
+            setSales((prev) => {
+              if (prev && prev.length > 0) return prev;
+              try {
+                const cached = localStorage.getItem('coppel_cached_sales');
+                if (cached) {
+                  const parsed = JSON.parse(cached);
+                  if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+                }
+              } catch (e) {}
+              return getInitialSales();
+            });
+            setIsLoading(false);
+          }
+        );
+      };
+
+      activeSalesUnsub = subscribeRecentSales(activeCutoff, true);
+      hydrateArchivedSales(activeCutoff, false);
+
+      const unsubSales = () => {
+        isSalesEffectCancelled = true;
+        if (activeSalesUnsub) activeSalesUnsub();
+      };
 
       // 4. Garantías en tiempo real
       const unsubWarranties = onSnapshot(collection(db, 'warranties'), (snapshot) => {
@@ -1833,19 +1963,29 @@ create policy "Users delete store warranties" on public.warranties for delete to
       if (!isSupabaseConfigured) {
         const saleId = `sale-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
         
-        // Optimizar imágenes antes de escribir a Firestore para que el payload sea <50KB y la sincronización sea instantánea
+        // Optimizar imágenes antes de escribir a Firestore para mantener documentos compactos (<120KB)
         let compressedTicket = newSaleData.ticketImage || '';
         if (compressedTicket && compressedTicket.startsWith('data:image')) {
           try {
-            compressedTicket = await compressImage(compressedTicket, 800, 0.7);
-          } catch (e) {}
+            compressedTicket = await compressImage(compressedTicket, 720, 0.58);
+            if (compressedTicket.length > 350_000) {
+              compressedTicket = await compressImage(compressedTicket, 520, 0.42);
+            }
+          } catch (e) {
+            console.warn("Error comprimiendo ticket:", e);
+          }
         }
 
         let compressedPorta = (newSaleData as any).portabilityScreenshot || (newSaleData as any).portability_screenshot || '';
         if (compressedPorta && compressedPorta.startsWith('data:image')) {
           try {
-            compressedPorta = await compressImage(compressedPorta, 800, 0.7);
-          } catch (e) {}
+            compressedPorta = await compressImage(compressedPorta, 720, 0.58);
+            if (compressedPorta.length > 350_000) {
+              compressedPorta = await compressImage(compressedPorta, 520, 0.42);
+            }
+          } catch (e) {
+            console.warn("Error comprimiendo captura de portabilidad:", e);
+          }
         }
 
         const newSale: Sale = {
@@ -1871,24 +2011,52 @@ create policy "Users delete store warranties" on public.warranties for delete to
         // 1. Actualización local inmediata
         setSales(prev => {
           const filtered = prev.filter(s => s.id !== saleId);
-          const updated = [newSale, ...filtered];
+          const updated = sortSalesDesc([newSale, ...filtered]);
           try {
-            const lightweight = updated.slice(0, 100).map(s => {
-              if (s.ticketImage?.startsWith('data:') || s.portabilityScreenshot?.startsWith('data:')) {
-                return { ...s, ticketImage: '', portabilityScreenshot: '' };
-              }
-              return s;
-            });
+            const lightweight = stripHeavyImagesForCache(updated.slice(0, 150));
             localStorage.setItem('coppel_cached_sales', JSON.stringify(lightweight));
           } catch (e) {}
           return updated;
         });
 
-        // 2. Escritura instantánea en la nube (Firestore) para reflejarse en todos los dispositivos en milisegundos
+        // Si la venta tiene fecha anterior a los últimos 10 días, actualizar también el caché de archivo
+        if ((newSale.date || '') < getTodayMxStr(-10)) {
+          try {
+            const rawArch = localStorage.getItem(ARCHIVED_SALES_CACHE_KEY);
+            const archList: Sale[] = rawArch ? JSON.parse(rawArch) : [];
+            const [strippedNew] = stripHeavyImagesForCache([newSale]);
+            const nextArch = sortSalesDesc([strippedNew, ...archList.filter(s => s.id !== saleId)]);
+            localStorage.setItem(ARCHIVED_SALES_CACHE_KEY, JSON.stringify(nextArch));
+          } catch (e) {}
+        }
+
+        // 2. Escritura instantánea en la nube (Firestore)
         try {
           await setDoc(doc(db, 'sales', saleId), cleanFirestoreData(newSale), { merge: true });
-        } catch (fsWriteErr) {
-          console.warn("Firestore write sync:", fsWriteErr);
+        } catch (fsWriteErr: any) {
+          console.error("Firestore write error:", fsWriteErr);
+          const errMsg = String(fsWriteErr?.message || '');
+          if (errMsg.toLowerCase().includes('exceeds') || errMsg.toLowerCase().includes('too large')) {
+            // Reintentar con compresión agresiva si el documento superó 1 MiB
+            const fallbackSale: Sale = {
+              ...newSale,
+              ticketImage: newSale.ticketImage?.startsWith('data:image')
+                ? await compressImage(newSale.ticketImage, 420, 0.35).catch(() => '')
+                : newSale.ticketImage,
+              portabilityScreenshot: newSale.portabilityScreenshot?.startsWith('data:image')
+                ? await compressImage(newSale.portabilityScreenshot, 420, 0.35).catch(() => '')
+                : newSale.portabilityScreenshot
+            };
+            await setDoc(doc(db, 'sales', saleId), cleanFirestoreData(fallbackSale), { merge: true });
+          } else {
+            if (
+              !errMsg.includes('128.00 MiB') &&
+              (fsWriteErr?.code === 'resource-exhausted' || errMsg.toLowerCase().includes('quota'))
+            ) {
+              setIsQuotaExhausted(true);
+            }
+            alert(`La venta se guardó localmente en tu dispositivo, pero no se pudo subir a la nube: ${errMsg || fsWriteErr?.code || 'Error de conexión'}`);
+          }
         }
 
         try {
@@ -2079,16 +2247,54 @@ create policy "Users delete store warranties" on public.warranties for delete to
       const finalStoreId = updatedSale.storeId || userProfile?.storeId || '';
 
       if (!isSupabaseConfigured) {
-        const mergedSale = { ...updatedSale, storeId: finalStoreId };
+        let compressedTicket = updatedSale.ticketImage;
+        if (compressedTicket && compressedTicket.startsWith('data:image')) {
+          try {
+            compressedTicket = await compressImage(compressedTicket, 720, 0.58);
+          } catch (e) {}
+        }
+        let compressedPorta = updatedSale.portabilityScreenshot;
+        if (compressedPorta && compressedPorta.startsWith('data:image')) {
+          try {
+            compressedPorta = await compressImage(compressedPorta, 720, 0.58);
+          } catch (e) {}
+        }
+
+        const mergedSale: Sale = {
+          ...updatedSale,
+          storeId: finalStoreId,
+          ticketImage: compressedTicket,
+          portabilityScreenshot: compressedPorta
+        };
+
         setSales(prev => {
           const updated = prev.map(s => s.id === updatedSale.id ? mergedSale : s);
-          try { localStorage.setItem('coppel_cached_sales', JSON.stringify(updated)); } catch (e) {}
+          try {
+            localStorage.setItem('coppel_cached_sales', JSON.stringify(stripHeavyImagesForCache(updated.slice(0, 150))));
+          } catch (e) {}
           return updated;
         });
+
+        // No sobrescribir fotos reales en Firestore con el marcador __ondemand__
+        const firestorePatch: any = { ...mergedSale };
+        if (firestorePatch.ticketImage === ONDEMAND_IMAGE_MARKER) delete firestorePatch.ticketImage;
+        if (firestorePatch.portabilityScreenshot === ONDEMAND_IMAGE_MARKER) delete firestorePatch.portabilityScreenshot;
+
         try {
-          await updateDoc(doc(db, 'sales', updatedSale.id), cleanFirestoreData(mergedSale));
-        } catch (fsErr) {
-          console.warn("Venta actualizada localmente:", fsErr);
+          await updateDoc(doc(db, 'sales', updatedSale.id), cleanFirestoreData(firestorePatch));
+          try {
+            const rawArch = localStorage.getItem(ARCHIVED_SALES_CACHE_KEY);
+            if (rawArch) {
+              const archList: Sale[] = JSON.parse(rawArch);
+              if (archList.some(s => s.id === updatedSale.id)) {
+                const [stripped] = stripHeavyImagesForCache([mergedSale]);
+                localStorage.setItem(ARCHIVED_SALES_CACHE_KEY, JSON.stringify(archList.map(s => s.id === updatedSale.id ? stripped : s)));
+              }
+            }
+          } catch (e) {}
+        } catch (fsErr: any) {
+          console.error("Error actualizando venta en Firestore:", fsErr);
+          alert(`Actualizado localmente, pero falló la sincronización en la nube: ${fsErr?.message || fsErr?.code || 'Error'}`);
         }
         alert("Venta actualizada correctamente.");
         setSaleToEdit(null);
@@ -2143,13 +2349,23 @@ create policy "Users delete store warranties" on public.warranties for delete to
       if (!isSupabaseConfigured) {
         setSales(prev => {
           const updated = prev.filter(s => s.id !== id);
-          try { localStorage.setItem('coppel_cached_sales', JSON.stringify(updated)); } catch (e) {}
+          try {
+            localStorage.setItem('coppel_cached_sales', JSON.stringify(stripHeavyImagesForCache(updated.slice(0, 150))));
+          } catch (e) {}
           return updated;
         });
         try {
+          const rawArch = localStorage.getItem(ARCHIVED_SALES_CACHE_KEY);
+          if (rawArch) {
+            const archList: Sale[] = JSON.parse(rawArch);
+            localStorage.setItem(ARCHIVED_SALES_CACHE_KEY, JSON.stringify(archList.filter(s => s.id !== id)));
+          }
+        } catch (e) {}
+        try {
           await deleteDoc(doc(db, 'sales', id));
-        } catch (fsErr) {
-          console.warn("Venta eliminada localmente:", fsErr);
+        } catch (fsErr: any) {
+          console.error("Error eliminando venta en Firestore:", fsErr);
+          alert(`Se eliminó de la vista local, pero falló en la nube: ${fsErr?.message || fsErr?.code || 'Error'}`);
         }
         return;
       }
@@ -2891,9 +3107,8 @@ create policy "Users delete store warranties" on public.warranties for delete to
                       onChange={(e) => setSelectedStoreId(e.target.value)}
                       className="bg-transparent text-[10px] md:text-xs font-black text-slate-800 outline-none cursor-pointer w-full"
                     >
-                      <option value="all" disabled={selectedStoreId !== 'all'}>Seleccionar Tienda...</option>
                       {(isAdmin || isGlobalAccess || (userProfile?.assignedStores && userProfile.assignedStores.length > 1)) && (
-                        <option value="all">Ver Todas {isAdmin ? '(Global)' : '(Mis Tiendas)'}</option>
+                        <option value="all">🌐 Todas las Tiendas {isAdmin ? '(Global)' : '(Mis Tiendas)'}</option>
                       )}
                       {stores
                         .filter(s => {
@@ -2941,13 +3156,23 @@ create policy "Users delete store warranties" on public.warranties for delete to
                   <AlertTriangle className="w-5 h-5" />
                 </div>
                 <div>
-                  <h4 className="text-xs font-black uppercase tracking-wider">Modo de Almacenamiento Local y Caché Activo</h4>
+                  <h4 className="text-xs font-black uppercase tracking-wider">Límite de Lecturas Gratuitas de Firebase Alcanzado</h4>
                   <p className="text-[11px] font-semibold text-slate-900/90 mt-0.5">
-                    Se alcanzó el límite diario de lecturas gratuitas de Firebase para hoy. La app continúa funcionando con tus datos locales y los nuevos registros se guardan y se sincronizan al servidor.
+                    La app sigue operando con caché local. Para trabajar sin límite diario de lecturas/escrituras, actualiza Firebase al plan Blaze (pago por uso).
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2 shrink-0 self-end md:self-auto">
+              <div className="flex flex-wrap items-center gap-2 shrink-0 self-end md:self-auto">
+                {(effectiveRole === 'admin' || effectiveRole === 'developer') && (
+                  <a
+                    href="https://console.firebase.google.com/project/gen-lang-client-0272706745/firestore/databases/ai-studio-ventascoppelapp-c2f97129-24ee-41a0-a21e-6ed774a589f5/data?openUpgradeDialog=true"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2 bg-white hover:bg-amber-50 text-slate-950 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-sm"
+                  >
+                    Activar Plan Blaze
+                  </a>
+                )}
                 <button
                   onClick={() => setCurrentView('backup-migration')}
                   className="px-4 py-2 bg-slate-950 hover:bg-slate-900 text-amber-300 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-sm"

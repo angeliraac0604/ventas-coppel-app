@@ -37,6 +37,7 @@ import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
 import { db } from '../services/firebase';
 import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { cleanFirestoreData } from './BackupMigration';
+import { fetchAllSalesChunked } from '../services/firestoreSales';
 import { Store, UserProfile, UserRole } from '../types';
 
 interface AdminPanelProps {
@@ -342,10 +343,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
       // AUTO-RECUPERACIÓN: Si hay muy pocos perfiles o ninguno, escanear ventas en Firestore para recuperar vendedores respaldados
       if (profilesMap.size <= 1) {
         try {
-          const salesSnap = await getDocs(collection(db, 'sales')).catch(() => ({ empty: true, docs: [] } as any));
-          if (!salesSnap.empty) {
-            salesSnap.docs.forEach((d: any) => {
-              const sale = d.data();
+          const allSales = await fetchAllSalesChunked({}, { stripImages: true }).catch(() => []);
+          if (allSales.length > 0) {
+            allSales.forEach((sale) => {
               const creatorId = sale.createdBy;
               if (creatorId && !profilesMap.has(creatorId) && !profilesMap.has(`email_${creatorId.toLowerCase()}`)) {
                 const email = sale.createdByEmail || (creatorId.includes('@') ? creatorId : `${creatorId}@sistema.com`);
@@ -433,8 +433,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
   const handleScanSellersFromSales = async () => {
     setIsLoading(true);
     try {
-      const salesSnap = await getDocs(collection(db, 'sales'));
-      if (salesSnap.empty) {
+      const allSales = await fetchAllSalesChunked({}, { stripImages: true });
+      if (allSales.length === 0) {
         alert("ℹ️ No se encontraron ventas registradas en Cloud Firestore.");
         setIsLoading(false);
         return;
@@ -443,8 +443,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ userProfile, onRefresh, onViewR
       let addedCount = 0;
       const seen = new Set<string>();
 
-      for (const d of salesSnap.docs) {
-        const sale = d.data();
+      for (const sale of allSales) {
         const creatorId = sale.createdBy;
         if (!creatorId || seen.has(creatorId)) continue;
         seen.add(creatorId);

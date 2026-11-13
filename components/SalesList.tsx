@@ -4,6 +4,7 @@ import { Search, Image as ImageIcon, Calendar, User, Tag, Trash2, Eye, DollarSig
 import { Sale, Brand, UserProfile } from '../types';
 import { BRAND_CONFIGS } from '../constants';
 import { supabase } from '../services/supabaseClient';
+import { fetchSingleSaleImage, ONDEMAND_IMAGE_MARKER } from '../services/firestoreSales';
 import PWAInstallBanner from './PWAInstallBanner';
 
 interface SalesListProps {
@@ -44,15 +45,35 @@ const formatSaleTime = (createdAt?: string, saleId?: string) => {
 };
 
 const SalesList: React.FC<SalesListProps> = ({ 
-  sales, onDelete, onEdit, onAdd, role, storeName, userProfile, onDeepSearch, onFetchRange, isDeepSearching 
+  sales, onDelete, onEdit, onAdd, role, storeName, userProfile, onDeepSearch, onFetchRange, isDeepSearching
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterBrand, setFilterBrand] = useState<Brand | 'ALL'>('ALL');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [loadingImageId, setLoadingImageId] = useState<string | null>(null);
   const [requestModal, setRequestModal] = useState<{type: 'edit' | 'delete', sale: Sale} | null>(null);
   const [requestReason, setRequestReason] = useState('');
   const [isRequesting, setIsRequesting] = useState(false);
   const [suggestedData, setSuggestedData] = useState<Partial<Sale>>({});
+
+  const handleOpenTicket = async (sale: Sale) => {
+    if (!sale.ticketImage) return;
+    if (sale.ticketImage !== ONDEMAND_IMAGE_MARKER) {
+      setSelectedImage(sale.ticketImage);
+      return;
+    }
+    setLoadingImageId(sale.id);
+    try {
+      const imgs = await fetchSingleSaleImage(sale.id);
+      if (imgs?.ticketImage) {
+        setSelectedImage(imgs.ticketImage);
+      } else {
+        alert("No se encontró imagen adjunta para esta venta.");
+      }
+    } finally {
+      setLoadingImageId(null);
+    }
+  };
   const isCardenasStore = Boolean(
     userProfile?.storeId === 'c90b4652-f98f-472b-acab-0d9bc6b4862e' ||
     userProfile?.assignedStores?.includes('c90b4652-f98f-472b-acab-0d9bc6b4862e') ||
@@ -221,28 +242,69 @@ const SalesList: React.FC<SalesListProps> = ({
     }
   }, [isCardenasKitSeller]);
 
-  // --- TODAY'S STATS CALCULATIONS (BASED ON ACTIVE TAB) ---
+  // --- TODAY'S STATS CALCULATIONS (TIMEZONE-SAFE) ---
   const todayDateObj = new Date();
-  const todayStr = todayDateObj.getFullYear() + '-' +
-    String(todayDateObj.getMonth() + 1).padStart(2, '0') + '-' +
-    String(todayDateObj.getDate()).padStart(2, '0');
+  const getTodayDateStrings = () => {
+    const now = todayDateObj;
+    const local = now.getFullYear() + '-' +
+      String(now.getMonth() + 1).padStart(2, '0') + '-' +
+      String(now.getDate()).padStart(2, '0');
+    let mx = local;
+    try {
+      const formatted = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Mexico_City',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }).format(now);
+      if (formatted) mx = formatted;
+    } catch (_) {}
+    return [local, mx];
+  };
 
-  const todaysSales = sales.filter(s => s.date === todayStr);
-  
-  // Filter by category matching activeTab
-  const currentTabSales = todaysSales.filter(s => {
-    if (activeTab === 'ALL') return true;
-    const cat = (s.category || 'kit').toLowerCase();
-    if (activeTab === 'KIT') return (cat === 'kit' || !s.category || cat === '');
-    if (activeTab === 'CHIP_0') return (cat === 'chip_0' || cat === 'chip 0');
-    if (activeTab === 'PORTABILITY') return (cat === 'portabilidad' || cat === 'portability');
-    if (activeTab === 'EXPRESS') return (cat === 'chip_express' || cat === 'chip express' || cat === 'express');
+  const isTodaySale = (s: Sale) => {
+    const [localDay, mxDay] = getTodayDateStrings();
+    if (s.date && (s.date === localDay || s.date === mxDay)) return true;
+    if (s.createdAt) {
+      const cDate = s.createdAt.split('T')[0];
+      if (cDate === localDay || cDate === mxDay) return true;
+    }
     return false;
-  });
+  };
 
-  const todayRevenue = currentTabSales.reduce((sum, s) => sum + s.price, 0);
+  const todaysSales = sales.filter(s => isTodaySale(s));
+  
+  // Tab-specific helper to match categories
+  const matchesCategory = (saleCategory: string | undefined, tabId: string) => {
+    if (tabId === 'ALL') return true;
+    const cat = (saleCategory || 'kit').toLowerCase().trim();
+    if (tabId === 'KIT') return (cat === 'kit' || !saleCategory || cat === '');
+    if (tabId === 'CHIP_0') return (cat === 'chip_0' || cat === 'chip 0');
+    if (tabId === 'PORTABILITY') return (cat === 'portabilidad' || cat === 'portability');
+    if (tabId === 'EXPRESS') return (cat === 'chip_express' || cat === 'chip express' || cat === 'express');
+    return false;
+  };
+
+  // Count sales per category for today and all time
+  const getCategoryCount = (tabId: string, onlyToday: boolean) => {
+    const target = onlyToday ? todaysSales : sales;
+    if (tabId === 'ALL') return target.length;
+    return target.filter(s => matchesCategory(s.category, tabId)).length;
+  };
+
+  // Filter by category matching activeTab
+  const currentTabSales = todaysSales.filter(s => matchesCategory(s.category, activeTab));
+
   const todayCount = currentTabSales.length;
+  const todayRevenue = currentTabSales.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
   const todayNet = todayRevenue / 1.16;
+
+  // Total for today across all categories (for universal dashboard awareness)
+  const totalTodayCount = todaysSales.length;
+  const totalTodayRevenue = todaysSales
+    .filter(s => matchesCategory(s.category, 'KIT'))
+    .reduce((sum, s) => sum + (Number(s.price) || 0), 0);
+  const totalTodayNet = totalTodayRevenue / 1.16;
 
   const ActiveTabIcon = allowedTabs.find(t => t.id === activeTab)?.icon || ShoppingBag;
   const activeTabLabel = allowedTabs.find(t => t.id === activeTab)?.label || 'Ventas';
@@ -261,23 +323,14 @@ const SalesList: React.FC<SalesListProps> = ({
     // 3. Date Filter
     let matchesDate = true;
     if (viewMode === 'today') {
-      matchesDate = sale.date === todayStr;
+      matchesDate = isTodaySale(sale);
     } else if (viewMode === 'custom') {
       if (dateRange.start && sale.date < dateRange.start) matchesDate = false;
       if (dateRange.end && sale.date > dateRange.end) matchesDate = false;
     }
 
     // Category filtering
-    let matchesTab = true;
-    if (activeTab === 'ALL') {
-      matchesTab = true;
-    } else {
-      const cat = (sale.category || 'kit').toLowerCase();
-      if (activeTab === 'KIT') matchesTab = (cat === 'kit' || !sale.category || cat === '');
-      else if (activeTab === 'CHIP_0') matchesTab = (cat === 'chip_0' || cat === 'chip 0');
-      else if (activeTab === 'PORTABILITY') matchesTab = (cat === 'portabilidad' || cat === 'portability');
-      else if (activeTab === 'EXPRESS') matchesTab = (cat === 'chip_express' || cat === 'chip express' || cat === 'express');
-    }
+    const matchesTab = matchesCategory(sale.category, activeTab);
 
     return matchesSearch && matchesBrand && matchesDate && matchesTab;
   }).sort((a, b) => {
@@ -353,57 +406,78 @@ const SalesList: React.FC<SalesListProps> = ({
                 <ActiveTabIcon className="w-6 h-6" />
               </div>
               <div>
-                <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-0.5">{activeTabLabel}</p>
-                <p className="text-3xl font-black text-white">{todayCount}</p>
+                <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-0.5">
+                  {activeTab === 'ALL' ? 'Ventas Hoy (Total)' : `${activeTabLabel} Hoy`}
+                </p>
+                <div className="flex items-baseline gap-2">
+                  <p className="text-3xl font-black text-white">{activeTab === 'ALL' ? totalTodayCount : todayCount}</p>
+                  {activeTab !== 'ALL' && (
+                    <span className="text-xs text-slate-400 font-bold">de {totalTodayCount} hoy</span>
+                  )}
+                </div>
               </div>
             </div>
 
-            {/* Stat 2: Revenue - Only for KITs */}
-            {activeTab === 'KIT' && (
-              <div className="flex items-center gap-4 px-2 md:pl-6">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 text-emerald-400">
-                  <DollarSign className="w-6 h-6" />
-                </div>
-                <div>
-                  <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-0.5">Venta Total</p>
-                  <p className="text-3xl font-black text-white">${todayRevenue.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
-                </div>
+            {/* Stat 2: Revenue */}
+            <div className="flex items-center gap-4 px-2 md:pl-6">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 text-emerald-400">
+                <DollarSign className="w-6 h-6" />
               </div>
-            )}
+              <div>
+                <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-0.5">
+                  {activeTab === 'KIT' ? 'Venta Total Kit Hoy' : 'Venta Total Hoy'}
+                </p>
+                <p className="text-3xl font-black text-white">
+                  ${(activeTab === 'KIT' ? todayRevenue : totalTodayRevenue).toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                </p>
+              </div>
+            </div>
 
-            {/* Stat 3: Net - Only for KITs */}
-            {activeTab === 'KIT' && (
-              <div className="flex items-center gap-4 px-2 md:pl-6">
-                <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 flex items-center justify-center border border-indigo-500/20 text-indigo-400">
-                  <TrendingUp className="w-6 h-6" />
-                </div>
-                <div>
-                  <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-0.5">Sin IVA (Base)</p>
-                  <p className="text-3xl font-black text-white">${todayNet.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
-                </div>
+            {/* Stat 3: Net */}
+            <div className="flex items-center gap-4 px-2 md:pl-6">
+              <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 flex items-center justify-center border border-indigo-500/20 text-indigo-400">
+                <TrendingUp className="w-6 h-6" />
               </div>
-            )}
+              <div>
+                <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-0.5">Sin IVA (Base)</p>
+                <p className="text-3xl font-black text-white">
+                  ${(activeTab === 'KIT' ? todayNet : totalTodayNet).toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                </p>
+              </div>
+            </div>
 
           </div>
         </div>
       </div>
 
-      {/* TAB NAVIGATION */}
+      {/* TAB NAVIGATION CON CONTADORES DINÁMICOS */}
       <div className="flex overflow-x-auto pb-1 gap-2 scrollbar-hide">
-        {allowedTabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => handleTabChange(tab.id as any)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap border-2 ${
-              activeTab === tab.id
-                ? 'bg-slate-900 text-white border-slate-900 shadow-md scale-105'
-                : 'bg-white text-slate-500 border-slate-100 hover:border-slate-200'
-            }`}
-          >
-            <tab.icon className={`w-3.5 h-3.5 ${activeTab === tab.id ? 'text-blue-400' : 'text-slate-400'}`} />
-            {tab.label}
-          </button>
-        ))}
+        {allowedTabs.map((tab) => {
+          const tabCount = getCategoryCount(tab.id, viewMode === 'today');
+          return (
+            <button
+              key={tab.id}
+              onClick={() => handleTabChange(tab.id as any)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap border-2 ${
+                activeTab === tab.id
+                  ? 'bg-slate-900 text-white border-slate-900 shadow-md scale-105'
+                  : 'bg-white text-slate-500 border-slate-100 hover:border-slate-200'
+              }`}
+            >
+              <tab.icon className={`w-3.5 h-3.5 ${activeTab === tab.id ? 'text-blue-400' : 'text-slate-400'}`} />
+              <span>{tab.label}</span>
+              <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${
+                activeTab === tab.id
+                  ? 'bg-blue-600 text-white'
+                  : tabCount > 0
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'bg-slate-100 text-slate-400'
+              }`}>
+                {tabCount}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {/* --- LIST HEADER & CONTROLS --- */}
@@ -414,19 +488,25 @@ const SalesList: React.FC<SalesListProps> = ({
             <span className="text-sm text-slate-500 bg-slate-100 px-3 py-1 rounded-full">{filteredSales.length} registros mostrados</span>
           </div>
 
-          {/* Date Mode Toggles */}
+          {/* Date Mode Toggles con contadores explícitos */}
           <div className="flex bg-slate-100 p-1 rounded-xl self-start md:self-center">
             <button
               onClick={() => handleViewModeChange('today')}
-              className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${viewMode === 'today' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+              className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all flex items-center gap-1.5 ${viewMode === 'today' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
             >
-              Hoy
+              <span>Hoy</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${viewMode === 'today' ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-600'}`}>
+                {todaysSales.length}
+              </span>
             </button>
             <button
               onClick={() => handleViewModeChange('all')}
-              className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${viewMode === 'all' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+              className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all flex items-center gap-1.5 ${viewMode === 'all' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
             >
-              Historial Completo
+              <span>Historial</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${viewMode === 'all' ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-600'}`}>
+                {sales.length}
+              </span>
             </button>
             <button
               onClick={() => handleViewModeChange('custom')}
@@ -509,28 +589,30 @@ const SalesList: React.FC<SalesListProps> = ({
               <Search className="w-8 h-8 text-slate-300" />
             </div>
             <h3 className="text-slate-800 font-bold mb-1">
-              {viewMode === 'today' ? 'No hay ventas registradas el día de hoy' : 'No se encontraron ventas'}
+              {viewMode === 'today' ? 'No hay ventas que coincidan con estos filtros hoy' : 'No se encontraron ventas'}
             </h3>
+            
+            {/* Context-aware suggestions */}
             <p className="text-slate-500 text-sm mb-4 max-w-md mx-auto">
               {viewMode === 'today' 
-                ? 'Puedes cambiar a "Historial Completo" para ver todas las ventas anteriores de esta sucursal.' 
+                ? 'Puedes cambiar a "Historial" para consultar las ventas registradas anteriormente.' 
                 : 'No se encontraron registros con los filtros de búsqueda o categoría actuales.'}
             </p>
             <div className="flex flex-wrap items-center justify-center gap-2">
-              {viewMode === 'today' && sales.length > 0 && (
-                <button
-                  onClick={() => handleViewModeChange('all')}
-                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-sm shadow-blue-500/20"
-                >
-                  Ver Todo el Historial ({sales.length} ventas)
-                </button>
-              )}
               {activeTab !== 'ALL' && (
                 <button
                   onClick={() => handleTabChange('ALL')}
-                  className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all"
+                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-sm shadow-blue-500/20"
                 >
                   Ver Todas las Categorías
+                </button>
+              )}
+              {viewMode === 'today' && sales.length > 0 && (
+                <button
+                  onClick={() => handleViewModeChange('all')}
+                  className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all"
+                >
+                  Ver Historial Completo ({sales.length} ventas)
                 </button>
               )}
             </div>
@@ -654,11 +736,12 @@ const SalesList: React.FC<SalesListProps> = ({
 
                   {sale.ticketImage ? (
                     <button
-                      onClick={() => setSelectedImage(sale.ticketImage!)}
-                      className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 transition-colors"
+                      onClick={() => handleOpenTicket(sale)}
+                      disabled={loadingImageId === sale.id}
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 transition-colors disabled:opacity-60"
                     >
-                      <Eye className="w-4 h-4" />
-                      Ver Ticket
+                      {loadingImageId === sale.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4" />}
+                      {loadingImageId === sale.id ? 'Cargando...' : 'Ver Ticket'}
                     </button>
                   ) : (
                     sale.category !== 'chip_express' && sale.category !== 'portabilidad' && (

@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { db } from '../services/firebase';
 import { doc, writeBatch, setDoc, getDocs, collection, deleteDoc } from 'firebase/firestore';
+import { fetchAllSalesChunked } from '../services/firestoreSales';
 import { UserProfile } from '../types';
 
 export interface BackupHistoryEntry {
@@ -267,8 +268,8 @@ export const BackupMigration: React.FC<BackupMigrationProps> = ({
       let totalSalesRevenue = 0;
 
       try {
-        const [salesSnap, storesSnap, usersSnap, closingsSnap, warrantiesSnap, attSnap] = await Promise.all([
-          getDocs(collection(db, 'sales')),
+        const [allSales, storesSnap, usersSnap, closingsSnap, warrantiesSnap, attSnap] = await Promise.all([
+          fetchAllSalesChunked({}, { stripImages: true }),
           getDocs(collection(db, 'stores')),
           getDocs(collection(db, 'users')),
           getDocs(collection(db, 'daily_closings')),
@@ -276,15 +277,15 @@ export const BackupMigration: React.FC<BackupMigrationProps> = ({
           getDocs(collection(db, 'attendance'))
         ]);
 
-        salesCount = salesSnap.size;
+        salesCount = allSales.length;
         storesCount = storesSnap.size;
         usersCount = usersSnap.size;
         closingsCount = closingsSnap.size;
         warrantiesCount = warrantiesSnap.size;
         attendanceCount = attSnap.size;
 
-        salesSnap.docs.forEach(docSnap => {
-          const val = Number(docSnap.data().price || 0);
+        allSales.forEach(s => {
+          const val = Number(s.price || 0);
           if (!isNaN(val)) totalSalesRevenue += val;
         });
 
@@ -417,8 +418,8 @@ export const BackupMigration: React.FC<BackupMigrationProps> = ({
   const handleGenerateExportBackup = async () => {
     setIsExportingBackup(true);
     try {
-      const [salesSnap, storesSnap, usersSnap, closingsSnap, warrantiesSnap, attSnap] = await Promise.all([
-        getDocs(collection(db, 'sales')),
+      const [salesData, storesSnap, usersSnap, closingsSnap, warrantiesSnap, attSnap] = await Promise.all([
+        fetchAllSalesChunked({}, { stripImages: false }),
         getDocs(collection(db, 'stores')),
         getDocs(collection(db, 'users')),
         getDocs(collection(db, 'daily_closings')),
@@ -428,7 +429,6 @@ export const BackupMigration: React.FC<BackupMigrationProps> = ({
 
       const storesData = storesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
       const usersData = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      const salesData = salesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
       const closingsData = closingsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
       const warrantiesData = warrantiesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
       const attendanceData = attSnap.docs.map(d => ({ id: d.id, ...d.data() }));

@@ -4,6 +4,7 @@ import { Brand, Sale, BrandConfig, UserProfile, Store } from '../types';
 import { BRAND_CONFIGS } from '../constants';
 import { supabase } from '../services/supabaseClient';
 import { smartImageUpload } from '../services/storageService';
+import { fetchSingleSaleImage, ONDEMAND_IMAGE_MARKER } from '../services/firestoreSales';
 import { analyzeTicketImage } from '../services/geminiService';
 import BarcodeScanner from './BarcodeScanner';
 
@@ -87,8 +88,25 @@ const SalesForm: React.FC<SalesFormProps> = ({
     }
   }, [availableCategories, commonData.category]);
 
-  const [ticketImage, setTicketImage] = useState<string | null>(initialData?.ticketImage || null);
-  const [portabilityImage, setPortabilityImage] = useState<string | null>(initialData?.portabilityScreenshot || null);
+  const [ticketImage, setTicketImage] = useState<string | null>(
+    initialData?.ticketImage === ONDEMAND_IMAGE_MARKER ? null : (initialData?.ticketImage || null)
+  );
+  const [portabilityImage, setPortabilityImage] = useState<string | null>(
+    initialData?.portabilityScreenshot === ONDEMAND_IMAGE_MARKER ? null : (initialData?.portabilityScreenshot || null)
+  );
+
+  useEffect(() => {
+    if (!initialData?.id) return;
+    const needsTicket = initialData.ticketImage === ONDEMAND_IMAGE_MARKER;
+    const needsPorta = initialData.portabilityScreenshot === ONDEMAND_IMAGE_MARKER;
+    if (!needsTicket && !needsPorta) return;
+    fetchSingleSaleImage(initialData.id).then((imgs) => {
+      if (!imgs) return;
+      if (needsTicket && imgs.ticketImage) setTicketImage(imgs.ticketImage);
+      if (needsPorta && imgs.portabilityScreenshot) setPortabilityImage(imgs.portabilityScreenshot);
+    });
+  }, [initialData?.id]);
+
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedPortabilityFile, setSelectedPortabilityFile] = useState<File | null>(null);
   const [showFullImage, setShowFullImage] = useState(false); 

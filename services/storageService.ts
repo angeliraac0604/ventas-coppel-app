@@ -1,31 +1,40 @@
 import { storage } from './firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
-// 1. Client-side Image Compression (Reduces 5MB photo to ~150KB for instant uploads)
-export const compressImage = async (base64Str: string, maxWidth = 1000, quality = 0.75): Promise<string> => {
+// 1. Client-side Image Compression (Reduces 5MB photo to ~50-90KB for fast Firestore sync)
+export const compressImage = async (base64Str: string, maxWidth = 720, quality = 0.58): Promise<string> => {
   return new Promise((resolve) => {
     const img = new Image();
     img.src = base64Str;
     img.onload = () => {
-      const canvas = document.createElement('canvas');
-      let width = img.width;
-      let height = img.height;
+      const renderAt = (wLimit: number, q: number): string => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
 
-      if (width > maxWidth) {
-        height = Math.round((height * maxWidth) / width);
-        width = maxWidth;
+        if (width > wLimit) {
+          height = Math.round((height * wLimit) / width);
+          width = wLimit;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return base64Str;
+
+        ctx.drawImage(img, 0, 0, width, height);
+        return canvas.toDataURL('image/jpeg', q);
+      };
+
+      let result = renderAt(maxWidth, quality);
+      // Ensure base64 payload stays comfortably below Firestore's 1 MiB document limit
+      if (result.length > 260000) {
+        result = renderAt(Math.min(maxWidth, 640), 0.45);
       }
-
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        resolve(base64Str);
-        return;
+      if (result.length > 360000) {
+        result = renderAt(520, 0.38);
       }
-
-      ctx.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/jpeg', quality));
+      resolve(result);
     };
     img.onerror = () => resolve(base64Str);
   });
@@ -62,39 +71,23 @@ export const smartImageUpload = async (
   chainName: string = 'Coppel',
   subFolder: string = ''
 ): Promise<string> => {
-  // Compress immediately so saving is instantaneous (0 network delay)
-  const compressed = await compressImage(base64Image, 1000, 0.75);
+  // Compress immediately so saving is instantaneous and compact
+  const compressed = await compressImage(base64Image, 720, 0.58);
 
-  // Background upload to Firebase Storage and Google Drive (non-blocking)
+  // Background upload to Google Drive if configured (non-blocking)
   setTimeout(async () => {
     try {
-      const dateObj = date ? new Date(date + "T12:00:00") : new Date();
-      const y = dateObj.getFullYear().toString();
-      const m = getSpanishMonth(dateObj.getMonth());
-      const d = dateObj.getDate().toString();
-      
-      const cleanName = userName.replace(/[^a-zA-Z0-9 ]/g, '').trim().replace(/ /g, '_');
-      const cleanFilename = filename.replace(/[^a-zA-Z0-9]/g, '_');
-
-      const storagePath = folderType === 'attendance'
-        ? `attendance/${cleanName}/${y}/${m}/${d}/${Date.now()}-${cleanFilename}.jpg`
-        : `${folderType}/${storeName}/${y}/${m}/${d}/${Date.now()}-${cleanFilename}.jpg`;
-      
-      await uploadToFirebaseStorage(base64Image, storagePath);
-    } catch (err) {
-      console.warn("Background Firebase upload note:", err);
-    }
-
-    try {
-      const { uploadImageToDriveScript } = await import('./googleAppsScriptService');
-      const dateObj = date ? new Date(date + "T12:00:00") : new Date();
-      const m = getSpanishMonth(dateObj.getMonth());
-      
-      (window as any)._activeStoreName = storeName;
-      (window as any)._activeStoreChain = chainName;
-      (window as any)._customMonthName = m;
-      
-      await uploadImageToDriveScript(compressed, filename, date, folderType as any, userName, chainName, subFolder);
+      if (import.meta.env.VITE_GOOGLE_SCRIPT_URL) {
+        const { uploadImageToDriveScript } = await import('./googleAppsScriptService');
+        const dateObj = date ? new Date(date + "T12:00:00") : new Date();
+        const m = getSpanishMonth(dateObj.getMonth());
+        
+        (window as any)._activeStoreName = storeName;
+        (window as any)._activeStoreChain = chainName;
+        (window as any)._customMonthName = m;
+        
+        await uploadImageToDriveScript(compressed, filename, date, folderType as any, userName, chainName, subFolder);
+      }
     } catch (err) {
       console.warn(`Background Drive sync note:`, err);
     }

@@ -4,7 +4,9 @@ import {
   getFirestore, 
   initializeFirestore, 
   persistentLocalCache, 
-  persistentMultipleTabManager 
+  persistentMultipleTabManager,
+  doc,
+  getDocFromServer
 } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../firebase-applet-config.json';
@@ -37,5 +39,17 @@ try {
 
 export const db = dbInstance;
 export const storage = getStorage(app);
+
+async function testConnection() {
+  if (typeof window === 'undefined') return;
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.warn("Firestore connection check: client appears offline or config needs attention.");
+    }
+  }
+}
+testConnection();
 
 export default app;
