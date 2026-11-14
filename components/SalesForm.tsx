@@ -4,7 +4,7 @@ import { Brand, Sale, BrandConfig, UserProfile, Store } from '../types';
 import { BRAND_CONFIGS } from '../constants';
 import { supabase } from '../services/supabaseClient';
 import { smartImageUpload } from '../services/storageService';
-import { fetchSingleSaleImage, ONDEMAND_IMAGE_MARKER } from '../services/firestoreSales';
+import { fetchSingleSaleImage, ONDEMAND_IMAGE_MARKER, getTodayMxStr } from '../services/firestoreSales';
 import { analyzeTicketImage } from '../services/geminiService';
 import BarcodeScanner from './BarcodeScanner';
 
@@ -52,7 +52,7 @@ const SalesForm: React.FC<SalesFormProps> = ({
   }, [userProfile]);
 
   // 2. Estado del Formulario
-  const todayStr = new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0') + '-' + String(new Date().getDate()).padStart(2, '0');
+  const todayStr = getTodayMxStr(0);
 
   const [commonData, setCommonData] = useState({
     customerName: initialData?.customerName || '',

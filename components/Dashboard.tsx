@@ -10,6 +10,7 @@ import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
 import { db } from '../services/firebase';
 import { collection, doc, getDocs, setDoc, onSnapshot } from 'firebase/firestore';
 import { cleanFirestoreData } from './BackupMigration';
+import { getTodayMxStr } from '../services/firestoreSales';
 
 interface DashboardProps {
   sales: Sale[];
@@ -262,8 +263,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
     const kitOnlySales = safeSales.filter(s => s.category === 'kit' || !s.category);
     const totalRev = kitOnlySales.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
     
-    const today = new Date();
-    const tStr = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+    const tStr = getTodayMxStr(0);
     
     const monthSales = safeSales; // monthlySales is already month-filtered, and we added realtime ones above
     
@@ -322,9 +322,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, closings, role, storeId, s
 
     // Timeline 7 days
     const tLineData = Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(today);
-      d.setDate(d.getDate() - (6 - i));
-      const dateStr = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      const dateStr = getTodayMxStr(-(6 - i));
       
       const isFuture = dateStr > tStr;
       const dailySales = safeSales.filter(s => s.date === dateStr);

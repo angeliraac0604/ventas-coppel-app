@@ -23,6 +23,7 @@ import {
 import { Sale, Store, UserProfile, Brand, StoreTier } from '../types';
 import { BRAND_CONFIGS, COMMISSION_TIERS, calculateCommissionForPrice, getCommissionTierInfo } from '../constants';
 import { jsPDF } from 'jspdf';
+import { getTodayMxStr } from '../services/firestoreSales';
 
 interface CommissionsPanelProps {
   sales: Sale[];
@@ -39,9 +40,8 @@ export const CommissionsPanel: React.FC<CommissionsPanelProps> = ({
   selectedStoreId = 'all',
   onSelectStore
 }) => {
-  const now = new Date();
-  const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const todayStr = getTodayMxStr(0);
+  const currentMonthStr = todayStr.slice(0, 7);
 
   const [selectedMonth, setSelectedMonth] = useState(currentMonthStr);
   const [storeFilter, setStoreFilter] = useState<string>(selectedStoreId || 'all');

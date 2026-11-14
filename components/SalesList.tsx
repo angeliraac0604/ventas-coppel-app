@@ -4,7 +4,7 @@ import { Search, Image as ImageIcon, Calendar, User, Tag, Trash2, Eye, DollarSig
 import { Sale, Brand, UserProfile } from '../types';
 import { BRAND_CONFIGS } from '../constants';
 import { supabase } from '../services/supabaseClient';
-import { fetchSingleSaleImage, ONDEMAND_IMAGE_MARKER } from '../services/firestoreSales';
+import { fetchSingleSaleImage, ONDEMAND_IMAGE_MARKER, getTodayMxStr, formatDateInMx } from '../services/firestoreSales';
 import PWAInstallBanner from './PWAInstallBanner';
 
 interface SalesListProps {
@@ -38,6 +38,7 @@ const formatSaleTime = (createdAt?: string, saleId?: string) => {
   if (!dateObj) return null;
 
   return dateObj.toLocaleTimeString('es-MX', {
+    timeZone: 'America/Mexico_City',
     hour: 'numeric',
     minute: '2-digit',
     hour12: true
@@ -157,7 +158,7 @@ const SalesList: React.FC<SalesListProps> = ({
       });
       canvas.toBlob(async (blob) => {
         if (!blob) return;
-        const file = new File([blob], `resumen-dia-${new Date().toLocaleDateString().replace(/\//g, '-')}.png`, { type: 'image/png' });
+        const file = new File([blob], `resumen-dia-${getTodayMxStr(0)}.png`, { type: 'image/png' });
 
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
           try {
@@ -242,32 +243,17 @@ const SalesList: React.FC<SalesListProps> = ({
     }
   }, [isCardenasKitSeller]);
 
-  // --- TODAY'S STATS CALCULATIONS (TIMEZONE-SAFE) ---
+  // --- TODAY'S STATS CALCULATIONS (STRICT MEXICO CITY DATE) ---
   const todayDateObj = new Date();
-  const getTodayDateStrings = () => {
-    const now = todayDateObj;
-    const local = now.getFullYear() + '-' +
-      String(now.getMonth() + 1).padStart(2, '0') + '-' +
-      String(now.getDate()).padStart(2, '0');
-    let mx = local;
-    try {
-      const formatted = new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'America/Mexico_City',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-      }).format(now);
-      if (formatted) mx = formatted;
-    } catch (_) {}
-    return [local, mx];
-  };
+  const mxTodayStr = getTodayMxStr(0);
 
   const isTodaySale = (s: Sale) => {
-    const [localDay, mxDay] = getTodayDateStrings();
-    if (s.date && (s.date === localDay || s.date === mxDay)) return true;
+    const saleDate = s.date ? s.date.trim() : '';
+    if (saleDate) {
+      return saleDate === mxTodayStr;
+    }
     if (s.createdAt) {
-      const cDate = s.createdAt.split('T')[0];
-      if (cDate === localDay || cDate === mxDay) return true;
+      return formatDateInMx(s.createdAt) === mxTodayStr;
     }
     return false;
   };
@@ -389,7 +375,7 @@ const SalesList: React.FC<SalesListProps> = ({
                 <span className="text-blue-400 text-xs font-black uppercase tracking-widest">{storeName || 'Sucursal'}</span>
                 <span className="text-slate-600 text-[10px]">•</span>
                 <p className="text-slate-400 text-xs font-medium">
-                  {todayDateObj.toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                  {todayDateObj.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
                 </p>
               </div>
             </div>

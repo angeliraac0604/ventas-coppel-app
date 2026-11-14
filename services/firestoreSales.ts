@@ -23,27 +23,34 @@ export interface UserInfoMap {
   };
 }
 
-export const getTodayMxStr = (offsetDays = 0): string => {
-  const now = new Date();
-  if (offsetDays !== 0) {
-    now.setDate(now.getDate() + offsetDays);
-  }
+export const formatDateInMx = (dateInput: Date | string): string => {
+  const dt = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+  if (isNaN(dt.getTime())) return '';
   try {
     return new Intl.DateTimeFormat('en-CA', {
       timeZone: 'America/Mexico_City',
       year: 'numeric',
       month: '2-digit',
       day: '2-digit'
-    }).format(now);
+    }).format(dt);
   } catch {
     return (
-      now.getFullYear() +
+      dt.getFullYear() +
       '-' +
-      String(now.getMonth() + 1).padStart(2, '0') +
+      String(dt.getMonth() + 1).padStart(2, '0') +
       '-' +
-      String(now.getDate()).padStart(2, '0')
+      String(dt.getDate()).padStart(2, '0')
     );
   }
+};
+
+export const getTodayMxStr = (offsetDays = 0): string => {
+  const todayMx = formatDateInMx(new Date());
+  if (!todayMx || offsetDays === 0) return todayMx;
+  const [y, m, d] = todayMx.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, (m || 1) - 1, d || 1));
+  dt.setUTCDate(dt.getUTCDate() + offsetDays);
+  return dt.toISOString().split('T')[0];
 };
 
 export const mapFirestoreSale = (

@@ -3,6 +3,7 @@ import { CalendarCheck, DollarSign, ShoppingBag, Clock, ChevronDown, ChevronUp, 
 import { Sale, DailyClose, Brand, Store, UserProfile } from '../types';
 import { BRAND_CONFIGS } from '../constants';
 import { syncMarketParticipationScript } from '../services/googleAppsScriptService';
+import { getTodayMxStr } from '../services/firestoreSales';
 
 const MARKET_SHARE_SHEET_ID = '1nnfe2f5M7sDaVwTs7smnDo5mXjSlNljy3J_5hxCz-x0';
 
@@ -46,11 +47,8 @@ const DailyClosings: React.FC<DailyClosingsProps> = ({ sales, closings, onCloseD
     return store?.prefix === '1053' || store?.name.toLowerCase().includes('1053');
   }, [activeStoreId, stores]);
 
-  // Construct YYYY-MM-DD in local time manually
-  const localDate = new Date();
-  const todayStr = localDate.getFullYear() + '-' +
-    String(localDate.getMonth() + 1).padStart(2, '0') + '-' +
-    String(localDate.getDate()).padStart(2, '0');
+  // Construct YYYY-MM-DD in Mexico City time
+  const todayStr = getTodayMxStr(0);
 
   // Determine which date we are closing (Default: Today)
   const targetDateStr = manualDate || todayStr;

@@ -7,6 +7,7 @@ import { collection, doc, getDocs, setDoc } from 'firebase/firestore';
 import { cleanFirestoreData } from './BackupMigration';
 import { Store, UserProfile, Brand } from '../types';
 import { BRAND_CONFIGS, calculateCommissionForPrice } from '../constants';
+import { getTodayMxStr } from '../services/firestoreSales';
 
 interface PerformanceData {
   sellerName: string;
@@ -218,8 +219,7 @@ const SupervisionPanel: React.FC<SupervisionPanelProps> = ({ sales: propSales, s
   const totalExpress = filteredSales.filter(s => s.category === 'chip_express').length;
   const totalDevices = totalKits;
 
-  const now = new Date();
-  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const todayStr = getTodayMxStr(0);
   const todaySales = filteredSales.filter(s => s.date === todayStr);
   const todayKitSales = todaySales.filter(s => s.category === 'kit' || !s.category);
   const todayRevenue = todayKitSales.reduce((acc, curr) => acc + (Number(curr.price) || 0), 0);
